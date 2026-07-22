@@ -9,7 +9,7 @@ import kotlin.random.Random
 object SpeciesPool {
     const val MAX_SPECIES = 721
 
-    /** Gen 1–5 basic starters (first stages only). */
+    /** Gen 1–6 basic starters (first stages only). */
     val BASIC_STARTERS = intArrayOf(
         1, 4, 7, // Kanto
         152, 155, 158, // Johto
@@ -18,6 +18,14 @@ object SpeciesPool {
         495, 498, 501, // Unova
         650, 653, 656, // Kalos
     )
+
+    // Classic starter type pools (first stage only)
+    // Grass: Bulbasaur, Chikorita, Treecko, Turtwig, Snivy, Chespin
+    val STARTER_GRASS = intArrayOf(1, 152, 252, 387, 495, 650)
+    // Fire: Charmander, Cyndaquil, Torchic, Chimchar, Tepig, Fennekin
+    val STARTER_FIRE = intArrayOf(4, 155, 255, 390, 498, 653)
+    // Water: Squirtle, Totodile, Mudkip, Piplup, Oshawott, Froakie
+    val STARTER_WATER = intArrayOf(7, 158, 258, 393, 501, 656)
 
     val LEGENDARY = intArrayOf(
         144, 145, 146, 150, 151,
@@ -61,9 +69,20 @@ object SpeciesPool {
                 IntArray(3) { pick(rng, BASIC_STARTERS) }.also { ensureDistinct(it, rng, BASIC_STARTERS) }
             }
             RandomizerConfig.StarterMode.TYPE_BALANCED -> {
-                // Only first-stage starters with reliable bag/selection models
-                IntArray(3) { pick(rng, BASIC_STARTERS) }
-                    .also { ensureDistinct(it, rng, BASIC_STARTERS) }
+                // True type balance: one Grass, one Fire, one Water (shuffled into bag slots)
+                val trio = intArrayOf(
+                    pick(rng, STARTER_GRASS),
+                    pick(rng, STARTER_FIRE),
+                    pick(rng, STARTER_WATER),
+                )
+                // Shuffle so left/middle/right aren't always G/F/W order
+                for (i in trio.lastIndex downTo 1) {
+                    val j = rng.nextInt(i + 1)
+                    val tmp = trio[i]
+                    trio[i] = trio[j]
+                    trio[j] = tmp
+                }
+                trio
             }
             RandomizerConfig.StarterMode.FULL_RANDOM -> {
                 // Prefer basic starters for stability; mix in gen 1-5 non-legends lightly
