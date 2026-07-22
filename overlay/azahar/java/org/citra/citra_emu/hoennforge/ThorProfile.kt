@@ -51,6 +51,8 @@ object ThorProfile {
         BooleanSetting.LINEAR_FILTERING.boolean = false
         IntSetting.TEXTURE_SAMPLING.int = 1 // NearestNeighbor
         IntSetting.TEXTURE_FILTER.int = 0 // NoFilter (Anime4K etc. off)
+        // Fixes white Mudkip / blue Pokémon on Adreno+Vulkan (classic Citra/Azahar ORAS bug)
+        BooleanSetting.SHADERS_ACCURATE_MUL.boolean = true
         // Asynchronous shader compilation + persistent shader storage
         BooleanSetting.ASYNC_SHADERS.boolean = true
         BooleanSetting.DISK_SHADER_CACHE.boolean = true
@@ -95,6 +97,7 @@ object ThorProfile {
             IntSetting.TEXTURE_SAMPLING,
             BooleanSetting.NEW_3DS,
             BooleanSetting.LINEAR_FILTERING,
+            BooleanSetting.SHADERS_ACCURATE_MUL,
             BooleanSetting.ASYNC_SHADERS,
             BooleanSetting.DISK_SHADER_CACHE,
             BooleanSetting.HW_SHADER,
@@ -119,7 +122,7 @@ object ThorProfile {
         Log.i(
             TAG,
             "Thor profile: dual screens, overlay off, 3DS face layout, " +
-                "L3=turbo, linear_filter=false (nearest), async_shaders=true",
+                "L3=turbo, linear_filter=false, accurate_mul=true, async_shaders=true",
         )
     }
 
