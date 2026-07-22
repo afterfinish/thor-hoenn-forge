@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF9184D9"
+        android:pathData="M3,3h18v18h-18z" />
+    <!-- solid white check (filled triangle path approximating V) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.2,16.5 L5.3,12.6 L6.7,11.2 L9.2,13.7 L17.0,5.9 L18.4,7.3 Z" />
+</vector>

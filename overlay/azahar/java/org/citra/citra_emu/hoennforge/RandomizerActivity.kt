@@ -72,6 +72,8 @@ class RandomizerActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_hoenn_randomizer)
         bindViews()
+        // Clear AppCompat button tint so custom check vectors show a real V
+        clearCheckTints()
 
         // Start from Standard preset
         applyPreset(Preset.STANDARD, keepSeed = false)
@@ -157,6 +159,21 @@ class RandomizerActivity : AppCompatActivity() {
         others.forEach {
             it.setBackgroundResource(R.drawable.hoenn_btn_secondary)
             it.setTextColor(0xFFE9E9ED.toInt())
+        }
+    }
+
+    private fun clearCheckTints() {
+        val checks = listOf(
+            cbWildSpecies, cbWildLevels, cbWildLegends,
+            cbTrainerParties, cbTrainerItems, cbTrainerMoves, cbTrainerAbilities,
+            cbPersonalTypes, cbPersonalStats, cbPersonalAbilities, cbPersonalTm,
+            cbMoveTypes, cbMoveCats, cbLevelUp, cbEggMoves, cbTmList,
+            cbEvolutions, cbMarts, cbStaticGifts,
+        )
+        val drawable = getDrawable(R.drawable.hoenn_checkbox)
+        for (cb in checks) {
+            cb.buttonDrawable = drawable?.constantState?.newDrawable()?.mutate()
+            androidx.core.widget.CompoundButtonCompat.setButtonTintList(cb, null)
         }
     }
 

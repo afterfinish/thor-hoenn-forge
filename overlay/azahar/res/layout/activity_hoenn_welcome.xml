@@ -67,10 +67,8 @@
                     android:id="@+id/checkboxLegal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="12dp"
+                    style="@style/Hoenn.CheckBox"
                     android:text="@string/hoenn_welcome_checkbox"
-                    android:textColor="@color/hoenn_text"
                     android:textSize="14sp" />
             </LinearLayout>
             <Button

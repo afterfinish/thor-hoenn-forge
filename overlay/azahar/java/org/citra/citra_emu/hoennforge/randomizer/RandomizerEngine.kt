@@ -68,6 +68,8 @@ class RandomizerEngine(
         if (config.trainerParties || config.trainerItems || config.trainerMoves ||
             config.trainerAbilities
         ) {
+            // trdata holds party size/format; trpoke holds species teams
+            needed += OrasPaths.TRDATA
             needed += OrasPaths.TRPOKE
         }
         if (config.personalTypes || config.personalBaseStats || config.personalAbilities ||
@@ -240,72 +242,77 @@ class RandomizerEngine(
 
     // --- Trainers ---
     private fun randomizeTrainers() {
-        val trdata = GarcArchive.open(modified[OrasPaths.TRDATA]!!)
-        val trpoke = GarcArchive.open(modified[OrasPaths.TRPOKE]!!)
+        val trdataBytes = modified[OrasPaths.TRDATA]
+            ?: error("trdata missing from work set")
+        val trpokeBytes = modified[OrasPaths.TRPOKE]
+            ?: error("trpoke missing from work set")
+        val trdata = GarcArchive.open(trdataBytes)
+        val trpoke = GarcArchive.open(trpokeBytes)
         val pool = SpeciesPool.allSpecies(config.wildLegendaries)
         val count = minOf(trdata.fileCount, trpoke.fileCount)
         var n = 0
         for (i in 0 until count) {
-            val td = Lz11.maybeDecompress(trdata.getFile(i))
-            val tp = Lz11.maybeDecompress(trpoke.getFile(i))
-            if (td.size < 0x14 || tp.isEmpty()) continue
-            // ORAS trdata: u16 format, u16 class, u16 pad, battleType, numPokemon, ...
-            val bb = ByteBuffer.wrap(td).order(ByteOrder.LITTLE_ENDIAN)
-            var format = bb.short.toInt() and 0xFFFF
-            bb.short; bb.short
-            bb.get() // battle
-            val num = bb.get().toInt() and 0xFF
-            if (num !in 1..6) continue
-            val hasItem = ((format shr 1) and 1) == 1
-            val hasMoves = (format and 1) == 1
-            val entrySize = tp.size / num
-            if (entrySize < 8 || entrySize * num != tp.size) continue
-            val newTp = tp.copyOf()
-            for (p in 0 until num) {
-                val base = p * entrySize
-                // IVs u8, PID u8, Level u16, Species u16, Form u16, [Item u16], [Moves 4*u16]
-                if (config.trainerParties) {
-                    putU16(newTp, base + 4, SpeciesPool.pick(rng, pool))
-                    // Clear form — random forms softlock
-                    if (entrySize >= 8) putU16(newTp, base + 6, 0)
-                }
-                if (config.trainerAbilities) {
-                    val pid = newTp[base + 1].toInt() and 0xFF
-                    val ability = rng.nextInt(1, 4) // 1,2,H
-                    newTp[base + 1] = ((ability shl 4) or (pid and 0x0F)).toByte()
-                }
-                var o = base + 8
-                if (hasItem) {
-                    if (config.trainerItems) {
-                        putU16(newTp, o, rng.nextInt(1, 650).toShort().toInt())
-                    }
-                    o += 2
-                }
-                if (hasMoves && config.trainerMoves) {
-                    for (m in 0 until 4) {
-                        putU16(newTp, o + m * 2, rng.nextInt(1, 621))
-                    }
-                }
-            }
-            // difficulty scaling: bump levels
-            if (config.trainerDifficulty != RandomizerConfig.Difficulty.SIMILAR) {
+            try {
+                val td = Lz11.maybeDecompress(trdata.getFile(i))
+                val tp = Lz11.maybeDecompress(trpoke.getFile(i))
+                if (td.size < 0x14 || tp.isEmpty()) continue
+                // ORAS trdata: u16 format, u16 class, u16 pad, battleType, numPokemon, ...
+                val bb = ByteBuffer.wrap(td).order(ByteOrder.LITTLE_ENDIAN)
+                val format = bb.short.toInt() and 0xFFFF
+                bb.short; bb.short
+                bb.get() // battle
+                val num = bb.get().toInt() and 0xFF
+                if (num !in 1..6) continue
+                val hasItem = ((format shr 1) and 1) == 1
+                val hasMoves = (format and 1) == 1
+                if (tp.size % num != 0) continue
+                val entrySize = tp.size / num
+                if (entrySize < 8) continue
+                val newTp = tp.copyOf()
                 for (p in 0 until num) {
                     val base = p * entrySize
-                    var lv = getU16(newTp, base + 2)
-                    lv = when (config.trainerDifficulty) {
-                        RandomizerConfig.Difficulty.WEAKER -> (lv - 2).coerceAtLeast(1)
-                        RandomizerConfig.Difficulty.STRONGER -> (lv + 3).coerceAtMost(100)
-                        RandomizerConfig.Difficulty.RIVAL_PLUS -> (lv + 5).coerceAtMost(100)
-                        else -> lv
+                    if (config.trainerParties) {
+                        putU16(newTp, base + 4, SpeciesPool.pick(rng, pool))
+                        if (entrySize >= 8) putU16(newTp, base + 6, 0)
                     }
-                    putU16(newTp, base + 2, lv)
+                    if (config.trainerAbilities) {
+                        val pid = newTp[base + 1].toInt() and 0xFF
+                        val ability = rng.nextInt(1, 4)
+                        newTp[base + 1] = ((ability shl 4) or (pid and 0x0F)).toByte()
+                    }
+                    var o = base + 8
+                    if (hasItem) {
+                        if (config.trainerItems && o + 2 <= newTp.size) {
+                            putU16(newTp, o, rng.nextInt(1, 650))
+                        }
+                        o += 2
+                    }
+                    if (hasMoves && config.trainerMoves) {
+                        for (m in 0 until 4) {
+                            if (o + m * 2 + 2 <= newTp.size) {
+                                putU16(newTp, o + m * 2, rng.nextInt(1, 621))
+                            }
+                        }
+                    }
                 }
-            }
-            if (trpoke.setFile(i, newTp)) {
-                n++
+                if (config.trainerDifficulty != RandomizerConfig.Difficulty.SIMILAR) {
+                    for (p in 0 until num) {
+                        val base = p * entrySize
+                        var lv = getU16(newTp, base + 2)
+                        lv = when (config.trainerDifficulty) {
+                            RandomizerConfig.Difficulty.WEAKER -> (lv - 2).coerceAtLeast(1)
+                            RandomizerConfig.Difficulty.STRONGER -> (lv + 3).coerceAtMost(100)
+                            RandomizerConfig.Difficulty.RIVAL_PLUS -> (lv + 5).coerceAtMost(100)
+                            else -> lv
+                        }
+                        putU16(newTp, base + 2, lv)
+                    }
+                }
+                if (trpoke.setFile(i, newTp)) n++
+            } catch (e: Exception) {
+                log.appendLine("trainer $i skip: ${e.message}")
             }
         }
-        // trdata unchanged; only rewrite trpoke in-place
         modified[OrasPaths.TRPOKE] = trpoke.save()
         log.appendLine("trainers patched: $n")
     }

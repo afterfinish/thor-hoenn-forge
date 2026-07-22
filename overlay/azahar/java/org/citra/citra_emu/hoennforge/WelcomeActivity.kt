@@ -22,6 +22,9 @@ class WelcomeActivity : AppCompatActivity() {
         val root = findViewById<android.view.View>(android.R.id.content)
         val checkbox = findViewById<CheckBox>(R.id.checkboxLegal)
         val button = findViewById<Button>(R.id.buttonContinue)
+        // Prevent AppCompat from tinting away our custom checkmark drawable
+        checkbox.buttonDrawable = getDrawable(R.drawable.hoenn_checkbox)
+        androidx.core.widget.CompoundButtonCompat.setButtonTintList(checkbox, null)
         button.isEnabled = false
         checkbox.setOnCheckedChangeListener { _, checked -> button.isEnabled = checked }
         button.setOnClickListener {

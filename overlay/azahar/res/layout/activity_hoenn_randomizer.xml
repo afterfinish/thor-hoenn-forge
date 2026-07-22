@@ -160,17 +160,14 @@
                     android:text="@string/hoenn_cat_wilds" style="@style/Hoenn.Text.CardTitle"
                     android:textColor="@color/hoenn_accent_300" />
                 <CheckBox android:id="@+id/cbWildSpecies" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_wild_species"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_species"
+                     />
                 <CheckBox android:id="@+id/cbWildLevels" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_wild_levels"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_levels"
+                     />
                 <CheckBox android:id="@+id/cbWildLegends" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_wild_legends"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_legends"
+                     />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/hoenn_opt_wild_theme" style="@style/Hoenn.Text.Caption" />
                 <RadioGroup android:id="@+id/rgWildTheme" android:layout_width="match_parent"
@@ -199,21 +196,17 @@
                     android:text="@string/hoenn_cat_trainers" style="@style/Hoenn.Text.CardTitle"
                     android:textColor="@color/hoenn_accent_300" />
                 <CheckBox android:id="@+id/cbTrainerParties" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_trainer_parties"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_parties"
+                     />
                 <CheckBox android:id="@+id/cbTrainerItems" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_trainer_items"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_items"
+                     />
                 <CheckBox android:id="@+id/cbTrainerMoves" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_trainer_moves"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_moves"
+                     />
                 <CheckBox android:id="@+id/cbTrainerAbilities" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                    android:paddingStart="10dp" android:text="@string/hoenn_opt_trainer_abilities"
-                    android:textColor="@color/hoenn_text" />
+                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_abilities"
+                     />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/hoenn_opt_trainer_difficulty" style="@style/Hoenn.Text.Caption" />
                 <RadioGroup android:id="@+id/rgDifficulty" android:layout_width="match_parent"
@@ -282,21 +275,17 @@
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:text="@string/hoenn_cat_personal" style="@style/Hoenn.Text.CardTitle" />
                     <CheckBox android:id="@+id/cbPersonalTypes" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_personal_types"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_types"
+                         />
                     <CheckBox android:id="@+id/cbPersonalStats" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_personal_stats"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_stats"
+                         />
                     <CheckBox android:id="@+id/cbPersonalAbilities" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_personal_abilities"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_abilities"
+                         />
                     <CheckBox android:id="@+id/cbPersonalTm" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_personal_tm"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_tm"
+                         />
                 </LinearLayout>
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -305,25 +294,20 @@
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:text="@string/hoenn_cat_moves" style="@style/Hoenn.Text.CardTitle" />
                     <CheckBox android:id="@+id/cbMoveTypes" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_move_types"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_move_types"
+                         />
                     <CheckBox android:id="@+id/cbMoveCats" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_move_cats"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_move_cats"
+                         />
                     <CheckBox android:id="@+id/cbLevelUp" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_level_up"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_level_up"
+                         />
                     <CheckBox android:id="@+id/cbEggMoves" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_egg_moves"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_egg_moves"
+                         />
                     <CheckBox android:id="@+id/cbTmList" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_tm_list"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_tm_list"
+                         />
                 </LinearLayout>
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -332,17 +316,14 @@
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:text="@string/hoenn_cat_misc" style="@style/Hoenn.Text.CardTitle" />
                     <CheckBox android:id="@+id/cbEvolutions" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_evolutions"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_evolutions"
+                         />
                     <CheckBox android:id="@+id/cbMarts" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_marts"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_marts"
+                         />
                     <CheckBox android:id="@+id/cbStaticGifts" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:button="@drawable/hoenn_checkbox"
-                        android:paddingStart="10dp" android:text="@string/hoenn_opt_static"
-                        android:textColor="@color/hoenn_text" />
+                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_static"
+                         />
                 </LinearLayout>
             </LinearLayout>
 
