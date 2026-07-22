@@ -3,7 +3,9 @@
   "version": 3,
   "notes": "Dual AMOLED layout, 3DS face buttons, L3 turbo, async+disk shaders.",
   "graphics": {
-    "resolution_factor": 3,
+    "resolution_factor": 4,
+    "filter_mode": false,
+    "texture_sampling": "nearest",
     "graphics_api": "vulkan",
     "new_3ds": true,
     "async_shader_compilation": true,
