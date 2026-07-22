@@ -2,13 +2,14 @@
 package org.citra.citra_emu.hoennforge
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import org.citra.citra_emu.R
 import org.citra.citra_emu.activities.EmulationActivity
 import org.citra.citra_emu.model.Game
@@ -16,14 +17,25 @@ import org.citra.citra_emu.ui.main.MainActivity
 import org.citra.citra_emu.utils.GameHelper
 
 class HomeActivity : AppCompatActivity() {
+    private lateinit var prefs: HoennPrefs
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = HoennPrefs(this)
-        if (!prefs.hasDump) {
-            startActivity(Intent(this, DumpPickerActivity::class.java))
+        prefs = HoennPrefs(this)
+
+        // Enforce onboarding order if user landed here early
+        if (!Onboarding.hasDataDirectory(this)) {
+            startActivity(Onboarding.intentTo(this, DataDirActivity::class.java))
             finish()
             return
         }
+        if (!prefs.hasDump) {
+            startActivity(Onboarding.intentTo(this, DumpPickerActivity::class.java))
+            finish()
+            return
+        }
+
+        Onboarding.ensureDirectoriesInitialized(this)
 
         setContentView(R.layout.activity_hoenn_home)
         findViewById<TextView>(R.id.textGame).text =
@@ -35,47 +47,94 @@ class HomeActivity : AppCompatActivity() {
             prefs.dumpRegion ?: "—",
         )
 
-        findViewById<Button>(R.id.buttonPlay).setOnClickListener {
-            playDump(prefs)
-        }
+        findViewById<Button>(R.id.buttonPlay).setOnClickListener { playDump() }
         findViewById<Button>(R.id.buttonChangeDump).setOnClickListener {
             prefs.clearDump()
-            startActivity(Intent(this, DumpPickerActivity::class.java))
+            startActivity(Onboarding.intentTo(this, DumpPickerActivity::class.java))
             finish()
         }
         findViewById<Button>(R.id.buttonAdvanced).setOnClickListener {
-            // Full Azahar UI for power users
             startActivity(Intent(this, MainActivity::class.java))
         }
     }
 
-    private fun playDump(prefs: HoennPrefs) {
-        val uriString = prefs.dumpUri ?: return
+    private fun playDump() {
+        val uriString = prefs.dumpUri
+        if (uriString.isNullOrBlank()) {
+            Toast.makeText(this, R.string.hoenn_game_invalid, Toast.LENGTH_LONG).show()
+            return
+        }
         val uri = uriString.toUri()
         try {
-            ThorProfile.applyIfNeeded(prefs)
+            if (!Onboarding.hasDataDirectory(this)) {
+                startActivity(Onboarding.intentTo(this, DataDirActivity::class.java))
+                finish()
+                return
+            }
+            Onboarding.ensureDirectoriesInitialized(this)
+
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            } catch (_: SecurityException) {
+            }
+
+            try {
+                ThorProfile.applyIfNeeded(prefs)
+            } catch (e: Exception) {
+                Log.w(TAG, "Thor profile apply failed (continuing)", e)
+            }
+
+            // addedToLibrary=false avoids GameHelper lateinit crash (prefs only set in getGames())
             val game = GameHelper.getGame(
                 uri,
                 isInstalled = false,
-                addedToLibrary = true,
+                addedToLibrary = false,
                 mediaType = Game.MediaType.GAME_CARD,
             )
+            Log.i(
+                TAG,
+                "Game valid=${game.valid} title=${game.title} path=${game.path} " +
+                    "titleId=${game.titleId} regions=${game.regions}",
+            )
+
             if (!game.valid) {
-                Toast.makeText(this, R.string.hoenn_game_invalid, Toast.LENGTH_LONG).show()
+                val exists = DocumentFile.fromSingleUri(this, uri)?.exists() == true
+                Toast.makeText(
+                    this,
+                    getString(
+                        R.string.hoenn_game_invalid_detail,
+                        exists.toString(),
+                        uri.toString().take(80),
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
                 return
             }
-            val intent = Intent(this, EmulationActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                data = uri
-                putExtra("game", game)
-            }
-            startActivity(intent)
+
+            startActivity(
+                Intent(this, EmulationActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    data = uri
+                    putExtra("game", game)
+                },
+            )
         } catch (e: Exception) {
+            Log.e(TAG, "playDump failed", e)
             Toast.makeText(
                 this,
-                getString(R.string.hoenn_play_failed, e.message ?: "error"),
+                getString(
+                    R.string.hoenn_play_failed,
+                    e.javaClass.simpleName + ": " + (e.message ?: ""),
+                ),
                 Toast.LENGTH_LONG,
             ).show()
         }
+    }
+
+    companion object {
+        private const val TAG = "HoennForge"
     }
 }

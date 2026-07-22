@@ -60,6 +60,12 @@
         </activity>
 
         <activity
+            android:name="org.citra.citra_emu.hoennforge.DataDirActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name="org.citra.citra_emu.hoennforge.DumpPickerActivity"
             android:theme="@style/Theme.Citra.Main"
             android:exported="false"

@@ -40,6 +40,15 @@ class DumpPickerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Data folder must come first in onboarding
+        if (!Onboarding.hasDataDirectory(this)) {
+            startActivity(Onboarding.intentTo(this, DataDirActivity::class.java))
+            finish()
+            return
+        }
+        Onboarding.ensureDirectoriesInitialized(this)
+
         setContentView(R.layout.activity_hoenn_dump_picker)
         textStatus = findViewById(R.id.textStatus)
         progress = findViewById(R.id.progress)
@@ -58,7 +67,7 @@ class DumpPickerActivity : AppCompatActivity() {
             prefs.dumpTitleId = OrasTitles.formatTitleId(success.titleId)
             prefs.dumpGameLabel = success.entry.label
             prefs.dumpRegion = success.entry.region
-            startActivity(Intent(this, HomeActivity::class.java))
+            startActivity(Onboarding.intentTo(this, HomeActivity::class.java))
             finish()
         }
     }
