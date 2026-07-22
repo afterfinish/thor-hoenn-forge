@@ -43,13 +43,14 @@ object ThorProfile {
         }
 
         // --- Graphics / performance ---
-        IntSetting.RESOLUTION_FACTOR.int = 3
+        // 4x internal res ≈ 1600×960 top screen (closest integer under 1080p)
+        IntSetting.RESOLUTION_FACTOR.int = 4
         IntSetting.GRAPHICS_API.int = 2 // Vulkan
         BooleanSetting.NEW_3DS.boolean = true
-        // Nearest (not linear) — linear causes halos / white fringes on grass & sprites at 3x
+        // Nearest display filter + force nearest sampling (game-controlled still blurs grass)
         BooleanSetting.LINEAR_FILTERING.boolean = false
-        // Upscale texture filters (Anime4K etc.) off — keep crisp pixels
-        IntSetting.TEXTURE_FILTER.int = 0 // NoFilter
+        IntSetting.TEXTURE_SAMPLING.int = 1 // NearestNeighbor
+        IntSetting.TEXTURE_FILTER.int = 0 // NoFilter (Anime4K etc. off)
         // Asynchronous shader compilation + persistent shader storage
         BooleanSetting.ASYNC_SHADERS.boolean = true
         BooleanSetting.DISK_SHADER_CACHE.boolean = true
@@ -91,6 +92,7 @@ object ThorProfile {
             IntSetting.ORIENTATION_OPTION,
             IntSetting.TURBO_LIMIT,
             IntSetting.TEXTURE_FILTER,
+            IntSetting.TEXTURE_SAMPLING,
             BooleanSetting.NEW_3DS,
             BooleanSetting.LINEAR_FILTERING,
             BooleanSetting.ASYNC_SHADERS,

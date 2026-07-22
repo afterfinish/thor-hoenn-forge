@@ -2,25 +2,24 @@
 package org.citra.citra_emu.hoennforge
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
+import org.citra.citra_emu.hoennforge.randomizer.RandomizerEngine
 import java.io.File
 
 /**
- * Prepare pipeline shell: copy → extract → randomize → finalize.
- *
- * v1: UI stages + config persistence. Real RomFS extract / pk3DS modules
- * land in later engine work; vanilla skips randomize stage quickly.
- * Original dump URI is never written.
+ * Prepare pipeline: extract needed RomFS files → apply randomizer → LayeredFS deploy.
+ * Original dump is never modified.
  */
 class PrepareActivity : AppCompatActivity() {
     private lateinit var prefs: HoennPrefs
@@ -28,7 +27,7 @@ class PrepareActivity : AppCompatActivity() {
     private lateinit var textDetail: TextView
     private lateinit var progress: ProgressBar
     private lateinit var buttonCancel: Button
-    private var cancelled = false
+    @Volatile private var cancelled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,12 +46,11 @@ class PrepareActivity : AppCompatActivity() {
 
         val config = prefs.randomizerConfig
         textDetail.text = if (config.enabled) {
-            // Honest: options are saved; game-data rewrite engine not shipped yet
             getString(
                 R.string.hoenn_prepare_detail_random,
                 config.modeLabel(),
                 config.seedDisplay(),
-            ) + "\n\n" + getString(R.string.hoenn_prepare_engine_wip)
+            )
         } else {
             getString(R.string.hoenn_prepare_detail_vanilla)
         }
@@ -70,74 +68,78 @@ class PrepareActivity : AppCompatActivity() {
     }
 
     private suspend fun runPipeline(config: RandomizerConfig) {
-        val stages = if (config.enabled) {
-            listOf(
-                Stage(R.string.hoenn_prepare_stage_copy, 15),
-                Stage(R.string.hoenn_prepare_stage_extract, 35),
-                Stage(R.string.hoenn_prepare_stage_randomize, 70),
-                Stage(R.string.hoenn_prepare_stage_finalize, 100),
-            )
-        } else {
-            listOf(
-                Stage(R.string.hoenn_prepare_stage_copy, 40),
-                Stage(R.string.hoenn_prepare_stage_finalize, 100),
-            )
-        }
-
         try {
-            withContext(Dispatchers.IO) {
-                ensureWorkDirs()
-                // Persist config for Home + future engine
-                prefs.randomizerConfig = config
-            }
-
-            for (stage in stages) {
-                if (cancelled) return
-                textStage.setText(stage.labelRes)
-                progress.isIndeterminate = false
-                progress.progress = stage.progressTarget.coerceAtMost(95)
-                // Shell delay — real work replaces this
-                delay(if (config.enabled) 450L else 250L)
-            }
-
+            progress.isIndeterminate = false
+            progress.progress = 0
             if (cancelled) return
 
-            // Write a marker so we know prepare completed (engine will expand this)
-            withContext(Dispatchers.IO) {
-                val marker = File(filesDir, "prepared/last_run.json")
-                marker.parentFile?.mkdirs()
-                marker.writeText(
-                    """
-                    {
-                      "titleId": "${prefs.dumpTitleId}",
-                      "game": "${prefs.dumpGameLabel}",
-                      "dumpUri": "${prefs.dumpUri}",
-                      "config": ${config.toJsonString()}
+            val titleId = prefs.dumpTitleId?.replace("0x", "")?.uppercase()
+                ?: error("Missing title id")
+            val uri = prefs.dumpUri?.toUri() ?: error("Missing dump URI")
+
+            val outcome = withContext(Dispatchers.IO) {
+                File(filesDir, "prepared").mkdirs()
+                prefs.randomizerConfig = config
+                val engine = RandomizerEngine(
+                    this@PrepareActivity,
+                    config,
+                    titleId,
+                    uri,
+                ) { stage, pct ->
+                    runOnUiThread {
+                        if (!isFinishing) {
+                            textStage.text = stage
+                            progress.progress = pct.coerceIn(0, 100)
+                        }
                     }
-                    """.trimIndent(),
-                )
-                prefs.preparedReady = true
+                }
+                engine.run()
             }
 
-            progress.progress = 100
-            textStage.setText(R.string.hoenn_prepare_done)
-            delay(300)
-            if (!cancelled) {
+            if (cancelled || isFinishing) return
+
+            if (outcome.ok) {
+                Log.i(TAG, "Prepare ok: ${outcome.message}")
+                withContext(Dispatchers.IO) {
+                    val marker = File(filesDir, "prepared/last_run.json")
+                    marker.parentFile?.mkdirs()
+                    marker.writeText(
+                        """
+                        {
+                          "titleId": "${prefs.dumpTitleId}",
+                          "game": "${prefs.dumpGameLabel}",
+                          "dumpUri": "${prefs.dumpUri}",
+                          "config": ${config.toJsonString()},
+                          "engine": ${if (config.enabled) "\"layeredfs\"" else "\"vanilla\""}
+                        }
+                        """.trimIndent(),
+                    )
+                    prefs.preparedReady = true
+                }
+                progress.progress = 100
+                textStage.setText(R.string.hoenn_prepare_done)
                 startActivity(Onboarding.intentTo(this@PrepareActivity, HomeActivity::class.java))
                 finish()
+            } else {
+                Log.e(TAG, "Prepare failed", outcome.error)
+                prefs.preparedReady = false
+                textStage.text = getString(R.string.hoenn_prepare_failed, outcome.message)
+                progress.progress = 0
+                buttonCancel.setText(R.string.hoenn_prepare_back)
             }
         } catch (e: Exception) {
-            textStage.text = getString(R.string.hoenn_prepare_failed, e.message ?: e.javaClass.simpleName)
+            Log.e(TAG, "Prepare crashed", e)
+            textStage.text = getString(
+                R.string.hoenn_prepare_failed,
+                e.message ?: e.javaClass.simpleName,
+            )
             progress.progress = 0
             buttonCancel.setText(R.string.hoenn_prepare_back)
             prefs.preparedReady = false
         }
     }
 
-    private fun ensureWorkDirs() {
-        File(filesDir, "prepared").mkdirs()
-        File(filesDir, "work").mkdirs()
+    companion object {
+        private const val TAG = "HoennForge"
     }
-
-    private data class Stage(val labelRes: Int, val progressTarget: Int)
 }

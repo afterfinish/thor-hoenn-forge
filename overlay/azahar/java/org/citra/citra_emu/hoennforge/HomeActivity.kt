@@ -144,8 +144,7 @@ class HomeActivity : AppCompatActivity() {
                 return
             }
 
-            // Engine note: until randomizer extract/repack ships, Play still boots
-            // the original dump URI. Config is saved for the prepare pipeline.
+            // Boot original dump; Azahar LayeredFS applies load/mods/{titleId}/romfs/
             startActivity(
                 Intent(this, EmulationActivity::class.java).apply {
                     action = Intent.ACTION_VIEW
