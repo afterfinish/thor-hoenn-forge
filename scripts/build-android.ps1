@@ -42,6 +42,26 @@ foreach ($pair in @(
         Write-Host "Applied $($pair[0])"
     }
 }
+# Hook LDR CRO load/unload so freecam suspends in battle and re-applies on field return
+$ldrRo = Join-Path $Azahar "src\core\hle\service\ldr_ro\ldr_ro.cpp"
+if (Test-Path $ldrRo) {
+    $ldr = Get-Content $ldrRo -Raw
+    if ($ldr -notmatch "hoenn_freecam\.h") {
+        $ldr = $ldr -replace '(#include "core/hle/service/ldr_ro/ldr_ro\.h")', "`$1`r`n#include `"core/hoenn_freecam.h`""
+    }
+    if ($ldr -notmatch "OnModuleLoaded") {
+        $ldr = $ldr -replace `
+            '(LOG_INFO\(Service_LDR, "CRO \\"\{\}\\" loaded at 0x\{:08X\}, fixed_end=0x\{:08X\}", cro\.ModuleName\(\),\s*\r?\n\s*cro_address, cro_address \+ fix_size\);)', `
+            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleLoaded(cro.ModuleName());"
+        $ldr = $ldr -replace `
+            '(LOG_INFO\(Service_LDR, "Unloading CRO \\"\{\}\\"", cro\.ModuleName\(\)\);)', `
+            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleUnloaded(cro.ModuleName());"
+        [System.IO.File]::WriteAllText($ldrRo, $ldr)
+        Write-Host "Patched ldr_ro.cpp freecam battle/field hooks"
+    } else {
+        Write-Host "ldr_ro.cpp freecam hooks already present"
+    }
+}
 # Ensure citra_core CMakeLists lists hoenn_freecam (emulator tree is gitignored)
 $coreCmake = Join-Path $Azahar "src\core\CMakeLists.txt"
 if (Test-Path $coreCmake) {
@@ -63,9 +83,22 @@ if (Test-Path $nlPath) {
     /** Hoenn Forge: right-stick free-look (experimental overworld camera). */
     external fun setHoennFreelook(enabled: Boolean)
     external fun isHoennFreelookEnabled(): Boolean
+
+    /** Hoenn Forge: L/R continuous zoom assist. */
+    external fun setHoennZoomAssist(enabled: Boolean)
+    external fun isHoennZoomAssistEnabled(): Boolean
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
-        Write-Host "Patched NativeLibrary.kt freelook JNI"
+        Write-Host "Patched NativeLibrary.kt freelook/zoom JNI"
+    } elseif ($nl -notmatch "setHoennZoomAssist") {
+        $nl = $nl -replace "(external fun isHoennFreelookEnabled\(\): Boolean)", @"
+`$1
+
+    external fun setHoennZoomAssist(enabled: Boolean)
+    external fun isHoennZoomAssistEnabled(): Boolean
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt zoom JNI"
     }
 }
 # native.cpp freelook implementation
@@ -81,18 +114,47 @@ if (Test-Path $nativeCpp) {
 void Java_org_citra_citra_1emu_NativeLibrary_setHoennFreelook([[maybe_unused]] JNIEnv* env,
                                                              [[maybe_unused]] jobject obj,
                                                              jboolean enabled) {
-    Hoenn::FreeCam::GetInstance().SetEnabled(static_cast<bool>(enabled));
+    Hoenn::FreeCam::GetInstance().SetFreelookEnabled(static_cast<bool>(enabled));
 }
 
 jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennFreelookEnabled(
     [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
-    return static_cast<jboolean>(Hoenn::FreeCam::GetInstance().IsEnabled());
+    return static_cast<jboolean>(Hoenn::FreeCam::GetInstance().IsFreelookEnabled());
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennZoomAssist([[maybe_unused]] JNIEnv* env,
+                                                               [[maybe_unused]] jobject obj,
+                                                               jboolean enabled) {
+    Hoenn::FreeCam::GetInstance().SetZoomAssistEnabled(static_cast<bool>(enabled));
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jboolean>(Hoenn::FreeCam::GetInstance().IsZoomAssistEnabled());
 }
 
 '@
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
-        Write-Host "Patched native.cpp freelook JNI"
+        Write-Host "Patched native.cpp freelook/zoom JNI"
+    } elseif ($nc -notmatch "setHoennZoomAssist") {
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennZoomAssist([[maybe_unused]] JNIEnv* env,
+                                                               [[maybe_unused]] jobject obj,
+                                                               jboolean enabled) {
+    Hoenn::FreeCam::GetInstance().SetZoomAssistEnabled(static_cast<bool>(enabled));
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jboolean>(Hoenn::FreeCam::GetInstance().IsZoomAssistEnabled());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp zoom JNI"
     }
 }
 $Main = Join-Path $Android "app\src\main"

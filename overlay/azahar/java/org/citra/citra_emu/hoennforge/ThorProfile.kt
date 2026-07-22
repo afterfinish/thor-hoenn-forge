@@ -8,6 +8,7 @@ import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.display.ScreenLayout
 import org.citra.citra_emu.display.SecondaryDisplayLayout
+import org.citra.citra_emu.display.StereoMode
 import org.citra.citra_emu.features.hotkeys.Hotkey
 import org.citra.citra_emu.features.settings.model.BooleanSetting
 import org.citra.citra_emu.features.settings.model.IntSetting
@@ -17,12 +18,13 @@ import org.citra.citra_emu.features.settings.utils.SettingsFile
 import org.citra.citra_emu.utils.EmulationMenuSettings
 
 /**
- * Thor-oriented defaults for Azahar on dual-screen AYN Thor.
+ * Thor-oriented defaults for Azahar on dual-screen AYN Thor (Adreno).
  *
- * - Dual display: primary = top only, secondary = bottom only
- * - Overlay off; Odin Controller with **Nintendo / 3DS face layout**
- * - L3 (left stick click) = turbo / fast-forward toggle
- * - Async shader compilation + disk shader cache (shader storage) ON
+ * Graphics tuned from Azahar Android guides + community ORAS notes:
+ * - Vulkan + async shaders + disk cache
+ * - Mono rendering (3D OFF) + disable right-eye render (big FPS win vs stereo default)
+ * - Accurate mul for ORAS white/blue Pokémon (Adreno)
+ * - Skip duplicate frames, no VSync lag, frame limit at 100%
  */
 object ThorProfile {
     private const val TAG = "HoennForge"
@@ -42,24 +44,63 @@ object ThorProfile {
             Log.w(TAG, "loadSettings before Thor profile", e)
         }
 
-        // --- Graphics / performance ---
-        // 4x internal res ≈ 1600×960 top screen (closest integer under 1080p)
+        // --- Graphics / performance (Azahar Android setup + handheld advice) ---
+        // 4x ≈ 1600×960 top; same class as common Citra 4x setups on Thor
         IntSetting.RESOLUTION_FACTOR.int = 4
         IntSetting.GRAPHICS_API.int = 2 // Vulkan
         BooleanSetting.NEW_3DS.boolean = true
-        // Nearest display filter + force nearest sampling (game-controlled still blurs grass)
+        BooleanSetting.CPU_JIT.boolean = true
+        IntSetting.CPU_CLOCK_SPEED.int = 100
+
+        // Sharp pixels for pixel-art / grass
         BooleanSetting.LINEAR_FILTERING.boolean = false
         IntSetting.TEXTURE_SAMPLING.int = 1 // NearestNeighbor
-        IntSetting.TEXTURE_FILTER.int = 0 // NoFilter (Anime4K etc. off)
-        // Fixes white Mudkip / blue Pokémon on Adreno+Vulkan (classic Citra/Azahar ORAS bug)
-        BooleanSetting.SHADERS_ACCURATE_MUL.boolean = true
-        // Asynchronous shader compilation + persistent shader storage
-        BooleanSetting.ASYNC_SHADERS.boolean = true
-        BooleanSetting.DISK_SHADER_CACHE.boolean = true
+        IntSetting.TEXTURE_FILTER.int = 0 // NoFilter
+
+        // ORAS Adreno: white/blue Pokémon fix (needs HW shaders)
         BooleanSetting.HW_SHADER.boolean = true
         BooleanSetting.SHADER_JIT.boolean = true
-        // Turbo speed when enabled via L3 (200 = 2x default in Azahar)
+        BooleanSetting.SHADERS_ACCURATE_MUL.boolean = true
+        BooleanSetting.SPIRV_SHADER_GEN.boolean = true
+        BooleanSetting.DISABLE_SPIRV_OPTIMIZER.boolean = true
+
+        // Shader stutter mitigation (Joey RH / Azahar guides)
+        BooleanSetting.ASYNC_SHADERS.boolean = true
+        BooleanSetting.DISK_SHADER_CACHE.boolean = true
+
+        // CRITICAL: Azahar default STEREOSCOPIC_3D_MODE=2 is SIDE_BY_SIDE_FULL —
+        // that renders *two* eyes. Force mono + drop right eye for ~2× fill-rate.
+        IntSetting.STEREOSCOPIC_3D_MODE.int = StereoMode.OFF.int
+        IntSetting.STEREOSCOPIC_3D_DEPTH.int = 0
+        BooleanSetting.DISABLE_RIGHT_EYE_RENDER.boolean = true
+        BooleanSetting.SWAP_EYES_3D.boolean = false
+
+        // Frame pacing: no vsync wait; cap at native (ORAS ~30)
+        BooleanSetting.VSYNC.boolean = false
+        BooleanSetting.USE_FRAME_LIMIT.boolean = true
+        IntSetting.FRAME_LIMIT.int = 100
+        BooleanSetting.USE_SKIP_DUPLICATE_FRAMES.boolean = true
+        BooleanSetting.SIMULATE_3DS_GPU_TIMINGS.boolean = false
+        IntSetting.DELAY_RENDER_THREAD_US.int = 0
+        BooleanSetting.DEBUG_RENDERER.boolean = false
+
+        // Audio: stretch helps when emulated FPS dips (avoids crackle)
+        BooleanSetting.ENABLE_AUDIO_STRETCHING.boolean = true
+        BooleanSetting.ENABLE_REALTIME_AUDIO.boolean = false
+
+        // No HD texture tax by default
+        BooleanSetting.CUSTOM_TEXTURES.boolean = false
+        BooleanSetting.PRELOAD_TEXTURES.boolean = false
+        BooleanSetting.ASYNC_CUSTOM_LOADING.boolean = true
+
+        // Turbo when L3 held/toggled
         IntSetting.TURBO_LIMIT.int = 300
+
+        // FPS overlay so the user can verify gains
+        BooleanSetting.PERF_OVERLAY_ENABLE.boolean = true
+        BooleanSetting.PERF_OVERLAY_SHOW_FPS.boolean = true
+        BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = true
+        BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = true
 
         // --- Dual display ---
         BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean = true
@@ -71,16 +112,15 @@ object ThorProfile {
         EmulationMenuSettings.showOverlay = false
         EmulationMenuSettings.swapScreens = false
 
-        // --- Controller: Nintendo / 3DS face layout + HAT d-pad + L3 turbo ---
+        // --- Controller ---
         try {
             InputBindingSetting.clearAllBindings()
-            // 3DS layout: A = right (east) = KEYCODE_BUTTON_A, B = bottom = KEYCODE_BUTTON_B
             InputBindingSetting.applyAutoMapBindings(
                 isNintendoLayout = true,
                 useAxisDpad = true,
             )
+            ensureCStickMapped()
             applyL3TurboHotkey()
-            // Start is reserved for Hoenn quick menu (save states), not 3DS Start
             unmap3dsStartButton()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply controller mappings", e)
@@ -95,15 +135,39 @@ object ThorProfile {
             IntSetting.TURBO_LIMIT,
             IntSetting.TEXTURE_FILTER,
             IntSetting.TEXTURE_SAMPLING,
+            IntSetting.STEREOSCOPIC_3D_MODE,
+            IntSetting.STEREOSCOPIC_3D_DEPTH,
+            IntSetting.FRAME_LIMIT,
+            IntSetting.CPU_CLOCK_SPEED,
+            IntSetting.DELAY_RENDER_THREAD_US,
             BooleanSetting.NEW_3DS,
+            BooleanSetting.CPU_JIT,
             BooleanSetting.LINEAR_FILTERING,
             BooleanSetting.SHADERS_ACCURATE_MUL,
             BooleanSetting.ASYNC_SHADERS,
             BooleanSetting.DISK_SHADER_CACHE,
             BooleanSetting.HW_SHADER,
             BooleanSetting.SHADER_JIT,
+            BooleanSetting.SPIRV_SHADER_GEN,
+            BooleanSetting.DISABLE_SPIRV_OPTIMIZER,
+            BooleanSetting.DISABLE_RIGHT_EYE_RENDER,
+            BooleanSetting.SWAP_EYES_3D,
+            BooleanSetting.VSYNC,
+            BooleanSetting.USE_FRAME_LIMIT,
+            BooleanSetting.USE_SKIP_DUPLICATE_FRAMES,
+            BooleanSetting.SIMULATE_3DS_GPU_TIMINGS,
+            BooleanSetting.DEBUG_RENDERER,
+            BooleanSetting.ENABLE_AUDIO_STRETCHING,
+            BooleanSetting.ENABLE_REALTIME_AUDIO,
+            BooleanSetting.CUSTOM_TEXTURES,
+            BooleanSetting.PRELOAD_TEXTURES,
+            BooleanSetting.ASYNC_CUSTOM_LOADING,
             BooleanSetting.ENABLE_SECONDARY_DISPLAY,
             BooleanSetting.SWAP_SCREEN,
+            BooleanSetting.PERF_OVERLAY_ENABLE,
+            BooleanSetting.PERF_OVERLAY_SHOW_FPS,
+            BooleanSetting.PERF_OVERLAY_SHOW_SPEED,
+            BooleanSetting.PERF_OVERLAY_BACKGROUND,
         )
         for (setting in toSave) {
             try {
@@ -121,15 +185,11 @@ object ThorProfile {
 
         Log.i(
             TAG,
-            "Thor profile: dual screens, overlay off, 3DS face layout, " +
-                "L3=turbo, linear_filter=false, accurate_mul=true, async_shaders=true",
+            "Thor profile: Vulkan 4x, stereo OFF, disable_right_eye=true, " +
+                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, FPS overlay on",
         )
     }
 
-    /**
-     * Map left stick click (L3 / KEYCODE_BUTTON_THUMBL) to turbo toggle hotkey.
-     * Hotkey enable is left empty so the binding works without a modifier.
-     */
     private fun applyL3TurboHotkey() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
         val hostKey = "${INPUT_MAPPING_PREFIX}_HostAxis_${KeyEvent.KEYCODE_BUTTON_THUMBL}"
@@ -138,7 +198,6 @@ object ThorProfile {
         val turboCode = Hotkey.TURBO_LIMIT.button.toString()
 
         prefs.edit()
-            // Empty enable key = hotkeys always active (see HotkeyUtility)
             .putString(Settings.HOTKEY_ENABLE, "")
             .putString(Settings.HOTKEY_TURBO_LIMIT, "Button L3")
             .putStringSet(hostKey, mutableSetOf(turboCode))
@@ -148,7 +207,32 @@ object ThorProfile {
         Log.i(TAG, "Mapped L3 ($hostKey) -> turbo hotkey $turboCode")
     }
 
-    /** Start on Thor opens Hoenn menu; do not also send 3DS Start. */
+    private fun ensureCStickMapped() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+        val editor = prefs.edit()
+        bindAxis(editor, android.view.MotionEvent.AXIS_Z, NativeLibrary.ButtonType.STICK_C, 0, false)
+        bindAxis(editor, android.view.MotionEvent.AXIS_RZ, NativeLibrary.ButtonType.STICK_C, 1, false)
+        bindAxis(editor, android.view.MotionEvent.AXIS_RX, NativeLibrary.ButtonType.STICK_C, 0, false)
+        bindAxis(editor, android.view.MotionEvent.AXIS_RY, NativeLibrary.ButtonType.STICK_C, 1, false)
+        editor.apply()
+        Log.i(TAG, "C-Stick: mapped AXIS_Z/RZ and AXIS_RX/RY -> STICK_C")
+    }
+
+    private fun bindAxis(
+        editor: android.content.SharedPreferences.Editor,
+        axis: Int,
+        guestStick: Int,
+        guestOrientation: Int,
+        inverted: Boolean,
+    ) {
+        val hostKey = "${INPUT_MAPPING_PREFIX}_HostAxis_$axis"
+        val guestCode = guestStick.toString()
+        editor.putStringSet(hostKey, mutableSetOf(guestCode))
+        editor.putInt(InputBindingSetting.getInputAxisButtonKey(axis), guestStick)
+        editor.putInt(InputBindingSetting.getInputAxisOrientationKey(axis), guestOrientation)
+        editor.putBoolean(InputBindingSetting.getInputAxisInvertedKey(axis), inverted)
+    }
+
     private fun unmap3dsStartButton() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
         val hostKey = "${INPUT_MAPPING_PREFIX}_HostAxis_${KeyEvent.KEYCODE_BUTTON_START}"

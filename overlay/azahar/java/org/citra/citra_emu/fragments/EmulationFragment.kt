@@ -581,12 +581,16 @@ class EmulationFragment :
             return
         }
         val next = !prefs.freelookEnabled
-        prefs.freelookEnabled = next
-        try {
-            NativeLibrary.setHoennFreelook(next)
-        } catch (e: Exception) {
-            Log.error("[HoennForge] freelook native: $e")
+        val ok = org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(titleId, next)
+        if (!ok) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_zoom_failed,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
         }
+        prefs.freelookEnabled = next
         Toast.makeText(
             requireContext(),
             if (next) {
@@ -610,8 +614,8 @@ class EmulationFragment :
             return
         }
         val next = !prefs.cameraZoomAssistEnabled
-        val ok = org.citra.citra_emu.hoennforge.HoennFreecam.apply(titleId, next)
-        if (!ok && next) {
+        val ok = org.citra.citra_emu.hoennforge.HoennFreecam.applyZoomAssist(titleId, next)
+        if (!ok) {
             Toast.makeText(
                 requireContext(),
                 R.string.hoenn_menu_zoom_failed,
@@ -637,14 +641,10 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(game.titleId)) return
         if (prefs.cameraZoomAssistEnabled) {
-            org.citra.citra_emu.hoennforge.HoennFreecam.apply(game.titleId, true)
+            org.citra.citra_emu.hoennforge.HoennFreecam.applyZoomAssist(game.titleId, true)
         }
         if (prefs.freelookEnabled) {
-            try {
-                NativeLibrary.setHoennFreelook(true)
-            } catch (e: Exception) {
-                Log.error("[HoennForge] freelook restore: $e")
-            }
+            org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(game.titleId, true)
         }
     }
 

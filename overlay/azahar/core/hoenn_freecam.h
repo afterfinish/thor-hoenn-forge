@@ -1,7 +1,8 @@
-// Copyright Hoenn Forge — ORAS right-stick free look (experimental)
+// Copyright Hoenn Forge — ORAS free look + zoom assist
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include "common/common_types.h"
 #include "core/frontend/input.h"
 
@@ -12,44 +13,62 @@ class System;
 namespace Hoenn {
 
 /**
- * Experimental free-look for ORAS using the overworld camera object.
- * Driven by the physical right stick (C-Stick mapping).
+ * Overworld freelook (stick Y → pitch) + zoom (L/R → FOV).
  *
- * Not a full code patch: rewrites camera fields each tick. Works best in
- * free-roam overworld; dynamic cameras (Mauville, gyms, cutscenes) may ignore it.
+ * Writes only the official camera object at *0x085F67DC.
+ * After battle the slot often points at a dead object (FOV=0). We then
+ * *rebind* the slot (one pointer write) to a nearby live camera — same
+ * effect as entering a building, without touching random heap FOV fields.
  */
 class FreeCam {
 public:
     static FreeCam& GetInstance();
 
-    void SetEnabled(bool enabled);
-    bool IsEnabled() const;
+    void SetFreelookEnabled(bool enabled);
+    bool IsFreelookEnabled() const;
+    void SetZoomAssistEnabled(bool enabled);
+    bool IsZoomAssistEnabled() const;
 
-    void SetSensitivity(float sensitivity);
+    void SetEnabled(bool enabled) {
+        SetFreelookEnabled(enabled);
+    }
+    bool IsEnabled() const {
+        return IsFreelookEnabled();
+    }
+
+    void SetSensitivity(float s);
     float GetSensitivity() const;
-
     void SetInvertX(bool invert);
     void SetInvertY(bool invert);
 
-    /// Call periodically while the game is running (e.g. from cheat engine tick).
     void Tick(Core::System& system, u32 process_id);
+    void OnModuleLoaded(std::string_view module_name);
+    void OnModuleUnloaded(std::string_view module_name);
 
 private:
     FreeCam() = default;
 
-    bool enabled = false;
-    float sensitivity = 2.5f;
+    bool freelook = false;
+    bool zoom_assist = false;
+    float sensitivity = 3.0f;
     bool invert_x = false;
     bool invert_y = false;
 
-    // Accumulated look angles (radians)
-    float yaw = 0.f;
-    float pitch = 0.15f; // slight downward look
+    float user_fov = 480.f;
+    float pitch = -12.74f;
 
-    // Last applied camera base (for reset detection)
-    u32 last_cam = 0;
+    bool in_battle = false;
+    u64 quiet_until = 0;
+    u64 next_rebind_attempt = 0;
+    u32 zero_fov_streak = 0;
+    u32 diag = 0;
 
     std::unique_ptr<Input::AnalogDevice> c_stick;
+    std::unique_ptr<Input::ButtonDevice> btn_l;
+    std::unique_ptr<Input::ButtonDevice> btn_r;
+
+    void EnsureDevices();
+    bool TryRebindLiveCamera(Core::System& system, u32 process_id);
 };
 
 } // namespace Hoenn

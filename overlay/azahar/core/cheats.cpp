@@ -2,21 +2,25 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <fmt/format.h>
 #include "common/file_util.h"
+#include "common/logging/log.h"
 #include "core/cheats/cheats.h"
 #include "core/cheats/gateway_cheat.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hoenn_freecam.h"
+#include "core/hle/kernel/process.h"
 
 namespace Cheats {
 
-// Luma3DS uses this interval for applying cheats, so to keep consistent behavior
-// we use the same value
+// Luma3DS uses this interval for applying cheats
 constexpr u64 run_interval_ticks = 50'000'000;
+// Freecam ~15Hz when tools on (enough for L/R + stick; lower CPU than 30–60Hz)
+constexpr u64 freecam_interval_ticks = 16'000'000;
 
 CheatEngine::CheatEngine(Core::System& system_) : system{system_} {}
 
@@ -26,8 +30,8 @@ CheatEngine::~CheatEngine() {
     }
 }
 
-void CheatEngine::Connect(u32 process_id) {
-    this->process_id = process_id;
+void CheatEngine::Connect(u32 process_id_) {
+    this->process_id = process_id_;
     event = system.CoreTiming().RegisterEvent(
         "CheatCore::run_event",
         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
@@ -105,6 +109,22 @@ void CheatEngine::LoadCheatFile(u64 title_id) {
 }
 
 void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cycles_late) {
+    if (!system.Kernel().GetProcessById(process_id)) {
+        auto list = system.Kernel().GetProcessList();
+        for (const auto& p : list) {
+            if (p) {
+                process_id = p->process_id;
+                break;
+            }
+        }
+        if (!system.Kernel().GetProcessById(process_id)) {
+            auto cur = system.Kernel().GetCurrentProcess();
+            if (cur) {
+                process_id = cur->process_id;
+            }
+        }
+    }
+
     {
         std::shared_lock lock{cheats_list_mutex};
         for (const auto& cheat : cheats_list) {
@@ -113,15 +133,24 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
             }
         }
     }
-    // Hoenn Forge free-look (right stick) — run alongside cheats
-    if (Hoenn::FreeCam::GetInstance().IsEnabled()) {
-        Hoenn::FreeCam::GetInstance().Tick(system, process_id);
+
+    auto& cam = Hoenn::FreeCam::GetInstance();
+    if (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()) {
+        cam.Tick(system, process_id);
     }
-    // Faster tick while free-look is on (~20 Hz) for smoother stick response
-    const u64 interval = Hoenn::FreeCam::GetInstance().IsEnabled()
-                             ? (run_interval_ticks / 4)
-                             : run_interval_ticks;
-    system.CoreTiming().ScheduleEvent(interval - cycles_late, event);
+
+    // NEVER schedule 0 or underflow — that was burning freecam settle/recovery in <100ms
+    const u64 base = (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled())
+                         ? freecam_interval_ticks
+                         : run_interval_ticks;
+    u64 next = base;
+    if (cycles_late > 0 && static_cast<u64>(cycles_late) < base) {
+        next = base - static_cast<u64>(cycles_late);
+    }
+    // Floor so we can't spin the event loop
+    constexpr u64 min_gap = 1'000'000;
+    next = std::max(next, min_gap);
+    system.CoreTiming().ScheduleEvent(next, event);
 }
 
 } // namespace Cheats

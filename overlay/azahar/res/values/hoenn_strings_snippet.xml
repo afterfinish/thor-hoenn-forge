@@ -94,12 +94,12 @@
     <string name="hoenn_menu_slot_empty">That slot is empty</string>
     <string name="hoenn_menu_zoom_on">Camera zoom assist: On</string>
     <string name="hoenn_menu_zoom_off">Camera zoom assist: Off</string>
-    <string name="hoenn_menu_zoom_enabled_toast">Zoom assist on — L zoom out, R zoom in, wider FOV. Enter/exit a building if nothing changes.</string>
+    <string name="hoenn_menu_zoom_enabled_toast">Zoom assist on — hold L to zoom out, hold R to zoom in (continuous). Milder FOV than before. Enter/exit a building if nothing changes.</string>
     <string name="hoenn_menu_zoom_disabled_toast">Camera zoom assist off</string>
-    <string name="hoenn_menu_zoom_failed">Could not apply zoom assist cheats</string>
+    <string name="hoenn_menu_zoom_failed">Could not enable camera tool</string>
     <string name="hoenn_menu_freelook_on">Free look (right stick): On</string>
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
-    <string name="hoenn_menu_freelook_enabled_toast">Free look on — move the right stick to look around. Experimental; may fail in Mauville, gyms, cutscenes. Enter/exit a building if needed.</string>
+    <string name="hoenn_menu_freelook_enabled_toast">Free look on — move the right stick to orbit the camera. Works best outdoors. Try with zoom assist off first. Mauville/gyms may ignore it.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <!-- Play mode -->
