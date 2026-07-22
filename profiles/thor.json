@@ -1,13 +1,15 @@
 {
   "name": "AYN Thor defaults",
-  "version": 2,
-  "notes": "Dual AMOLED: primary=top only, secondary=bottom only. Odin Controller Xbox+HAT. Overlay off.",
+  "version": 3,
+  "notes": "Dual AMOLED layout, 3DS face buttons, L3 turbo, async+disk shaders.",
   "graphics": {
     "resolution_factor": 3,
     "graphics_api": "vulkan",
     "new_3ds": true,
-    "async_shaders": true,
-    "disk_shader_cache": true
+    "async_shader_compilation": true,
+    "use_disk_shader_cache": true,
+    "use_hw_shader": true,
+    "use_shader_jit": true
   },
   "layout": {
     "enable_secondary_display": true,
@@ -18,8 +20,11 @@
   },
   "controls": {
     "device": "Odin Controller",
-    "auto_map": "xbox_face_buttons_hat_dpad",
+    "face_buttons": "nintendo_3ds_layout",
+    "dpad": "hat_axis",
     "circle_pad": "left_stick_xy",
-    "c_stick": "right_stick_z_rz"
+    "c_stick": "right_stick_z_rz",
+    "l3_hotkey": "turbo_toggle",
+    "turbo_limit_percent": 300
   }
 }
