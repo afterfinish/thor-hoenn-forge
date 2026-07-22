@@ -1,66 +1,134 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="@drawable/hoenn_bg_screen"
+    android:padding="@dimen/hoenn_margin_outer">
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:orientation="horizontal">
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="@string/hoenn_home_title"
-            android:textSize="24sp"
-            android:textStyle="bold" />
-        <TextView
-            android:id="@+id/textGame"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-        <TextView
-            android:id="@+id/textMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textSize="15sp" />
-        <TextView
-            android:id="@+id/textMeta"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="14sp" />
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
             android:layout_weight="1"
-            android:minHeight="24dp" />
-        <Button
-            android:id="@+id/buttonPlay"
-            android:layout_width="match_parent"
+            android:text="@string/hoenn_brand"
+            style="@style/Hoenn.Text.Brand" />
+        <TextView
+            android:id="@+id/textFreeSpace"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minHeight="56dp"
-            android:text="@string/hoenn_play" />
-        <Button
-            android:id="@+id/buttonNewRun"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/hoenn_new_run" />
-        <Button
-            android:id="@+id/buttonChangeDump"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/hoenn_change_dump" />
-        <Button
-            android:id="@+id/buttonAdvanced"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/hoenn_advanced" />
+            style="@style/Hoenn.Text.Caption" />
     </LinearLayout>
-</ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="40dp"
+        android:orientation="horizontal"
+        android:baselineAligned="false">
+
+        <!-- Continue card -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.25"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/hoenn_bg_card"
+            android:orientation="vertical"
+            android:padding="24dp">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/hoenn_continue_adventure"
+                    style="@style/Hoenn.Text.Accent"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.08"
+                    android:textSize="12sp" />
+                <TextView
+                    android:id="@+id/chipMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/hoenn_chip_muted"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:textColor="@color/hoenn_text"
+                    android:textSize="12sp" />
+            </LinearLayout>
+            <TextView
+                android:id="@+id/textGame"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                style="@style/Hoenn.Text.Display"
+                android:textSize="26sp" />
+            <TextView
+                android:id="@+id/textMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                style="@style/Hoenn.Text.Muted" />
+            <TextView
+                android:id="@+id/textMeta"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="12dp"
+                style="@style/Hoenn.Text.Caption" />
+            <Button
+                android:id="@+id/buttonPlay"
+                style="@style/Hoenn.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_play" />
+        </LinearLayout>
+
+        <!-- Side actions -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.85"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+            <Button
+                android:id="@+id/buttonNewRun"
+                style="@style/Hoenn.Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_new_run"
+                android:gravity="start|center_vertical"
+                android:paddingStart="20dp" />
+            <Button
+                android:id="@+id/buttonChangeDump"
+                style="@style/Hoenn.Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_change_dump"
+                android:gravity="start|center_vertical"
+                android:paddingStart="20dp" />
+            <Button
+                android:id="@+id/buttonAdvanced"
+                style="@style/Hoenn.Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_settings"
+                android:gravity="start|center_vertical"
+                android:paddingStart="20dp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/hoenn_home_footer"
+                style="@style/Hoenn.Text.Caption" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

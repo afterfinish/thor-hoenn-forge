@@ -60,7 +60,7 @@ class DataDirActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_hoenn_data_dir)
-        findViewById<TextView>(R.id.textBody).setText(R.string.hoenn_data_dir_body)
+        findViewById<TextView>(R.id.textStatus).text = ""
         findViewById<Button>(R.id.buttonPick).setOnClickListener {
             PermissionsHandler.compatibleSelectDirectory(pickDataDir)
         }

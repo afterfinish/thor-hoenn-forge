@@ -40,7 +40,19 @@ if (Test-Path $JavaSrc) {
     }
 }
 if (Test-Path (Join-Path $Overlay "res\layout")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\layout") | Out-Null
     Copy-Item (Join-Path $Overlay "res\layout\*") (Join-Path $Main "res\layout\") -Force
+}
+if (Test-Path (Join-Path $Overlay "res\drawable")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\drawable") | Out-Null
+    Copy-Item (Join-Path $Overlay "res\drawable\*") (Join-Path $Main "res\drawable\") -Force
+}
+foreach ($vals in @("hoenn_colors.xml", "hoenn_dimens.xml", "hoenn_styles.xml")) {
+    $src = Join-Path $Overlay "res\values\$vals"
+    if (Test-Path $src) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\values") | Out-Null
+        Copy-Item $src (Join-Path $Main "res\values\$vals") -Force
+    }
 }
 if (Test-Path (Join-Path $Overlay "AndroidManifest.xml")) {
     Copy-Item (Join-Path $Overlay "AndroidManifest.xml") (Join-Path $Main "AndroidManifest.xml") -Force

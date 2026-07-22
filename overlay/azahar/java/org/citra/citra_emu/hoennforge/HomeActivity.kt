@@ -46,12 +46,10 @@ class HomeActivity : AppCompatActivity() {
         val config = prefs.randomizerConfig
         findViewById<TextView>(R.id.textGame).text =
             prefs.dumpGameLabel ?: getString(R.string.app_name)
+        findViewById<TextView>(R.id.chipMode).text =
+            if (config.enabled) config.modeLabel() else getString(R.string.hoenn_chip_vanilla)
         findViewById<TextView>(R.id.textMode).text = if (config.enabled) {
-            getString(
-                R.string.hoenn_home_mode_random,
-                config.modeLabel(),
-                config.seedDisplay(),
-            ) + "\n" + getString(R.string.hoenn_home_randomizer_wip)
+            getString(R.string.hoenn_home_mode_random, config.modeLabel(), config.seedDisplay())
         } else {
             getString(R.string.hoenn_home_mode_vanilla)
         }
@@ -61,6 +59,15 @@ class HomeActivity : AppCompatActivity() {
             prefs.dumpTitleId ?: "—",
             prefs.dumpRegion ?: "—",
         )
+        findViewById<Button>(R.id.buttonPlay).text = getString(R.string.hoenn_continue)
+        try {
+            val free = android.os.StatFs(filesDir.absolutePath).availableBytes
+            val gb = free / (1024.0 * 1024.0 * 1024.0)
+            findViewById<TextView>(R.id.textFreeSpace).text =
+                getString(R.string.hoenn_free_space, String.format("%.1f", gb))
+        } catch (_: Exception) {
+            findViewById<TextView>(R.id.textFreeSpace).text = ""
+        }
 
         findViewById<Button>(R.id.buttonPlay).setOnClickListener { playDump() }
         findViewById<Button>(R.id.buttonNewRun).setOnClickListener { confirmNewRun() }

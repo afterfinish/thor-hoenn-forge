@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hoenn Forge design tokens (from design/exports/42-design-tokens.png) -->
+    <color name="hoenn_bg">#FF161826</color>
+    <color name="hoenn_surface">#FF232532</color>
+    <color name="hoenn_surface_elevated">#FF2A2C3C</color>
+    <color name="hoenn_text">#FFE9E9ED</color>
+    <color name="hoenn_muted">#FF9397AB</color>
+    <color name="hoenn_accent">#FF9184D9</color>
+    <color name="hoenn_accent_300">#FFB8AEF0</color>
+    <color name="hoenn_accent_800">#FF5C4FA8</color>
+    <color name="hoenn_accent_glow">#669184D9</color>
+    <color name="hoenn_success">#FF63C6A2</color>
+    <color name="hoenn_warning">#FFD8B46C</color>
+    <color name="hoenn_danger">#FFD67F72</color>
+    <color name="hoenn_stroke">#33FFFFFF</color>
+    <color name="hoenn_stroke_accent">#FF9184D9</color>
+    <color name="hoenn_progress_track">#FF2E3040</color>
+</resources>

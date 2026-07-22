@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="hoenn_margin_outer">32dp</dimen>
+    <dimen name="hoenn_space_8">8dp</dimen>
+    <dimen name="hoenn_space_12">12dp</dimen>
+    <dimen name="hoenn_space_16">16dp</dimen>
+    <dimen name="hoenn_space_24">24dp</dimen>
+    <dimen name="hoenn_space_32">32dp</dimen>
+    <dimen name="hoenn_radius_card">16dp</dimen>
+    <dimen name="hoenn_radius_btn">14dp</dimen>
+    <dimen name="hoenn_radius_chip">10dp</dimen>
+    <dimen name="hoenn_btn_height">56dp</dimen>
+    <dimen name="hoenn_row_min">48dp</dimen>
+    <dimen name="hoenn_stroke">2dp</dimen>
+</resources>

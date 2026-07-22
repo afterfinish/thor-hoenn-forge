@@ -1,7 +1,15 @@
     <!-- Hoenn Forge UI strings (injected into Azahar strings.xml by build script) -->
-    <string name="hoenn_welcome_title">Hoenn Forge</string>
-    <string name="hoenn_welcome_body">Unofficial fan project — not affiliated with Nintendo or The Pokémon Company.\n\nThis app does not include Pokémon Omega Ruby or Alpha Sapphire. You must select a dump of a game you own.\n\nPowered by the Azahar 3DS emulator core (GPL).</string>
-    <string name="hoenn_welcome_checkbox">I own this game and will provide my own dump.</string>
+    <string name="hoenn_brand">Hoenn Forge</string>
+    <string name="hoenn_step_1">Step 1 of 6</string>
+    <string name="hoenn_step_2">Step 2 of 6</string>
+    <string name="hoenn_step_3">Step 3 of 6</string>
+    <string name="hoenn_step_4">Step 4 of 6</string>
+    <string name="hoenn_step_5">Step 5 of 6</string>
+    <string name="hoenn_welcome_title">Welcome to Hoenn Forge</string>
+    <string name="hoenn_welcome_body">An unofficial fan project — not affiliated with Nintendo or The Pokémon Company. This app does not include Omega Ruby or Alpha Sapphire.\n\nYou bring a dump of a game you own; Hoenn Forge gives it a modern handheld home — tuned graphics, dual-screen play, and an optional randomizer.</string>
+    <string name="hoenn_welcome_checkbox">I\'ll provide a dump of a game I own — Omega Ruby or Alpha Sapphire.</string>
+    <string name="hoenn_whats_dump">What\'s a game dump?</string>
+    <string name="hoenn_legal_footer">Never downloads or shares game files</string>
     <string name="hoenn_continue">Continue</string>
     <string name="hoenn_dump_title">Choose your dump</string>
     <string name="hoenn_dump_help">Select a decrypted .3ds or .cci of Omega Ruby or Alpha Sapphire.</string>
@@ -10,14 +18,23 @@
     <string name="hoenn_dump_ok">Ready: %1$s\nTitle ID: %2$s\nSize: ~%3$s GB</string>
     <string name="hoenn_home_title">Ready to forge</string>
     <string name="hoenn_home_meta">File: %1$s\nTitle: %2$s · Region: %3$s</string>
-    <string name="hoenn_home_mode_vanilla">Mode: Vanilla (original game)</string>
-    <string name="hoenn_home_mode_random">Mode: %1$s\nSeed: %2$s</string>
-    <string name="hoenn_home_randomizer_wip">Randomizer applied via LayeredFS mods (original dump untouched). New game recommended so starters take effect.</string>
-    <string name="hoenn_play">Play</string>
-    <string name="hoenn_new_run">New run</string>
+    <string name="hoenn_home_mode_vanilla">Original adventure · no randomizer</string>
+    <string name="hoenn_home_mode_random">%1$s · Seed %2$s</string>
+    <string name="hoenn_home_randomizer_wip">Mods applied via LayeredFS. Start a new in-game save for starters.</string>
+    <string name="hoenn_continue_adventure">Continue adventure</string>
+    <string name="hoenn_chip_vanilla">Vanilla</string>
+    <string name="hoenn_free_space">%1$s GB free</string>
+    <string name="hoenn_home_footer">Unofficial fan project · Azahar core</string>
+    <string name="hoenn_play">Continue</string>
+    <string name="hoenn_new_run">New randomized run</string>
     <string name="hoenn_new_run_confirm">Start a new run? You will choose vanilla or randomizer again. Your original dump is not modified.</string>
-    <string name="hoenn_change_dump">Change dump</string>
+    <string name="hoenn_change_dump">Change game dump</string>
+    <string name="hoenn_settings">Settings</string>
     <string name="hoenn_advanced">Advanced emulator UI</string>
+    <string name="hoenn_configurable">Configurable</string>
+    <string name="hoenn_mode_vanilla_footer">Fastest path — ready in seconds</string>
+    <string name="hoenn_mode_randomized_footer">Presets or full control · same seed, same run</string>
+    <string name="hoenn_prepare_safe_cancel">Cancel is safe until finalize</string>
     <string name="hoenn_game_invalid">Could not load this dump as a 3DS game. Try a decrypted .cci/.3ds that boots in Azahar.</string>
     <string name="hoenn_play_failed">Failed to start game: %1$s</string>
     <string name="hoenn_data_dir_title">Emulator data folder</string>
@@ -35,15 +52,15 @@
     <string name="hoenn_menu_slot_empty">That slot is empty</string>
     <!-- Play mode -->
     <string name="hoenn_play_mode_title">How do you want to play?</string>
-    <string name="hoenn_play_mode_body">Vanilla keeps the original game. Randomized builds a unique run from your dump (pk3DS-class options). Your original dump is never modified.</string>
-    <string name="hoenn_mode_vanilla">Play Vanilla</string>
-    <string name="hoenn_mode_vanilla_help">Original encounters, trainers, and starters. Upscale and Thor controls still apply.</string>
+    <string name="hoenn_play_mode_body">Vanilla keeps the original game. Randomized builds a unique run from your dump.</string>
+    <string name="hoenn_mode_vanilla">Vanilla</string>
+    <string name="hoenn_mode_vanilla_help">The original adventure, exactly as shipped. Upscale and Thor controls still apply.</string>
     <string name="hoenn_mode_randomized">Randomized run</string>
-    <string name="hoenn_mode_randomized_help">Choose presets and fine-grained options (wilds, trainers, starters, advanced…).</string>
-    <string name="hoenn_dump_untouched">Your original dump file is never modified. Work happens on a prepared copy.</string>
+    <string name="hoenn_mode_randomized_help">A one-of-a-kind Hoenn forged from your dump — you choose how wild.</string>
+    <string name="hoenn_dump_untouched">You can start a different run anytime from Home. Original dump is never modified.</string>
     <!-- Randomizer -->
-    <string name="hoenn_randomizer_title">Randomizer</string>
-    <string name="hoenn_randomizer_subtitle">Pick a preset, set a seed, then customize modules. Same seed + same options = same run.</string>
+    <string name="hoenn_randomizer_title">Forge a randomized run</string>
+    <string name="hoenn_randomizer_subtitle">Same seed + same options = the same run, shareable.</string>
     <string name="hoenn_presets">Presets</string>
     <string name="hoenn_presets_help">Light = mild · Standard = classic · Chaos = aggressive (may be unfair)</string>
     <string name="hoenn_preset_light">Light</string>
@@ -97,7 +114,7 @@
     <string name="hoenn_opt_static">Randomize static gifts</string>
     <string name="hoenn_randomizer_warning">Warning: legends, Chaos, or evolution randomizing can break balance or softlock. Proceed if you accept the risk.</string>
     <string name="hoenn_summary_label">Summary</string>
-    <string name="hoenn_forge_run">Forge this run</string>
+    <string name="hoenn_forge_run">Review run</string>
     <!-- Prepare -->
     <string name="hoenn_prepare_title">Forging your Hoenn…</string>
     <string name="hoenn_prepare_detail_vanilla">Preparing vanilla play path. Original dump is not modified.</string>
