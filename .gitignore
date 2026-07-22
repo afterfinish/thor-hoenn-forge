@@ -1,4 +1,9 @@
 # --- Never commit game data ---
+# Entire local workspace (dumps, extracts, keys, research binaries)
+# Keep only local/README.md tracked
+/local/**
+!/local/README.md
+
 *.cci
 *.CIA
 *.cia

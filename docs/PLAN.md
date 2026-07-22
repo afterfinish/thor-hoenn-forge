@@ -6,6 +6,7 @@ Living index for product planning. Detailed docs:
 |-----|---------|
 | [SOUL.md](../SOUL.md) | Project identity, non-negotiables, how we work |
 | [MEMORY.md](../MEMORY.md) | Session handoff — update after every small achievement |
+| [dump-workflow.md](dump-workflow.md) | How to place legal dumps under `local/` (never git) |
 | [product-scope.md](product-scope.md) | Requirements 1–6, v1 vs later |
 | [milestone-a-shell.md](milestone-a-shell.md) | **A** — baked emulator, dump pick, Thor upscale |
 | [onboarding-ux.md](onboarding-ux.md) | Full onboarding wireflow (dump → randomize → play) |
