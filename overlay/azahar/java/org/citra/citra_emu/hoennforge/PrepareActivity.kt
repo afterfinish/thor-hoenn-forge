@@ -61,6 +61,10 @@ class PrepareActivity : AppCompatActivity() {
             startActivity(Onboarding.intentTo(this, PlayModeActivity::class.java))
             finish()
         }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        buttonCancel.post { buttonCancel.requestFocus() }
 
         lifecycleScope.launch {
             runPipeline(config)

@@ -47,6 +47,17 @@ if (Test-Path (Join-Path $Overlay "res\drawable")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\drawable") | Out-Null
     Copy-Item (Join-Path $Overlay "res\drawable\*") (Join-Path $Main "res\drawable\") -Force
 }
+if (Test-Path (Join-Path $Overlay "res\color")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\color") | Out-Null
+    Copy-Item (Join-Path $Overlay "res\color\*") (Join-Path $Main "res\color\") -Force
+}
+Get-ChildItem (Join-Path $Overlay "res") -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "mipmap*" } |
+    ForEach-Object {
+        $dest = Join-Path $Main "res\$($_.Name)"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Copy-Item (Join-Path $_.FullName "*") $dest -Force
+    }
 foreach ($vals in @("hoenn_colors.xml", "hoenn_dimens.xml", "hoenn_styles.xml")) {
     $src = Join-Path $Overlay "res\values\$vals"
     if (Test-Path $src) {

@@ -77,15 +77,28 @@ class RandomizerActivity : AppCompatActivity() {
         applyPreset(Preset.STANDARD, keepSeed = false)
         updateSummary()
 
-        findViewById<Button>(R.id.buttonPresetLight).setOnClickListener {
+        val presetLight = findViewById<Button>(R.id.buttonPresetLight)
+        val presetStandard = findViewById<Button>(R.id.buttonPresetStandard)
+        val presetChaos = findViewById<Button>(R.id.buttonPresetChaos)
+        // Explicit clickable — custom backgrounds can confuse some firmwares
+        listOf(presetLight, presetStandard, presetChaos).forEach { b ->
+            b.isClickable = true
+            b.isFocusable = true
+            b.isEnabled = true
+        }
+        presetLight.setOnClickListener {
             applyPreset(Preset.LIGHT)
+            highlightPreset(presetLight, presetStandard, presetChaos)
         }
-        findViewById<Button>(R.id.buttonPresetStandard).setOnClickListener {
+        presetStandard.setOnClickListener {
             applyPreset(Preset.STANDARD)
+            highlightPreset(presetStandard, presetLight, presetChaos)
         }
-        findViewById<Button>(R.id.buttonPresetChaos).setOnClickListener {
+        presetChaos.setOnClickListener {
             applyPreset(Preset.CHAOS)
+            highlightPreset(presetChaos, presetLight, presetStandard)
         }
+        highlightPreset(presetStandard, presetLight, presetChaos)
         findViewById<Button>(R.id.buttonRerollSeed).setOnClickListener {
             seed = RandomizerConfig.newSeed()
             textSeed.text = seed.toString()
@@ -131,6 +144,19 @@ class RandomizerActivity : AppCompatActivity() {
             prefs.randomizerConfig = config
             startActivity(Onboarding.intentTo(this, PrepareActivity::class.java))
             finish()
+        }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        presetStandard.post { presetStandard.requestFocus() }
+    }
+
+    private fun highlightPreset(active: Button, vararg others: Button) {
+        active.setBackgroundResource(R.drawable.hoenn_btn_primary)
+        active.setTextColor(0xFFFFFFFF.toInt())
+        others.forEach {
+            it.setBackgroundResource(R.drawable.hoenn_btn_secondary)
+            it.setTextColor(0xFFE9E9ED.toInt())
         }
     }
 

@@ -26,14 +26,19 @@ class PlayModeActivity : AppCompatActivity() {
             prefs.dumpGameLabel ?: getString(R.string.app_name)
         findViewById<TextView>(R.id.textBody).setText(R.string.hoenn_play_mode_body)
 
-        findViewById<Button>(R.id.buttonVanilla).setOnClickListener {
+        val vanilla = findViewById<Button>(R.id.buttonVanilla)
+        val randomized = findViewById<Button>(R.id.buttonRandomized)
+        vanilla.setOnClickListener {
             prefs.randomizerConfig = RandomizerConfig.vanilla()
             startActivity(Onboarding.intentTo(this, PrepareActivity::class.java))
             finish()
         }
-        findViewById<Button>(R.id.buttonRandomized).setOnClickListener {
+        randomized.setOnClickListener {
             startActivity(Onboarding.intentTo(this, RandomizerActivity::class.java))
-            // Keep this activity in back stack for return from builder
         }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        randomized.post { randomized.requestFocus() }
     }
 }

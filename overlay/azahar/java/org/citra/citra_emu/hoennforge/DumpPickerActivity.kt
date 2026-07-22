@@ -54,8 +54,8 @@ class DumpPickerActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         buttonContinue = findViewById(R.id.buttonContinue)
         buttonContinue.isEnabled = false
-
-        findViewById<Button>(R.id.buttonPick).setOnClickListener {
+        val buttonPick = findViewById<Button>(R.id.buttonPick)
+        buttonPick.setOnClickListener {
             openDump.launch(arrayOf("application/octet-stream", "*/*"))
         }
         buttonContinue.setOnClickListener {
@@ -72,6 +72,10 @@ class DumpPickerActivity : AppCompatActivity() {
             startActivity(Onboarding.intentTo(this, PlayModeActivity::class.java))
             finish()
         }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        buttonPick.post { buttonPick.requestFocus() }
     }
 
     private fun validateUri(uri: Uri) {

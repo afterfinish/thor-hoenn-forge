@@ -60,14 +60,15 @@ object SpeciesPool {
                 // Random basic starters (may repeat gens)
                 IntArray(3) { pick(rng, BASIC_STARTERS) }.also { ensureDistinct(it, rng, BASIC_STARTERS) }
             }
-            RandomizerConfig.StarterMode.TYPE_BALANCED,
-            RandomizerConfig.StarterMode.FULL_RANDOM,
-            -> {
-                val pool = if (mode == RandomizerConfig.StarterMode.TYPE_BALANCED) {
-                    BASIC_STARTERS
-                } else {
-                    allSpecies(includeLegendaries)
-                }
+            RandomizerConfig.StarterMode.TYPE_BALANCED -> {
+                // Only first-stage starters with reliable bag/selection models
+                IntArray(3) { pick(rng, BASIC_STARTERS) }
+                    .also { ensureDistinct(it, rng, BASIC_STARTERS) }
+            }
+            RandomizerConfig.StarterMode.FULL_RANDOM -> {
+                // Prefer basic starters for stability; mix in gen 1-5 non-legends lightly
+                val pool = BASIC_STARTERS + allSpecies(includeLegendaries = false)
+                    .filter { it <= 649 && !isLegendary(it) }.take(200).toIntArray()
                 IntArray(3) { pick(rng, pool) }.also { ensureDistinct(it, rng, pool) }
             }
         }

@@ -69,7 +69,8 @@ class HomeActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.textFreeSpace).text = ""
         }
 
-        findViewById<Button>(R.id.buttonPlay).setOnClickListener { playDump() }
+        val play = findViewById<Button>(R.id.buttonPlay)
+        play.setOnClickListener { playDump() }
         findViewById<Button>(R.id.buttonNewRun).setOnClickListener { confirmNewRun() }
         findViewById<Button>(R.id.buttonChangeDump).setOnClickListener {
             prefs.clearDump()
@@ -79,6 +80,10 @@ class HomeActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonAdvanced).setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
         }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        play.post { play.requestFocus() }
     }
 
     private fun confirmNewRun() {

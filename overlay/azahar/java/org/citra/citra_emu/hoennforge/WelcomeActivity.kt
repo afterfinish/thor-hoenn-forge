@@ -19,15 +19,18 @@ class WelcomeActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_hoenn_welcome)
+        val root = findViewById<android.view.View>(android.R.id.content)
         val checkbox = findViewById<CheckBox>(R.id.checkboxLegal)
         val button = findViewById<Button>(R.id.buttonContinue)
         button.isEnabled = false
         checkbox.setOnCheckedChangeListener { _, checked -> button.isEnabled = checked }
         button.setOnClickListener {
             prefs.legalAccepted = true
-            // Always go through onboarding router (data dir → dump → home)
             startActivity(Onboarding.intentTo(this, Onboarding.nextAfterLegal(this, prefs)))
             finish()
         }
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        checkbox.post { checkbox.requestFocus() }
     }
 }

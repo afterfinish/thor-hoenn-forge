@@ -68,7 +68,6 @@ class RandomizerEngine(
         if (config.trainerParties || config.trainerItems || config.trainerMoves ||
             config.trainerAbilities
         ) {
-            needed += OrasPaths.TRDATA
             needed += OrasPaths.TRPOKE
         }
         if (config.personalTypes || config.personalBaseStats || config.personalAbilities ||
@@ -218,7 +217,8 @@ class RandomizerEngine(
                     newLo = (mid - delta).coerceIn(1, 100)
                     newHi = (mid + delta).coerceIn(newLo, 100)
                 }
-                val newWord = ((form and 0x1F) shl 11) or (newSp and 0x7FF)
+                // Force form 0 — non-zero forms on random species softlock models
+                val newWord = newSp and 0x7FF
                 putU16(table, so, newWord)
                 table[so + 2] = newLo.toByte()
                 table[so + 3] = newHi.toByte()
@@ -226,8 +226,12 @@ class RandomizerEngine(
             }
             if (changed) {
                 System.arraycopy(table, 0, file, offset, table.size)
-                garc.setFile(i, file) // store decompressed — GARC accepts raw
-                tables++
+                // Prefer in-place (keeps original GARC). Skip maps that grow past slot.
+                if (!garc.setFile(i, file)) {
+                    log.appendLine("wild map $i skipped (needs larger GARC slot)")
+                } else {
+                    tables++
+                }
             }
         }
         modified[OrasPaths.ENCDATA] = garc.save()
@@ -262,9 +266,10 @@ class RandomizerEngine(
                 // IVs u8, PID u8, Level u16, Species u16, Form u16, [Item u16], [Moves 4*u16]
                 if (config.trainerParties) {
                     putU16(newTp, base + 4, SpeciesPool.pick(rng, pool))
+                    // Clear form — random forms softlock
+                    if (entrySize >= 8) putU16(newTp, base + 6, 0)
                 }
                 if (config.trainerAbilities) {
-                    // ability in PID high nibble
                     val pid = newTp[base + 1].toInt() and 0xFF
                     val ability = rng.nextInt(1, 4) // 1,2,H
                     newTp[base + 1] = ((ability shl 4) or (pid and 0x0F)).toByte()
@@ -296,10 +301,11 @@ class RandomizerEngine(
                     putU16(newTp, base + 2, lv)
                 }
             }
-            trpoke.setFile(i, newTp)
-            n++
+            if (trpoke.setFile(i, newTp)) {
+                n++
+            }
         }
-        modified[OrasPaths.TRDATA] = trdata.save()
+        // trdata unchanged; only rewrite trpoke in-place
         modified[OrasPaths.TRPOKE] = trpoke.save()
         log.appendLine("trainers patched: $n")
     }

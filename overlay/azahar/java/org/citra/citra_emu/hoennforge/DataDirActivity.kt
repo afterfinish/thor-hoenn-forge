@@ -61,9 +61,14 @@ class DataDirActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_hoenn_data_dir)
         findViewById<TextView>(R.id.textStatus).text = ""
-        findViewById<Button>(R.id.buttonPick).setOnClickListener {
+        val pick = findViewById<Button>(R.id.buttonPick)
+        pick.setOnClickListener {
             PermissionsHandler.compatibleSelectDirectory(pickDataDir)
         }
+        val root = findViewById<android.view.View>(android.R.id.content)
+        HoennFocus.enable(root)
+        HoennFocus.installKeyRouting(this, root)
+        pick.post { pick.requestFocus() }
     }
 
     private fun continueOnboarding() {
