@@ -80,12 +80,15 @@
                 android:enabled="false"
                 android:text="@string/hoenn_continue" />
             <TextView
+                android:id="@+id/linkWhatsDump"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:gravity="center"
                 android:text="@string/hoenn_whats_dump"
-                style="@style/Hoenn.Text.Accent" />
+                style="@style/Hoenn.Text.Accent"
+                android:focusable="true"
+                android:clickable="true" />
         </LinearLayout>
     </LinearLayout>
 

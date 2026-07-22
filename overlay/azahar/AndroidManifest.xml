@@ -109,6 +109,18 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
+            android:name="org.citra.citra_emu.hoennforge.ReadyTipsActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name="org.citra.citra_emu.hoennforge.SettingsActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name="org.citra.citra_emu.ui.main.MainActivity"
             android:theme="@style/Theme.Citra.Splash.Main"
             android:exported="false" />

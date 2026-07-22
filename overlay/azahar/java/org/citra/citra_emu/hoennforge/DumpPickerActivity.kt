@@ -58,6 +58,13 @@ class DumpPickerActivity : AppCompatActivity() {
         buttonPick.setOnClickListener {
             openDump.launch(arrayOf("application/octet-stream", "*/*"))
         }
+        findViewById<TextView?>(R.id.buttonWhereDump)?.setOnClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.hoenn_dump_where)
+                .setMessage(R.string.hoenn_dump_where_body)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
         buttonContinue.setOnClickListener {
             val success = pendingSuccess ?: return@setOnClickListener
             val uri = pendingUri ?: return@setOnClickListener

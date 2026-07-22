@@ -69,8 +69,10 @@ void FreeCam::SetEnabled(bool e) {
         yaw = 0.f;
         pitch = 0.15f;
         last_cam = 0;
+        c_stick.reset(); // reload stick after re-enable / profile changes
         LOG_WARNING(Core, "Hoenn free-look ON (right stick). Experimental — may fail on dynamic cameras.");
     } else {
+        c_stick.reset();
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
 }
@@ -110,16 +112,19 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
 
     Memory::MemorySystem& memory = system.Memory();
 
-    // Read right stick (C-Stick mapping)
+    // Read right stick (C-Stick mapping) — cache device across ticks
     float sx = 0.f;
     float sy = 0.f;
     try {
-        auto device = Input::CreateDevice<Input::AnalogDevice>(
-            Settings::values.current_input_profile.analogs[Settings::NativeAnalog::CStick]);
-        if (device) {
-            std::tie(sx, sy) = device->GetStatus();
+        if (!c_stick) {
+            c_stick = Input::CreateDevice<Input::AnalogDevice>(
+                Settings::values.current_input_profile.analogs[Settings::NativeAnalog::CStick]);
+        }
+        if (c_stick) {
+            std::tie(sx, sy) = c_stick->GetStatus();
         }
     } catch (...) {
+        c_stick.reset();
         return;
     }
 

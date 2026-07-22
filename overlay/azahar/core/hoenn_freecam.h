@@ -1,7 +1,9 @@
 // Copyright Hoenn Forge — ORAS right-stick free look (experimental)
 #pragma once
 
+#include <memory>
 #include "common/common_types.h"
+#include "core/frontend/input.h"
 
 namespace Core {
 class System;
@@ -46,6 +48,8 @@ private:
 
     // Last applied camera base (for reset detection)
     u32 last_cam = 0;
+
+    std::unique_ptr<Input::AnalogDevice> c_stick;
 };
 
 } // namespace Hoenn

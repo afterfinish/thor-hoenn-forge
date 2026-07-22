@@ -29,7 +29,6 @@
         android:orientation="horizontal"
         android:baselineAligned="false">
 
-        <!-- Continue card -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -56,7 +55,7 @@
                     android:id="@+id/chipMode"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/hoenn_chip_muted"
+                    android:background="@drawable/hoenn_chip"
                     android:paddingHorizontal="10dp"
                     android:paddingVertical="4dp"
                     android:textColor="@color/hoenn_text"
@@ -69,28 +68,66 @@
                 android:layout_marginTop="12dp"
                 style="@style/Hoenn.Text.Display"
                 android:textSize="26sp" />
-            <TextView
-                android:id="@+id/textMode"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                style="@style/Hoenn.Text.Muted" />
-            <TextView
-                android:id="@+id/textMeta"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:id="@+id/textMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    style="@style/Hoenn.Text.Muted" />
+                <TextView
+                    android:id="@+id/chipSeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/hoenn_chip_muted"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    style="@style/Hoenn.Text.Mono"
+                    android:visibility="gone" />
+                <TextView
+                    android:id="@+id/chipModules"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/hoenn_chip_muted"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:textColor="@color/hoenn_text"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
-                android:layout_marginTop="12dp"
-                style="@style/Hoenn.Text.Caption" />
+                android:layout_marginTop="16dp"
+                android:background="@drawable/hoenn_bg_screen"
+                android:minHeight="80dp">
+                <TextView
+                    android:id="@+id/textMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:text="@string/hoenn_home_snapshot"
+                    style="@style/Hoenn.Text.Caption"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.1" />
+            </FrameLayout>
             <Button
                 android:id="@+id/buttonPlay"
                 style="@style/Hoenn.Button.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
                 android:text="@string/hoenn_play" />
         </LinearLayout>
 
-        <!-- Side actions -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -105,21 +142,35 @@
                 android:text="@string/hoenn_new_run"
                 android:gravity="start|center_vertical"
                 android:paddingStart="20dp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:paddingStart="8dp"
+                android:text="@string/hoenn_new_run_hint"
+                style="@style/Hoenn.Text.Caption" />
             <Button
-                android:id="@+id/buttonChangeDump"
+                android:id="@+id/buttonVanilla"
                 style="@style/Hoenn.Button.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/hoenn_change_dump"
+                android:layout_marginTop="14dp"
+                android:text="@string/hoenn_play_vanilla"
                 android:gravity="start|center_vertical"
                 android:paddingStart="20dp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:paddingStart="8dp"
+                android:text="@string/hoenn_play_vanilla_hint"
+                style="@style/Hoenn.Text.Caption" />
             <Button
-                android:id="@+id/buttonAdvanced"
+                android:id="@+id/buttonSettings"
                 style="@style/Hoenn.Button.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/hoenn_settings"
                 android:gravity="start|center_vertical"
                 android:paddingStart="20dp" />

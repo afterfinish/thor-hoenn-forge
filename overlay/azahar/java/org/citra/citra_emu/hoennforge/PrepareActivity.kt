@@ -27,6 +27,15 @@ class PrepareActivity : AppCompatActivity() {
     private lateinit var textDetail: TextView
     private lateinit var progress: ProgressBar
     private lateinit var buttonCancel: Button
+    private lateinit var stageCopy: TextView
+    private lateinit var stageExtract: TextView
+    private lateinit var stageRandom: TextView
+    private lateinit var stageFinalize: TextView
+    private lateinit var stageCopyMeta: TextView
+    private lateinit var stageExtractMeta: TextView
+    private lateinit var stageRandomMeta: TextView
+    private lateinit var stageFinalizeMeta: TextView
+    private lateinit var textFree: TextView
     @Volatile private var cancelled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,16 +52,24 @@ class PrepareActivity : AppCompatActivity() {
         textDetail = findViewById(R.id.textDetail)
         progress = findViewById(R.id.progress)
         buttonCancel = findViewById(R.id.buttonCancel)
+        stageCopy = findViewById(R.id.stageCopy)
+        stageExtract = findViewById(R.id.stageExtract)
+        stageRandom = findViewById(R.id.stageRandom)
+        stageFinalize = findViewById(R.id.stageFinalize)
+        stageCopyMeta = findViewById(R.id.stageCopyMeta)
+        stageExtractMeta = findViewById(R.id.stageExtractMeta)
+        stageRandomMeta = findViewById(R.id.stageRandomMeta)
+        stageFinalizeMeta = findViewById(R.id.stageFinalizeMeta)
+        textFree = findViewById(R.id.textFree)
 
         val config = prefs.randomizerConfig
-        textDetail.text = if (config.enabled) {
-            getString(
-                R.string.hoenn_prepare_detail_random,
-                config.modeLabel(),
-                config.seedDisplay(),
-            )
-        } else {
-            getString(R.string.hoenn_prepare_detail_vanilla)
+        textDetail.setText(R.string.hoenn_prepare_subtitle)
+        try {
+            val free = android.os.StatFs(filesDir.absolutePath).availableBytes
+            val gb = free / (1024.0 * 1024.0 * 1024.0)
+            textFree.text = getString(R.string.hoenn_free_space, String.format("%.1f", gb))
+        } catch (_: Exception) {
+            textFree.text = ""
         }
 
         buttonCancel.setOnClickListener {
@@ -68,6 +85,31 @@ class PrepareActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             runPipeline(config)
+        }
+    }
+
+    private fun highlightStage(pct: Int, stage: String) {
+        val accent = 0xFFE9E9ED.toInt()
+        val muted = 0xFF9397AB.toInt()
+        val active = 0xFFB8AEF0.toInt()
+        fun style(tv: TextView, on: Boolean, done: Boolean) {
+            tv.setTextColor(
+                when {
+                    on -> active
+                    done -> accent
+                    else -> muted
+                },
+            )
+        }
+        style(stageCopy, pct in 1..25, pct > 25)
+        style(stageExtract, pct in 26..45, pct > 45)
+        style(stageRandom, pct in 46..85, pct > 85)
+        style(stageFinalize, pct in 86..100, pct >= 100)
+        when {
+            pct <= 25 -> stageCopyMeta.text = stage.take(24)
+            pct <= 45 -> stageExtractMeta.text = "…"
+            pct <= 85 -> stageRandomMeta.text = "$pct%"
+            else -> stageFinalizeMeta.text = if (pct >= 100) "OK" else "…"
         }
     }
 
@@ -94,6 +136,7 @@ class PrepareActivity : AppCompatActivity() {
                         if (!isFinishing) {
                             textStage.text = stage
                             progress.progress = pct.coerceIn(0, 100)
+                            highlightStage(pct, stage)
                         }
                     }
                 }
@@ -121,18 +164,22 @@ class PrepareActivity : AppCompatActivity() {
                     prefs.preparedReady = true
                 }
                 progress.progress = 100
+                highlightStage(100, "done")
                 textStage.setText(R.string.hoenn_prepare_done)
-                startActivity(Onboarding.intentTo(this@PrepareActivity, HomeActivity::class.java))
+                // Design 22 — ready tips before Home
+                startActivity(Onboarding.intentTo(this@PrepareActivity, ReadyTipsActivity::class.java))
                 finish()
             } else {
                 Log.e(TAG, "Prepare failed", outcome.error)
                 prefs.preparedReady = false
+                textStage.visibility = android.view.View.VISIBLE
                 textStage.text = getString(R.string.hoenn_prepare_failed, outcome.message)
                 progress.progress = 0
                 buttonCancel.setText(R.string.hoenn_prepare_back)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Prepare crashed", e)
+            textStage.visibility = android.view.View.VISIBLE
             textStage.text = getString(
                 R.string.hoenn_prepare_failed,
                 e.message ?: e.javaClass.simpleName,

@@ -60,15 +60,16 @@ class RandomizerEngine(
     }
 
     private fun loadBase(romfs: RomfsReader) {
-        val needed = linkedSetOf(
-            OrasPaths.POKE3_SELECT,
-            OrasPaths.FIELD,
-        )
+        // Only load files we will actually modify — avoids LayeredFS overlays of untouched CRO/GARC
+        val needed = linkedSetOf<String>()
+        if (config.starterMode != RandomizerConfig.StarterMode.VANILLA || config.staticGifts) {
+            needed += OrasPaths.FIELD
+            needed += OrasPaths.POKE3_SELECT
+        }
         if (config.wildSpecies || config.wildLevels) needed += OrasPaths.ENCDATA
         if (config.trainerParties || config.trainerItems || config.trainerMoves ||
             config.trainerAbilities
         ) {
-            // trdata holds party size/format; trpoke holds species teams
             needed += OrasPaths.TRDATA
             needed += OrasPaths.TRPOKE
         }
@@ -82,9 +83,9 @@ class RandomizerEngine(
         if (config.moveTypes || config.moveCategories) needed += OrasPaths.MOVE
         if (config.evolutions) needed += OrasPaths.EVOLUTION
         if (config.specialMarts) needed += OrasPaths.ITEM
-        if (config.staticGifts || config.starterMode != RandomizerConfig.StarterMode.VANILLA) {
-            needed += OrasPaths.FIELD
-            needed += OrasPaths.POKE3_SELECT
+
+        if (needed.isEmpty() && config.enabled) {
+            log.appendLine("no modules require RomFS files — nothing to overlay")
         }
 
         for (path in needed) {
