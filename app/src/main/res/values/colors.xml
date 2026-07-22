@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="hoenn_bg">#0B1A24</color>
+    <color name="hoenn_surface">#132A38</color>
+    <color name="hoenn_primary">#3DDC97</color>
+    <color name="hoenn_primary_dark">#2BA872</color>
+    <color name="hoenn_accent">#F4A261</color>
+    <color name="hoenn_text">#E8F1F5</color>
+    <color name="hoenn_text_muted">#9BB4C0</color>
+    <color name="hoenn_error">#E76F51</color>
+    <color name="ic_launcher_background">#0B1A24</color>
+</resources>

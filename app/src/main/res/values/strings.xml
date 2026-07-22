@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hoenn Forge</string>
+
+    <string name="welcome_title">Hoenn Forge</string>
+    <string name="welcome_body">Unofficial fan project — not affiliated with Nintendo or The Pokémon Company.\n\nThis app does not include Pokémon Omega Ruby or Alpha Sapphire. You must select a dump of a game you own.\n\nMilestone A: pick your dump, validate OR/AS, and prepare for an embedded Azahar-class emulator with Thor-tuned defaults.</string>
+    <string name="welcome_checkbox">I own this game and will provide my own dump.</string>
+    <string name="continue_label">Continue</string>
+
+    <string name="dump_title">Choose your dump</string>
+    <string name="dump_help">Select a decrypted .3ds or .cci of Omega Ruby or Alpha Sapphire. No ROMs are included with this app.</string>
+    <string name="dump_pick">Select dump file</string>
+    <string name="dump_checking">Checking dump…</string>
+    <string name="dump_ok">Ready: %1$s\nTitle ID: %2$s\nSize: ~%3$s GB</string>
+
+    <string name="home_title">Ready to forge</string>
+    <string name="home_meta">File: %1$s\nTitle: %2$s · Region: %3$s</string>
+    <string name="home_play">Play (emulator core next)</string>
+    <string name="home_change_dump">Change dump</string>
+    <string name="play_placeholder">Dump is registered. Next: embed Azahar core + Thor profile and boot this file.</string>
+</resources>

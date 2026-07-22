@@ -107,8 +107,8 @@ Pokemon-hoenn-forge/
 
 | Milestone | Status |
 |-----------|--------|
-| Planning docs | **In progress / seed** |
-| A Shell | Not started |
+| Planning docs | Done (living) |
+| A Shell | **In progress** — onboarding + validation APK; Azahar boot next |
 | B Randomizer | Not started |
 | C Freecam | Not started (research brief ready) |
 | D Single-screen | Not started |

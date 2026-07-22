@@ -24,17 +24,19 @@ Inspiration: Dusklight-style “install → point at dump → play modern,” pl
 
 ## Status
 
-**Planning / docs only.** Implementation has not started.
+**Milestone A in progress.** Onboarding + dump validation build; Azahar embed next.
 
 | Milestone | Doc | Status |
 |-----------|-----|--------|
 | Soul / working contract | [SOUL.md](SOUL.md) | Done |
 | Master plan | [docs/PLAN.md](docs/PLAN.md) | Done |
-| **A** Shell (emu + dump + upscale) | [docs/milestone-a-shell.md](docs/milestone-a-shell.md) | Not started |
-| Onboarding UX | [docs/onboarding-ux.md](docs/onboarding-ux.md) | Spec done |
+| **A** Shell (emu + dump + upscale) | [docs/milestone-a-shell.md](docs/milestone-a-shell.md) | **In progress** — UI + validation; emu boot pending |
+| Onboarding UX | [docs/onboarding-ux.md](docs/onboarding-ux.md) | Spec done; A subset implemented |
 | **B** Randomizer | [docs/milestone-b-randomizer.md](docs/milestone-b-randomizer.md) | Not started |
 | **C** Freecam | [docs/freecam-research.md](docs/freecam-research.md) | Not started |
 | **D** Single-screen | [docs/milestone-d-single-screen.md](docs/milestone-d-single-screen.md) | Not started |
+
+Build: see [docs/building.md](docs/building.md).
 
 ---
 

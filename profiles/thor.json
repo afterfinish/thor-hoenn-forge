@@ -1,0 +1,33 @@
+{
+  "name": "AYN Thor defaults",
+  "version": 1,
+  "notes": "Starting profile for Milestone A. Tune on device after first dogfood.",
+  "graphics": {
+    "resolution_factor": 3,
+    "graphics_api": "vulkan",
+    "graphics_api_fallback": "gles",
+    "use_hw_shader": true,
+    "async_shader_compilation": true,
+    "disk_shader_cache": true
+  },
+  "layout": {
+    "mode": "dual",
+    "top_screen": "primary",
+    "bottom_screen": "secondary",
+    "swap_screens": false
+  },
+  "system": {
+    "new_3ds": true,
+    "region": "auto",
+    "cpu_clock_percentage": 100
+  },
+  "controls": {
+    "circle_pad": "left_stick",
+    "c_stick": "right_stick",
+    "touch": "bottom_screen"
+  },
+  "audio": {
+    "stretch": true
+  },
+  "frame_limit": "game_default"
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.HoennForge" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/hoenn_primary</item>
+        <item name="colorPrimaryVariant">@color/hoenn_primary_dark</item>
+        <item name="colorOnPrimary">@color/hoenn_bg</item>
+        <item name="colorSecondary">@color/hoenn_accent</item>
+        <item name="android:statusBarColor">@color/hoenn_bg</item>
+        <item name="android:navigationBarColor">@color/hoenn_bg</item>
+        <item name="android:windowBackground">@color/hoenn_bg</item>
+        <item name="android:textColorPrimary">@color/hoenn_text</item>
+        <item name="android:textColorSecondary">@color/hoenn_text_muted</item>
+    </style>
+</resources>

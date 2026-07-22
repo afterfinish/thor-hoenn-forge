@@ -2,7 +2,7 @@
 
 **Delivers:** requirements **#6**, **#3**, **#2**  
 **Blocks:** playable foundation for B (randomizer), C (freecam integration), D (layouts)  
-**Status:** Not started  
+**Status:** In progress — onboarding shell + dump validation buildable (Azahar boot pending)  
 
 ---
 
