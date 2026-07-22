@@ -51,7 +51,7 @@ class HomeActivity : AppCompatActivity() {
                 R.string.hoenn_home_mode_random,
                 config.modeLabel(),
                 config.seedDisplay(),
-            )
+            ) + "\n" + getString(R.string.hoenn_home_randomizer_wip)
         } else {
             getString(R.string.hoenn_home_mode_vanilla)
         }

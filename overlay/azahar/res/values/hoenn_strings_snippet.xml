@@ -12,6 +12,7 @@
     <string name="hoenn_home_meta">File: %1$s\nTitle: %2$s · Region: %3$s</string>
     <string name="hoenn_home_mode_vanilla">Mode: Vanilla (original game)</string>
     <string name="hoenn_home_mode_random">Mode: %1$s\nSeed: %2$s</string>
+    <string name="hoenn_home_randomizer_wip">Note: randomizer options are saved, but game data is not rewritten yet — Play still boots your original dump. Starters/wilds will not change until the engine ships.</string>
     <string name="hoenn_play">Play</string>
     <string name="hoenn_new_run">New run</string>
     <string name="hoenn_new_run_confirm">Start a new run? You will choose vanilla or randomizer again. Your original dump is not modified.</string>
@@ -100,7 +101,8 @@
     <!-- Prepare -->
     <string name="hoenn_prepare_title">Forging your Hoenn…</string>
     <string name="hoenn_prepare_detail_vanilla">Preparing vanilla play path. Original dump is not modified.</string>
-    <string name="hoenn_prepare_detail_random">%1$s\nSeed: %2$s\nThis can take a few minutes when the full engine is active.</string>
+    <string name="hoenn_prepare_detail_random">%1$s\nSeed: %2$s</string>
+    <string name="hoenn_prepare_engine_wip">Engine status: options are stored for later. Real RomFS extract + pk3DS modules are not applied yet — you will still play the original game until that ships.</string>
     <string name="hoenn_prepare_stage_copy">Copying dump into app storage…</string>
     <string name="hoenn_prepare_stage_extract">Extracting game data…</string>
     <string name="hoenn_prepare_stage_randomize">Applying randomizer…</string>

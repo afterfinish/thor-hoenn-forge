@@ -46,6 +46,10 @@ object ThorProfile {
         IntSetting.RESOLUTION_FACTOR.int = 3
         IntSetting.GRAPHICS_API.int = 2 // Vulkan
         BooleanSetting.NEW_3DS.boolean = true
+        // Nearest (not linear) — linear causes halos / white fringes on grass & sprites at 3x
+        BooleanSetting.LINEAR_FILTERING.boolean = false
+        // Upscale texture filters (Anime4K etc.) off — keep crisp pixels
+        IntSetting.TEXTURE_FILTER.int = 0 // NoFilter
         // Asynchronous shader compilation + persistent shader storage
         BooleanSetting.ASYNC_SHADERS.boolean = true
         BooleanSetting.DISK_SHADER_CACHE.boolean = true
@@ -86,7 +90,9 @@ object ThorProfile {
             IntSetting.SECONDARY_DISPLAY_LAYOUT,
             IntSetting.ORIENTATION_OPTION,
             IntSetting.TURBO_LIMIT,
+            IntSetting.TEXTURE_FILTER,
             BooleanSetting.NEW_3DS,
+            BooleanSetting.LINEAR_FILTERING,
             BooleanSetting.ASYNC_SHADERS,
             BooleanSetting.DISK_SHADER_CACHE,
             BooleanSetting.HW_SHADER,
@@ -111,7 +117,7 @@ object ThorProfile {
         Log.i(
             TAG,
             "Thor profile: dual screens, overlay off, 3DS face layout, " +
-                "L3=turbo, async_shaders=true, disk_shader_cache=true",
+                "L3=turbo, linear_filter=false (nearest), async_shaders=true",
         )
     }
 

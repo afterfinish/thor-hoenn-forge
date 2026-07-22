@@ -47,11 +47,12 @@ class PrepareActivity : AppCompatActivity() {
 
         val config = prefs.randomizerConfig
         textDetail.text = if (config.enabled) {
+            // Honest: options are saved; game-data rewrite engine not shipped yet
             getString(
                 R.string.hoenn_prepare_detail_random,
                 config.modeLabel(),
                 config.seedDisplay(),
-            )
+            ) + "\n\n" + getString(R.string.hoenn_prepare_engine_wip)
         } else {
             getString(R.string.hoenn_prepare_detail_vanilla)
         }
