@@ -20,6 +20,14 @@ if (-not (Test-Path $Android)) {
 }
 
 Write-Host "Applying overlay..."
+
+# Hoenn fix: LoadState multiplayer null-check
+$ssSrc = Join-Path $Overlay "core\savestate.cpp"
+$ssDst = Join-Path $Azahar "src\core\savestate.cpp"
+if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
+    Copy-Item $ssSrc $ssDst -Force
+    Write-Host "Applied savestate.cpp LoadState null-check"
+}
 $Main = Join-Path $Android "app\src\main"
 $JavaDst = Join-Path $Main "java"
 $JavaSrc = Join-Path $Overlay "java"
