@@ -28,6 +28,73 @@ if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
     Copy-Item $ssSrc $ssDst -Force
     Write-Host "Applied savestate.cpp LoadState null-check"
 }
+# Hoenn free-look core
+foreach ($pair in @(
+    @("core\hoenn_freecam.cpp", "src\core\hoenn_freecam.cpp"),
+    @("core\hoenn_freecam.h", "src\core\hoenn_freecam.h"),
+    @("core\cheats.cpp", "src\core\cheats\cheats.cpp")
+)) {
+    $src = Join-Path $Overlay $pair[0]
+    $dst = Join-Path $Azahar $pair[1]
+    if (Test-Path $src) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+        Copy-Item $src $dst -Force
+        Write-Host "Applied $($pair[0])"
+    }
+}
+# Ensure citra_core CMakeLists lists hoenn_freecam (emulator tree is gitignored)
+$coreCmake = Join-Path $Azahar "src\core\CMakeLists.txt"
+if (Test-Path $coreCmake) {
+    $cm = Get-Content $coreCmake -Raw
+    if ($cm -notmatch "hoenn_freecam\.cpp") {
+        $cm = $cm -replace "(cheats/gateway_cheat\.h\r?\n)", "`$1    hoenn_freecam.cpp`n    hoenn_freecam.h`n"
+        [System.IO.File]::WriteAllText($coreCmake, $cm)
+        Write-Host "Patched core CMakeLists for hoenn_freecam"
+    }
+}
+# NativeLibrary freelook JNI declarations
+$nlPath = Join-Path $Android "app\src\main\java\org\citra\citra_emu\NativeLibrary.kt"
+if (Test-Path $nlPath) {
+    $nl = Get-Content $nlPath -Raw
+    if ($nl -notmatch "setHoennFreelook") {
+        $nl = $nl -replace "(external fun isRunning\(\): Boolean)", @"
+`$1
+
+    /** Hoenn Forge: right-stick free-look (experimental overworld camera). */
+    external fun setHoennFreelook(enabled: Boolean)
+    external fun isHoennFreelookEnabled(): Boolean
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt freelook JNI"
+    }
+}
+# native.cpp freelook implementation
+$nativeCpp = Join-Path $Android "app\src\main\jni\native.cpp"
+if (Test-Path $nativeCpp) {
+    $nc = Get-Content $nativeCpp -Raw
+    if ($nc -notmatch "hoenn_freecam\.h") {
+        $nc = $nc -replace '(#include "core/core\.h")', "`$1`n#include `"core/hoenn_freecam.h`""
+    }
+    if ($nc -notmatch "setHoennFreelook") {
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennFreelook([[maybe_unused]] JNIEnv* env,
+                                                             [[maybe_unused]] jobject obj,
+                                                             jboolean enabled) {
+    Hoenn::FreeCam::GetInstance().SetEnabled(static_cast<bool>(enabled));
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennFreelookEnabled(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jboolean>(Hoenn::FreeCam::GetInstance().IsEnabled());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp freelook JNI"
+    }
+}
 $Main = Join-Path $Android "app\src\main"
 $JavaDst = Join-Path $Main "java"
 $JavaSrc = Join-Path $Overlay "java"
@@ -43,6 +110,7 @@ if (Test-Path (Join-Path $Overlay "res\layout")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\layout") | Out-Null
     Copy-Item (Join-Path $Overlay "res\layout\*") (Join-Path $Main "res\layout\") -Force
 }
+# Hub layouts come from overlay; no special delete needed when design files exist
 if (Test-Path (Join-Path $Overlay "res\drawable")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\drawable") | Out-Null
     Copy-Item (Join-Path $Overlay "res\drawable\*") (Join-Path $Main "res\drawable\") -Force

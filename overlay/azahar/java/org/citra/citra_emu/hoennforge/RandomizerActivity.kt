@@ -4,66 +4,44 @@ package org.citra.citra_emu.hoennforge
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
-import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.Difficulty
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.Preset
-import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.StarterMode
-import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.TypeTheme
 
 /**
- * pk3DS-class option builder: presets, seed, module toggles.
+ * Design screen 12 — randomizer hub: presets + category cards → fine-tune / review.
  */
 class RandomizerActivity : AppCompatActivity() {
-    private var seed: Long = RandomizerConfig.newSeed()
-    private var activePreset: Preset = Preset.STANDARD
+    private lateinit var prefs: HoennPrefs
+    private var config: RandomizerConfig = RandomizerConfig.fromPreset(Preset.STANDARD)
 
     private lateinit var textSeed: TextView
-    private lateinit var editSeed: EditText
-    private lateinit var textSummary: TextView
-    private lateinit var textWarning: TextView
+    private lateinit var chipGame: TextView
+    private lateinit var cardLight: View
+    private lateinit var cardStandard: View
+    private lateinit var cardChaos: View
 
-    private lateinit var cbWildSpecies: CheckBox
-    private lateinit var cbWildLevels: CheckBox
-    private lateinit var cbWildLegends: CheckBox
-    private lateinit var rgWildTheme: RadioGroup
+    private data class CatCard(
+        val root: View,
+        val title: TextView,
+        val blurb: TextView,
+        val chip: TextView,
+    )
 
-    private lateinit var cbTrainerParties: CheckBox
-    private lateinit var cbTrainerItems: CheckBox
-    private lateinit var cbTrainerMoves: CheckBox
-    private lateinit var cbTrainerAbilities: CheckBox
-    private lateinit var rgDifficulty: RadioGroup
-
-    private lateinit var rgStarters: RadioGroup
-
-    private lateinit var cbPersonalTypes: CheckBox
-    private lateinit var cbPersonalStats: CheckBox
-    private lateinit var cbPersonalAbilities: CheckBox
-    private lateinit var cbPersonalTm: CheckBox
-
-    private lateinit var cbMoveTypes: CheckBox
-    private lateinit var cbMoveCats: CheckBox
-    private lateinit var cbLevelUp: CheckBox
-    private lateinit var cbEggMoves: CheckBox
-    private lateinit var cbTmList: CheckBox
-
-    private lateinit var cbEvolutions: CheckBox
-    private lateinit var cbMarts: CheckBox
-    private lateinit var cbStaticGifts: CheckBox
-
-    private lateinit var advancedPanel: LinearLayout
+    private lateinit var catWilds: CatCard
+    private lateinit var catTrainers: CatCard
+    private lateinit var catStarters: CatCard
+    private lateinit var catPersonal: CatCard
+    private lateinit var catMoves: CatCard
+    private lateinit var catEvolutions: CatCard
+    private lateinit var catMisc: CatCard
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = HoennPrefs(this)
+        prefs = HoennPrefs(this)
         if (!prefs.hasDump) {
             startActivity(Onboarding.intentTo(this, DumpPickerActivity::class.java))
             finish()
@@ -71,266 +49,166 @@ class RandomizerActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_hoenn_randomizer)
-        bindViews()
-        // Clear AppCompat button tint so custom check vectors show a real V
-        clearCheckTints()
 
-        // Start from Standard preset
-        applyPreset(Preset.STANDARD, keepSeed = false)
-        updateSummary()
+        // Resume draft if returning from category/summary
+        val existing = prefs.randomizerConfig
+        config = if (existing.enabled) existing else RandomizerConfig.fromPreset(Preset.STANDARD)
 
-        val presetLight = findViewById<Button>(R.id.buttonPresetLight)
-        val presetStandard = findViewById<Button>(R.id.buttonPresetStandard)
-        val presetChaos = findViewById<Button>(R.id.buttonPresetChaos)
-        // Explicit clickable — custom backgrounds can confuse some firmwares
-        listOf(presetLight, presetStandard, presetChaos).forEach { b ->
-            b.isClickable = true
-            b.isFocusable = true
-            b.isEnabled = true
-        }
-        presetLight.setOnClickListener {
-            applyPreset(Preset.LIGHT)
-            highlightPreset(presetLight, presetStandard, presetChaos)
-        }
-        presetStandard.setOnClickListener {
-            applyPreset(Preset.STANDARD)
-            highlightPreset(presetStandard, presetLight, presetChaos)
-        }
-        presetChaos.setOnClickListener {
-            applyPreset(Preset.CHAOS)
-            highlightPreset(presetChaos, presetLight, presetStandard)
-        }
-        highlightPreset(presetStandard, presetLight, presetChaos)
+        textSeed = findViewById(R.id.textSeed)
+        chipGame = findViewById(R.id.chipGame)
+        chipGame.text = prefs.dumpGameLabel ?: getString(R.string.hoenn_brand)
+
+        cardLight = findViewById(R.id.cardPresetLight)
+        cardStandard = findViewById(R.id.cardPresetStandard)
+        cardChaos = findViewById(R.id.cardPresetChaos)
+
+        catWilds = bindCard(R.id.catWilds)
+        catTrainers = bindCard(R.id.catTrainers)
+        catStarters = bindCard(R.id.catStarters)
+        catPersonal = bindCard(R.id.catPersonal)
+        catMoves = bindCard(R.id.catMoves)
+        catEvolutions = bindCard(R.id.catEvolutions)
+        catMisc = bindCard(R.id.catMisc)
+
+        cardLight.setOnClickListener { applyPreset(Preset.LIGHT) }
+        cardStandard.setOnClickListener { applyPreset(Preset.STANDARD) }
+        cardChaos.setOnClickListener { applyPreset(Preset.CHAOS) }
+
         findViewById<Button>(R.id.buttonRerollSeed).setOnClickListener {
-            seed = RandomizerConfig.newSeed()
-            textSeed.text = seed.toString()
-            editSeed.setText(seed.toString())
-            updateSummary()
+            config = config.copy(seed = RandomizerConfig.newSeed())
+            persistAndRefresh()
         }
-        findViewById<Button>(R.id.buttonApplySeed).setOnClickListener {
-            val parsed = editSeed.text?.toString()?.trim()?.toLongOrNull()
-            if (parsed == null || parsed < 0) {
-                Toast.makeText(this, R.string.hoenn_seed_invalid, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            seed = parsed
-            textSeed.text = seed.toString()
-            updateSummary()
-        }
-        findViewById<Button>(R.id.buttonToggleAdvanced).setOnClickListener {
-            val show = advancedPanel.visibility != View.VISIBLE
-            advancedPanel.visibility = if (show) View.VISIBLE else View.GONE
-            (it as Button).setText(
-                if (show) R.string.hoenn_hide_advanced else R.string.hoenn_show_advanced,
-            )
-        }
-
-        val refresh = View.OnClickListener {
-            activePreset = Preset.NONE // custom once user touches options
-            updateSummary()
-        }
-        listOf(
-            cbWildSpecies, cbWildLevels, cbWildLegends,
-            cbTrainerParties, cbTrainerItems, cbTrainerMoves, cbTrainerAbilities,
-            cbPersonalTypes, cbPersonalStats, cbPersonalAbilities, cbPersonalTm,
-            cbMoveTypes, cbMoveCats, cbLevelUp, cbEggMoves, cbTmList,
-            cbEvolutions, cbMarts, cbStaticGifts,
-        ).forEach { it.setOnClickListener(refresh) }
-        rgWildTheme.setOnCheckedChangeListener { _, _ -> refresh.onClick(rgWildTheme) }
-        rgDifficulty.setOnCheckedChangeListener { _, _ -> refresh.onClick(rgDifficulty) }
-        rgStarters.setOnCheckedChangeListener { _, _ -> refresh.onClick(rgStarters) }
-
         findViewById<Button>(R.id.buttonBack).setOnClickListener { finish() }
-        findViewById<Button>(R.id.buttonForge).setOnClickListener {
-            val config = buildConfig()
-            prefs.randomizerConfig = config
-            startActivity(Onboarding.intentTo(this, PrepareActivity::class.java))
-            finish()
+        findViewById<Button>(R.id.buttonReview).setOnClickListener {
+            prefs.randomizerConfig = config.copy(enabled = true)
+            startActivity(Onboarding.intentTo(this, RandomizerSummaryActivity::class.java))
         }
-        val root = findViewById<android.view.View>(android.R.id.content)
+
+        openCategory(catWilds, RandomizerCategoryActivity.CAT_WILDS)
+        openCategory(catTrainers, RandomizerCategoryActivity.CAT_TRAINERS)
+        openCategory(catStarters, RandomizerCategoryActivity.CAT_STARTERS)
+        openCategory(catPersonal, RandomizerCategoryActivity.CAT_PERSONAL)
+        openCategory(catMoves, RandomizerCategoryActivity.CAT_MOVES)
+        openCategory(catEvolutions, RandomizerCategoryActivity.CAT_EVOLUTIONS)
+        openCategory(catMisc, RandomizerCategoryActivity.CAT_MISC)
+
+        val root = findViewById<View>(android.R.id.content)
         HoennFocus.enable(root)
         HoennFocus.installKeyRouting(this, root)
-        presetStandard.post { presetStandard.requestFocus() }
+        cardStandard.post { cardStandard.requestFocus() }
+        refreshUi()
     }
 
-    private fun highlightPreset(active: Button, vararg others: Button) {
-        active.setBackgroundResource(R.drawable.hoenn_btn_primary)
-        active.setTextColor(0xFFFFFFFF.toInt())
-        others.forEach {
-            it.setBackgroundResource(R.drawable.hoenn_btn_secondary)
-            it.setTextColor(0xFFE9E9ED.toInt())
+    override fun onResume() {
+        super.onResume()
+        if (::prefs.isInitialized) {
+            val c = prefs.randomizerConfig
+            if (c.enabled) config = c
+            refreshUi()
         }
     }
 
-    private fun clearCheckTints() {
-        val checks = listOf(
-            cbWildSpecies, cbWildLevels, cbWildLegends,
-            cbTrainerParties, cbTrainerItems, cbTrainerMoves, cbTrainerAbilities,
-            cbPersonalTypes, cbPersonalStats, cbPersonalAbilities, cbPersonalTm,
-            cbMoveTypes, cbMoveCats, cbLevelUp, cbEggMoves, cbTmList,
-            cbEvolutions, cbMarts, cbStaticGifts,
+    private fun bindCard(includeId: Int): CatCard {
+        val root = findViewById<View>(includeId)
+        return CatCard(
+            root = root,
+            title = root.findViewById(R.id.textCatTitle),
+            blurb = root.findViewById(R.id.textCatBlurb),
+            chip = root.findViewById(R.id.chipStatus),
         )
-        val drawable = getDrawable(R.drawable.hoenn_checkbox)
-        for (cb in checks) {
-            cb.buttonDrawable = drawable?.constantState?.newDrawable()?.mutate()
-            androidx.core.widget.CompoundButtonCompat.setButtonTintList(cb, null)
+    }
+
+    private fun openCategory(card: CatCard, category: String) {
+        card.root.setOnClickListener {
+            prefs.randomizerConfig = config.copy(enabled = true)
+            startActivity(
+                Onboarding.intentTo(this, RandomizerCategoryActivity::class.java).putExtra(
+                    RandomizerCategoryActivity.EXTRA_CATEGORY,
+                    category,
+                ),
+            )
         }
     }
 
-    private fun bindViews() {
-        textSeed = findViewById(R.id.textSeed)
-        editSeed = findViewById(R.id.editSeed)
-        textSummary = findViewById(R.id.textSummary)
-        textWarning = findViewById(R.id.textWarning)
-        advancedPanel = findViewById(R.id.advancedPanel)
-
-        cbWildSpecies = findViewById(R.id.cbWildSpecies)
-        cbWildLevels = findViewById(R.id.cbWildLevels)
-        cbWildLegends = findViewById(R.id.cbWildLegends)
-        rgWildTheme = findViewById(R.id.rgWildTheme)
-
-        cbTrainerParties = findViewById(R.id.cbTrainerParties)
-        cbTrainerItems = findViewById(R.id.cbTrainerItems)
-        cbTrainerMoves = findViewById(R.id.cbTrainerMoves)
-        cbTrainerAbilities = findViewById(R.id.cbTrainerAbilities)
-        rgDifficulty = findViewById(R.id.rgDifficulty)
-
-        rgStarters = findViewById(R.id.rgStarters)
-
-        cbPersonalTypes = findViewById(R.id.cbPersonalTypes)
-        cbPersonalStats = findViewById(R.id.cbPersonalStats)
-        cbPersonalAbilities = findViewById(R.id.cbPersonalAbilities)
-        cbPersonalTm = findViewById(R.id.cbPersonalTm)
-
-        cbMoveTypes = findViewById(R.id.cbMoveTypes)
-        cbMoveCats = findViewById(R.id.cbMoveCats)
-        cbLevelUp = findViewById(R.id.cbLevelUp)
-        cbEggMoves = findViewById(R.id.cbEggMoves)
-        cbTmList = findViewById(R.id.cbTmList)
-
-        cbEvolutions = findViewById(R.id.cbEvolutions)
-        cbMarts = findViewById(R.id.cbMarts)
-        cbStaticGifts = findViewById(R.id.cbStaticGifts)
+    private fun applyPreset(preset: Preset) {
+        config = RandomizerConfig.fromPreset(preset, config.seed)
+        persistAndRefresh()
     }
 
-    private fun applyPreset(preset: Preset, keepSeed: Boolean = true) {
-        val s = if (keepSeed) seed else RandomizerConfig.newSeed()
-        val c = RandomizerConfig.fromPreset(preset, s)
-        seed = c.seed
-        activePreset = preset
-        textSeed.text = seed.toString()
-        editSeed.setText(seed.toString())
-
-        cbWildSpecies.isChecked = c.wildSpecies
-        cbWildLevels.isChecked = c.wildLevels
-        cbWildLegends.isChecked = c.wildLegendaries
-        when (c.wildTypeTheme) {
-            TypeTheme.NONE -> rgWildTheme.check(R.id.rbThemeNone)
-            TypeTheme.MONO -> rgWildTheme.check(R.id.rbThemeMono)
-            TypeTheme.DUAL -> rgWildTheme.check(R.id.rbThemeDual)
-        }
-
-        cbTrainerParties.isChecked = c.trainerParties
-        cbTrainerItems.isChecked = c.trainerItems
-        cbTrainerMoves.isChecked = c.trainerMoves
-        cbTrainerAbilities.isChecked = c.trainerAbilities
-        when (c.trainerDifficulty) {
-            Difficulty.WEAKER -> rgDifficulty.check(R.id.rbDiffWeaker)
-            Difficulty.SIMILAR -> rgDifficulty.check(R.id.rbDiffSimilar)
-            Difficulty.STRONGER -> rgDifficulty.check(R.id.rbDiffStronger)
-            Difficulty.RIVAL_PLUS -> rgDifficulty.check(R.id.rbDiffRival)
-        }
-
-        when (c.starterMode) {
-            StarterMode.VANILLA -> rgStarters.check(R.id.rbStarterVanilla)
-            StarterMode.FULL_RANDOM -> rgStarters.check(R.id.rbStarterFull)
-            StarterMode.GEN_LIMITED -> rgStarters.check(R.id.rbStarterGen)
-            StarterMode.TYPE_BALANCED -> rgStarters.check(R.id.rbStarterType)
-        }
-
-        cbPersonalTypes.isChecked = c.personalTypes
-        cbPersonalStats.isChecked = c.personalBaseStats
-        cbPersonalAbilities.isChecked = c.personalAbilities
-        cbPersonalTm.isChecked = c.personalTmCompat
-
-        cbMoveTypes.isChecked = c.moveTypes
-        cbMoveCats.isChecked = c.moveCategories
-        cbLevelUp.isChecked = c.levelUpLearnsets
-        cbEggMoves.isChecked = c.eggMoves
-        cbTmList.isChecked = c.tmList
-
-        cbEvolutions.isChecked = c.evolutions
-        cbMarts.isChecked = c.specialMarts
-        cbStaticGifts.isChecked = c.staticGifts
-
-        updateSummary()
+    private fun persistAndRefresh() {
+        prefs.randomizerConfig = config.copy(enabled = true)
+        refreshUi()
     }
 
-    private fun wildTheme(): TypeTheme = when (rgWildTheme.checkedRadioButtonId) {
-        R.id.rbThemeMono -> TypeTheme.MONO
-        R.id.rbThemeDual -> TypeTheme.DUAL
-        else -> TypeTheme.NONE
-    }
-
-    private fun difficulty(): Difficulty = when (rgDifficulty.checkedRadioButtonId) {
-        R.id.rbDiffWeaker -> Difficulty.WEAKER
-        R.id.rbDiffStronger -> Difficulty.STRONGER
-        R.id.rbDiffRival -> Difficulty.RIVAL_PLUS
-        else -> Difficulty.SIMILAR
-    }
-
-    private fun starterMode(): StarterMode = when (rgStarters.checkedRadioButtonId) {
-        R.id.rbStarterFull -> StarterMode.FULL_RANDOM
-        R.id.rbStarterGen -> StarterMode.GEN_LIMITED
-        R.id.rbStarterType -> StarterMode.TYPE_BALANCED
-        else -> StarterMode.VANILLA
-    }
-
-    private fun buildConfig(): RandomizerConfig {
-        // If user only picked a preset and didn't customize, keep preset name
-        val base = RandomizerConfig(
-            enabled = true,
-            seed = seed,
-            preset = activePreset,
-            wildSpecies = cbWildSpecies.isChecked,
-            wildLevels = cbWildLevels.isChecked,
-            wildLegendaries = cbWildLegends.isChecked,
-            wildTypeTheme = wildTheme(),
-            trainerParties = cbTrainerParties.isChecked,
-            trainerItems = cbTrainerItems.isChecked,
-            trainerMoves = cbTrainerMoves.isChecked,
-            trainerAbilities = cbTrainerAbilities.isChecked,
-            trainerDifficulty = difficulty(),
-            starterMode = starterMode(),
-            personalTypes = cbPersonalTypes.isChecked,
-            personalBaseStats = cbPersonalStats.isChecked,
-            personalAbilities = cbPersonalAbilities.isChecked,
-            personalTmCompat = cbPersonalTm.isChecked,
-            moveTypes = cbMoveTypes.isChecked,
-            moveCategories = cbMoveCats.isChecked,
-            levelUpLearnsets = cbLevelUp.isChecked,
-            eggMoves = cbEggMoves.isChecked,
-            tmList = cbTmList.isChecked,
-            evolutions = cbEvolutions.isChecked,
-            specialMarts = cbMarts.isChecked,
-            staticGifts = cbStaticGifts.isChecked,
+    private fun refreshUi() {
+        textSeed.text = config.seedDisplay()
+        highlightPreset(config.preset)
+        fillCard(
+            catWilds,
+            R.string.hoenn_cat_wilds,
+            config.wildsBlurb(),
+            config.wildsOn(),
         )
-        // Detect custom: differs from preset defaults
-        if (activePreset != Preset.NONE) {
-            val expected = RandomizerConfig.fromPreset(activePreset, seed)
-            if (base.copy(preset = activePreset) != expected) {
-                return base.copy(preset = Preset.NONE)
-            }
-        }
-        return base
+        fillCard(
+            catTrainers,
+            R.string.hoenn_cat_trainers,
+            config.trainersBlurb(),
+            config.trainersOn(),
+        )
+        fillCard(
+            catStarters,
+            R.string.hoenn_cat_starters,
+            config.startersBlurb(),
+            config.startersOn(),
+        )
+        fillCard(
+            catPersonal,
+            R.string.hoenn_cat_personal_short,
+            config.personalBlurb(),
+            config.personalOn(),
+        )
+        fillCard(
+            catMoves,
+            R.string.hoenn_cat_moves_short,
+            config.movesBlurb(),
+            config.movesOn(),
+        )
+        fillCard(
+            catEvolutions,
+            R.string.hoenn_cat_evolutions,
+            config.evolutionsBlurb(),
+            config.evolutionsOn(),
+        )
+        fillCard(
+            catMisc,
+            R.string.hoenn_cat_misc_short,
+            config.miscBlurb(),
+            config.miscOn(),
+        )
     }
 
-    private fun updateSummary() {
-        val c = buildConfig()
-        textSummary.text = c.summaryLines().joinToString("\n")
-        textWarning.visibility = if (c.hasSoftlockWarnings()) View.VISIBLE else View.GONE
-        if (c.hasSoftlockWarnings()) {
-            textWarning.setText(R.string.hoenn_randomizer_warning)
+    private fun fillCard(card: CatCard, titleRes: Int, blurb: String, on: Boolean) {
+        card.title.setText(titleRes)
+        card.blurb.text = blurb
+        if (on) {
+            card.chip.setText(R.string.hoenn_status_on)
+            card.chip.setBackgroundResource(R.drawable.hoenn_chip_on)
+            card.root.setBackgroundResource(R.drawable.hoenn_bg_card_selected)
+        } else {
+            card.chip.setText(R.string.hoenn_status_vanilla)
+            card.chip.setBackgroundResource(R.drawable.hoenn_chip_muted)
+            card.root.setBackgroundResource(R.drawable.hoenn_bg_card)
         }
+    }
+
+    private fun highlightPreset(preset: Preset) {
+        fun style(v: View, selected: Boolean) {
+            v.setBackgroundResource(
+                if (selected) R.drawable.hoenn_bg_card_selected else R.drawable.hoenn_bg_card,
+            )
+        }
+        style(cardLight, preset == Preset.LIGHT)
+        style(cardStandard, preset == Preset.STANDARD)
+        style(cardChaos, preset == Preset.CHAOS)
     }
 }

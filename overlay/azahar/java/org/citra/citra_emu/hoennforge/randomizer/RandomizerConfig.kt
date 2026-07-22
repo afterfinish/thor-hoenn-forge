@@ -78,7 +78,13 @@ data class RandomizerConfig(
 
     fun toJsonString(): String = toJson().toString()
 
-    fun seedDisplay(): String = seed.toString()
+    /** Shareable seed label like HF-7Q4K-92XA (base36). */
+    fun seedDisplay(): String {
+        val raw = seed.toString(36).uppercase().padStart(8, '0')
+        val a = raw.take(4)
+        val b = raw.drop(4).take(4).padEnd(4, '0')
+        return "HF-$a-$b"
+    }
 
     fun modeLabel(): String = when {
         !enabled -> "Vanilla"
@@ -90,6 +96,93 @@ data class RandomizerConfig(
 
     fun hasSoftlockWarnings(): Boolean =
         enabled && (wildLegendaries || evolutions || preset == Preset.CHAOS)
+
+    fun wildsOn(): Boolean = wildSpecies || wildLevels
+    fun trainersOn(): Boolean =
+        trainerParties || trainerItems || trainerMoves || trainerAbilities
+    fun startersOn(): Boolean = starterMode != StarterMode.VANILLA
+    fun personalOn(): Boolean =
+        personalTypes || personalBaseStats || personalAbilities || personalTmCompat
+    fun movesOn(): Boolean =
+        moveTypes || moveCategories || levelUpLearnsets || eggMoves || tmList
+    fun evolutionsOn(): Boolean = evolutions
+    fun miscOn(): Boolean = specialMarts || staticGifts
+
+    fun modulesOnCount(): Int =
+        listOf(wildsOn(), trainersOn(), startersOn(), personalOn(), movesOn(), evolutionsOn(), miscOn())
+            .count { it }
+
+    fun wildsBlurb(): String = when {
+        !wildsOn() -> "Vanilla"
+        else -> buildString {
+            if (wildSpecies) append("Random species")
+            if (wildLevels) {
+                if (isNotEmpty()) append(" · ")
+                append("levels")
+            }
+            if (wildLegendaries) {
+                if (isNotEmpty()) append(" · ")
+                append("legendaries possible")
+            }
+            if (wildTypeTheme != TypeTheme.NONE) {
+                if (isNotEmpty()) append(" · ")
+                append("theme ${wildTypeTheme.name.lowercase()}")
+            }
+        }
+    }
+
+    fun trainersBlurb(): String = when {
+        !trainersOn() -> "Vanilla"
+        else -> buildString {
+            if (trainerParties) append("Random teams")
+            if (trainerItems) {
+                if (isNotEmpty()) append(" · ")
+                append("items")
+            } else if (trainerParties) {
+                append(" · vanilla items")
+            }
+            if (trainerMoves) {
+                if (isNotEmpty()) append(" · ")
+                append("moves")
+            }
+            if (trainerAbilities) {
+                if (isNotEmpty()) append(" · ")
+                append("abilities")
+            }
+            if (isNotEmpty()) append(" · ")
+            append(
+                when (trainerDifficulty) {
+                    Difficulty.WEAKER -> "weaker"
+                    Difficulty.SIMILAR -> "similar strength"
+                    Difficulty.STRONGER -> "stronger"
+                    Difficulty.RIVAL_PLUS -> "rival+"
+                },
+            )
+        }
+    }
+
+    fun startersBlurb(): String = when (starterMode) {
+        StarterMode.VANILLA -> "Vanilla"
+        StarterMode.FULL_RANDOM -> "Fully random"
+        StarterMode.GEN_LIMITED -> "Random from limited gens"
+        StarterMode.TYPE_BALANCED -> "Type-balanced trio"
+    }
+
+    fun personalBlurb(): String =
+        if (!personalOn()) "Vanilla" else "Types / stats / abilities / TM"
+
+    fun movesBlurb(): String =
+        if (!movesOn()) "Vanilla" else "Learnsets · moves · TMs"
+
+    fun evolutionsBlurb(): String =
+        if (!evolutionsOn()) "Vanilla" else "Random chains · softlock risk"
+
+    fun miscBlurb(): String = when {
+        !miscOn() -> "Vanilla"
+        specialMarts && staticGifts -> "Marts + static gifts"
+        specialMarts -> "Special marts"
+        else -> "Static gifts"
+    }
 
     fun summaryLines(): List<String> {
         if (!enabled) return listOf("Vanilla (no randomizer)")
@@ -131,6 +224,7 @@ data class RandomizerConfig(
             seed: Long = newSeed(),
         ): RandomizerConfig = when (preset) {
             Preset.NONE -> vanilla().copy(seed = seed)
+            // Design: Light = wild encounters only — a gentle remix
             Preset.LIGHT -> RandomizerConfig(
                 enabled = true,
                 seed = seed,
@@ -138,10 +232,10 @@ data class RandomizerConfig(
                 wildSpecies = true,
                 wildLevels = true,
                 wildLegendaries = false,
-                trainerParties = true,
-                trainerDifficulty = Difficulty.SIMILAR,
-                starterMode = StarterMode.FULL_RANDOM,
+                trainerParties = false,
+                starterMode = StarterMode.VANILLA,
             )
+            // Design: Standard = wilds, trainers and starters — balanced chaos
             Preset.STANDARD -> RandomizerConfig(
                 enabled = true,
                 seed = seed,
@@ -150,11 +244,11 @@ data class RandomizerConfig(
                 wildLevels = true,
                 wildLegendaries = false,
                 trainerParties = true,
-                trainerItems = true,
-                trainerMoves = true,
-                trainerAbilities = true,
+                trainerItems = false,
+                trainerMoves = false,
+                trainerAbilities = false,
                 trainerDifficulty = Difficulty.SIMILAR,
-                starterMode = StarterMode.FULL_RANDOM,
+                starterMode = StarterMode.TYPE_BALANCED,
             )
             Preset.CHAOS -> RandomizerConfig(
                 enabled = true,

@@ -123,28 +123,41 @@ class RandomizerEngine(
     }
 
     // --- Starters (pk3DS StarterEditor6) ---
+    // Only patch species u16 in DllPoke3Select + matching gift rows in DllField.
+    // Never run broad gift/static scans when only starters are requested (corrupts field).
     private fun randomizeStarters() {
-        val cro = modified[OrasPaths.POKE3_SELECT]!!.copyOf()
-        val field = modified[OrasPaths.FIELD]!!.copyOf()
+        val cro = modified[OrasPaths.POKE3_SELECT]?.copyOf() ?: error("DllPoke3Select missing")
+        val field = modified[OrasPaths.FIELD]?.copyOf() ?: error("DllField missing")
         val croBb = ByteBuffer.wrap(cro).order(ByteOrder.LITTLE_ENDIAN)
-        var offset = croBb.getInt(0xB8)
-        // ORAS has no +0x10 padding (XY only)
+        val offset = croBb.getInt(0xB8)
+        require(offset in 0 until cro.size - 0x54 * 12) { "Bad starter CRO offset $offset" }
+
+        // One trio for all 4 bag sets so overworld gifts + bag always match
+        val trio = SpeciesPool.pickStarterTrio(
+            rng,
+            config.starterMode,
+            includeLegendaries = false, // never legends as starters — softlock risk
+        )
+        // Safety: only classic first-stage starters (bag 3D models always exist)
+        val safeTrio = IntArray(3) { i ->
+            val sp = trio[i]
+            if (sp in SpeciesPool.BASIC_STARTERS) sp
+            else SpeciesPool.STARTER_GRASS[i % SpeciesPool.STARTER_GRASS.size]
+        }
+
         val sets = 4
         for (set in 0 until sets) {
-            val trio = SpeciesPool.pickStarterTrio(
-                rng,
-                config.starterMode,
-                includeLegendaries = config.wildLegendaries,
-            )
             for (j in 0 until 3) {
                 val croOff = offset + ((set * 3) + j) * 0x54
-                croBb.putShort(croOff, trio[j].toShort())
+                require(croOff + 2 <= cro.size) { "starter cro OOB set$set slot$j" }
+                croBb.putShort(croOff, safeTrio[j].toShort())
                 val giftIndex = OrasPaths.FIELD_STARTER_ENTRIES[set * 3 + j]
                 val giftOff = OrasPaths.FIELD_GIFT_OFFSET + giftIndex * OrasPaths.FIELD_GIFT_SIZE
-                putU16(field, giftOff, trio[j])
+                require(giftOff + 2 <= field.size) { "starter gift OOB $giftIndex" }
+                putU16(field, giftOff, safeTrio[j])
             }
-            log.appendLine("starters set$set -> ${trio.joinToString()}")
         }
+        log.appendLine("starters all sets -> ${safeTrio.joinToString()}")
         modified[OrasPaths.POKE3_SELECT] = cro
         modified[OrasPaths.FIELD] = field
     }
@@ -184,90 +197,147 @@ class RandomizerEngine(
     }
 
     // --- Wild encounters (encdata GARC) ---
-    // ORAS stores per-map tables (files 2+) often LZ11-compressed, AND a packed copy in
-    // file 1 (decStorage / "537.EN"). pk3DS writes both. Our earlier in-place path skipped
-    // almost every early route because decompress > compressed slot size.
+    //
+    // FREEZE ROOT CAUSE: writing *uncompressed* map bodies via setFileForce + saveRepack
+    // ballooned a/0/1/3 and softlocked field → starter select.
+    //
+    // SAFE PATH: decompress → patch → LZ11 recompress. Prefer in-place setFile when the
+    // compressed payload fits the original slot. If a few grow past the slot, allow a
+    // full GARC rebuild ONLY of still-compressed files (never raw uncompressed maps).
     private fun randomizeWilds() {
         val raw = modified[OrasPaths.ENCDATA] ?: error("encdata missing")
         val garc = GarcArchive.open(raw)
         val pool = SpeciesPool.allSpecies(config.wildLegendaries)
-        // File 1 = decStorage (EN pack). Not always LZ-compressed.
-        var decStorage = try {
-            Lz11.maybeDecompress(garc.getFile(1)).copyOf()
-        } catch (_: Exception) {
-            garc.getFile(1).copyOf()
+
+        var mapsPatched = 0
+        var mapsSkipped = 0
+        var enTables = 0
+        var forced = 0
+
+        val decOriginal = garc.getFile(1)
+        val decStorage: ByteArray? = if (decOriginal.isEmpty()) {
+            null
+        } else {
+            try {
+                Lz11.maybeDecompress(decOriginal).copyOf()
+            } catch (e: Exception) {
+                Log.w(TAG, "wilds: decStorage decompress failed", e)
+                null
+            }
         }
-        var tables = 0
-        var skipped = 0
+
         for (i in 2 until garc.fileCount) {
             val original = garc.getFile(i)
             if (original.isEmpty()) continue
             val file = try {
                 Lz11.maybeDecompress(original)
             } catch (_: Exception) {
-                skipped++
+                mapsSkipped++
                 continue
             }
             if (file.size < 0x20) continue
             val offset = getU32(file, 0x10) + 0xE
             if (offset < 0 || offset + OrasPaths.ENCOUNTER_TABLE > file.size) continue
             val table = file.copyOfRange(offset, offset + OrasPaths.ENCOUNTER_TABLE)
-            var changed = false
-            for (s in 0 until OrasPaths.SLOT_COUNT) {
-                val so = s * 4
-                if (so + 4 > table.size) break
-                val word = getU16(table, so)
-                val sp = word and 0x7FF
-                val lo = table[so + 2].toInt() and 0xFF
-                val hi = table[so + 3].toInt() and 0xFF
-                if (sp !in 1..SpeciesPool.MAX_SPECIES) continue
-                if (lo !in 1..100 || hi !in 1..100 || lo > hi) continue
-                var newSp = sp
-                var newLo = lo
-                var newHi = hi
-                if (config.wildSpecies) {
-                    newSp = SpeciesPool.pick(rng, pool)
-                }
-                if (config.wildLevels) {
-                    val mid = ((lo + hi) / 2).coerceIn(1, 100)
-                    val delta = rng.nextInt(0, 6)
-                    newLo = (mid - delta).coerceIn(1, 100)
-                    newHi = (mid + delta).coerceIn(newLo, 100)
-                }
-                // form 0 — random formes softlock models
-                putU16(table, so, newSp and 0x7FF)
-                table[so + 2] = newLo.toByte()
-                table[so + 3] = newHi.toByte()
-                changed = true
-            }
-            if (!changed) continue
+            if (!patchEncounterTable(table, pool)) continue
 
             val patched = file.copyOf()
             System.arraycopy(table, 0, patched, offset, table.size)
-            // Force write even if larger than LZ slot — save() will full-repack GARC
-            garc.setFileForce(i, patched)
 
-            // Mirror into decStorage like pk3DS RSWE (map index f = i - 2)
-            val f = i - 2
-            val ptrOff = (f + 1) * 4
-            if (ptrOff + 4 <= decStorage.size) {
-                val enBase = getU32(decStorage, ptrOff)
-                val enOfs = enBase + 0xE
-                // pk3DS copies 0xF4 bytes (61 slots * 4)
-                val copyLen = minOf(0xF4, table.size)
-                if (enBase >= 0 && enOfs + copyLen <= decStorage.size) {
-                    System.arraycopy(table, 0, decStorage, enOfs, copyLen)
+            val wasLz = original.isNotEmpty() && original[0] == 0x11.toByte()
+            val payload = if (wasLz) {
+                // Always recompress — never store raw map bodies
+                Lz11.compress(patched)
+            } else if (patched.size <= garc.maxLength(i)) {
+                patched
+            } else {
+                Lz11.compress(patched)
+            }
+
+            if (garc.setFile(i, payload)) {
+                mapsPatched++
+            } else {
+                // Compressed slightly larger than original slot — force + rebuild allowed
+                // because payload is still LZ11 (not multi-KB uncompressed).
+                garc.setFileForce(i, payload)
+                mapsPatched++
+                forced++
+            }
+
+            if (decStorage != null) {
+                val f = i - 2
+                val ptrOff = (f + 1) * 4
+                if (ptrOff + 4 <= decStorage.size) {
+                    val enBase = getU32(decStorage, ptrOff)
+                    val enOfs = enBase + 0xE
+                    val copyLen = minOf(0xF4, table.size)
+                    if (enBase >= 0 && enOfs + copyLen <= decStorage.size) {
+                        System.arraycopy(table, 0, decStorage, enOfs, copyLen)
+                        enTables++
+                    }
                 }
             }
-            tables++
         }
-        // Write updated EN pack back (in-place if size matches)
-        if (!garc.setFile(1, decStorage)) {
-            garc.setFileForce(1, decStorage)
+
+        if (decStorage != null && enTables > 0) {
+            val enPayload = if (decOriginal.isNotEmpty() && decOriginal[0] == 0x11.toByte()) {
+                Lz11.compress(decStorage)
+            } else {
+                decStorage
+            }
+            if (!garc.setFile(1, enPayload)) {
+                garc.setFileForce(1, enPayload)
+                forced++
+            }
+            log.appendLine("wilds: EN pack updated ($enTables tables)")
         }
+
+        if (mapsPatched == 0 && enTables == 0) {
+            modified.remove(OrasPaths.ENCDATA)
+            log.appendLine("wilds: nothing written (skipped=$mapsSkipped)")
+            Log.w(TAG, "wilds: no patches applied")
+            return
+        }
+
+        // save() uses saveInPlace when every file fits; saveRepack only if forced grew a slot.
+        // Both paths keep LZ11 map payloads (safe). Never write raw uncompressed maps.
         modified[OrasPaths.ENCDATA] = garc.save()
-        log.appendLine("wild tables patched: $tables (skipped $skipped)")
-        Log.i(TAG, "wild tables patched: $tables skipped=$skipped")
+        log.appendLine(
+            "wilds: maps=$mapsPatched enTables=$enTables skipped=$mapsSkipped forcedSlots=$forced",
+        )
+        Log.i(TAG, "wilds maps=$mapsPatched en=$enTables force=$forced skip=$mapsSkipped")
+    }
+
+    /** Patch one 0xF6 encounter table. Form always cleared (0). */
+    private fun patchEncounterTable(table: ByteArray, pool: IntArray): Boolean {
+        var changed = false
+        for (s in 0 until OrasPaths.SLOT_COUNT) {
+            val so = s * 4
+            if (so + 4 > table.size) break
+            val word = getU16(table, so)
+            val sp = word and 0x7FF
+            val lo = table[so + 2].toInt() and 0xFF
+            val hi = table[so + 3].toInt() and 0xFF
+            if (sp !in 1..SpeciesPool.MAX_SPECIES) continue
+            if (lo !in 1..100 || hi !in 1..100 || lo > hi) continue
+            var newSp = sp
+            var newLo = lo
+            var newHi = hi
+            if (config.wildSpecies) {
+                newSp = SpeciesPool.pick(rng, pool)
+            }
+            if (config.wildLevels) {
+                val mid = ((lo + hi) / 2).coerceIn(1, 100)
+                val delta = rng.nextInt(0, 6)
+                newLo = (mid - delta).coerceIn(1, 100)
+                newHi = (mid + delta).coerceIn(newLo, 100)
+            }
+            putU16(table, so, newSp and 0x7FF)
+            table[so + 2] = newLo.toByte()
+            table[so + 3] = newHi.toByte()
+            changed = true
+        }
+        return changed
     }
 
     // --- Trainers ---

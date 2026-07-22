@@ -2,7 +2,7 @@
 
 **Delivers:** requirement **#1** — free camera, as free as ORAS allows  
 **Integration:** after Milestone A can boot OR/AS; research may start earlier on PC  
-**Status:** Not started  
+**Status:** Interim assist shipped (START menu toggle → ORAS camera cheats). Full stick freecam still research.  
 
 ---
 
@@ -169,6 +169,23 @@ Ship Milestone A/B with:
 - Optional **FOV / zoom cheats** as “Camera assist (beta)”  
 
 Label honestly: not full freecam. Replace when R3+ lands.
+
+### Shipped (2026-07-22) — two START menu toggles
+
+1. **Free look (right stick)** — native driver `core/hoenn_freecam.cpp`
+   - Reads C-Stick (right stick mapping)
+   - Writes yaw/pitch into ORAS overworld camera object (`ptr @ 0x5F67DC`)
+   - Pitch at `+0x98`; yaw candidates nearby; keeps wide FOV
+   - **Experimental** — field layout is revision-sensitive; may do nothing or glitch on some maps
+   - Toggle: `HoennPrefs.freelookEnabled` + `NativeLibrary.setHoennFreelook`
+
+2. **Camera zoom assist** — Gateway cheats via `HoennFreecam.kt`
+   - Wide FOV + **L/R** zoom
+   - Not freelook; separate from right-stick toggle
+
+- **Limits:** dynamic cameras (Mauville, gyms, cutscenes) often lock the camera
+- **Title filter:** ORAS title IDs only (`OrasTitles`)
+- **Next research:** exact yaw field / code.bin patch for reliable freelook
 
 ---
 

@@ -85,10 +85,9 @@ object SpeciesPool {
                 trio
             }
             RandomizerConfig.StarterMode.FULL_RANDOM -> {
-                // Prefer basic starters for stability; mix in gen 1-5 non-legends lightly
-                val pool = BASIC_STARTERS + allSpecies(includeLegendaries = false)
-                    .filter { it <= 649 && !isLegendary(it) }.take(200).toIntArray()
-                IntArray(3) { pick(rng, pool) }.also { ensureDistinct(it, rng, pool) }
+                // Only first-stage starters — bag/select models are reliable
+                IntArray(3) { pick(rng, BASIC_STARTERS) }
+                    .also { ensureDistinct(it, rng, BASIC_STARTERS) }
             }
         }
     }

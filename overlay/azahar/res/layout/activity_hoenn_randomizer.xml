@@ -4,13 +4,14 @@
     android:layout_height="match_parent"
     android:background="@drawable/hoenn_bg_screen"
     android:orientation="vertical"
-    android:padding="@dimen/hoenn_space_16">
+    android:padding="@dimen/hoenn_margin_outer">
 
+    <!-- Top bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -24,12 +25,13 @@
             style="@style/Hoenn.Text.Caption" />
     </LinearLayout>
 
+    <!-- Title row + seed -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -38,338 +40,221 @@
             style="@style/Hoenn.Text.Title"
             android:textSize="22sp" />
         <TextView
+            android:id="@+id/chipGame"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/hoenn_chip"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textColor="@color/hoenn_text"
+            android:textSize="12sp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
             android:text="@string/hoenn_seed_label"
-            style="@style/Hoenn.Text.Muted"
-            android:layout_marginEnd="8dp" />
+            style="@style/Hoenn.Text.Muted" />
         <TextView
             android:id="@+id/textSeed"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/hoenn_chip_muted"
-            android:paddingHorizontal="12dp"
+            android:paddingHorizontal="10dp"
             android:paddingVertical="6dp"
             style="@style/Hoenn.Text.Mono" />
+        <Button
+            android:id="@+id/buttonRerollSeed"
+            style="@style/Hoenn.Button.Ghost"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="48dp"
+            android:text="@string/hoenn_seed_reroll_short"
+            android:textSize="18sp" />
     </LinearLayout>
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/hoenn_randomizer_subtitle"
-        style="@style/Hoenn.Text.Muted" />
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="12dp"
-        android:layout_weight="1">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingBottom="12dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/hoenn_presets"
-                style="@style/Hoenn.Text.CardTitle" />
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="horizontal">
-                <Button
-                    android:id="@+id/buttonPresetLight"
-                    style="@style/Hoenn.Button.Secondary"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="6dp"
-                    android:layout_weight="1"
-                    android:text="@string/hoenn_preset_light" />
-                <Button
-                    android:id="@+id/buttonPresetStandard"
-                    style="@style/Hoenn.Button.Primary"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="6dp"
-                    android:layout_weight="1"
-                    android:text="@string/hoenn_preset_standard" />
-                <Button
-                    android:id="@+id/buttonPresetChaos"
-                    style="@style/Hoenn.Button.Secondary"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:layout_weight="1"
-                    android:text="@string/hoenn_preset_chaos" />
-            </LinearLayout>
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/hoenn_presets_help"
-                style="@style/Hoenn.Text.Caption" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:orientation="horizontal">
-                <EditText
-                    android:id="@+id/editSeed"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/hoenn_bg_card"
-                    android:hint="@string/hoenn_seed_hint"
-                    android:inputType="number"
-                    android:maxLines="1"
-                    android:paddingHorizontal="12dp"
-                    android:textColor="@color/hoenn_text"
-                    android:textColorHint="@color/hoenn_muted"
-                    android:textSize="14sp" />
-                <Button
-                    android:id="@+id/buttonApplySeed"
-                    style="@style/Hoenn.Button.Secondary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="8dp"
-                    android:minHeight="48dp"
-                    android:text="@string/hoenn_seed_apply" />
-                <Button
-                    android:id="@+id/buttonRerollSeed"
-                    style="@style/Hoenn.Button.Secondary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:minHeight="48dp"
-                    android:text="@string/hoenn_seed_reroll" />
-            </LinearLayout>
-
-            <!-- Wilds card -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:background="@drawable/hoenn_bg_card"
-                android:orientation="vertical"
-                android:padding="14dp">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/hoenn_cat_wilds" style="@style/Hoenn.Text.CardTitle"
-                    android:textColor="@color/hoenn_accent_300" />
-                <CheckBox android:id="@+id/cbWildSpecies" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_species"
-                     />
-                <CheckBox android:id="@+id/cbWildLevels" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_levels"
-                     />
-                <CheckBox android:id="@+id/cbWildLegends" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_wild_legends"
-                     />
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/hoenn_opt_wild_theme" style="@style/Hoenn.Text.Caption" />
-                <RadioGroup android:id="@+id/rgWildTheme" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:orientation="horizontal">
-                    <RadioButton android:id="@+id/rbThemeNone" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:checked="true"
-                        android:text="@string/hoenn_theme_none" android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbThemeMono" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_theme_mono"
-                        android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbThemeDual" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_theme_dual"
-                        android:textColor="@color/hoenn_text" />
-                </RadioGroup>
-            </LinearLayout>
-
-            <!-- Trainers -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/hoenn_bg_card"
-                android:orientation="vertical"
-                android:padding="14dp">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/hoenn_cat_trainers" style="@style/Hoenn.Text.CardTitle"
-                    android:textColor="@color/hoenn_accent_300" />
-                <CheckBox android:id="@+id/cbTrainerParties" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_parties"
-                     />
-                <CheckBox android:id="@+id/cbTrainerItems" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_items"
-                     />
-                <CheckBox android:id="@+id/cbTrainerMoves" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_moves"
-                     />
-                <CheckBox android:id="@+id/cbTrainerAbilities" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_trainer_abilities"
-                     />
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/hoenn_opt_trainer_difficulty" style="@style/Hoenn.Text.Caption" />
-                <RadioGroup android:id="@+id/rgDifficulty" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:orientation="horizontal">
-                    <RadioButton android:id="@+id/rbDiffWeaker" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_diff_weaker"
-                        android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbDiffSimilar" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:checked="true"
-                        android:text="@string/hoenn_diff_similar" android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbDiffStronger" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_diff_stronger"
-                        android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbDiffRival" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_diff_rival"
-                        android:textColor="@color/hoenn_text" />
-                </RadioGroup>
-            </LinearLayout>
-
-            <!-- Starters -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/hoenn_bg_card"
-                android:orientation="vertical"
-                android:padding="14dp">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/hoenn_cat_starters" style="@style/Hoenn.Text.CardTitle"
-                    android:textColor="@color/hoenn_accent_300" />
-                <RadioGroup android:id="@+id/rgStarters" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:orientation="vertical">
-                    <RadioButton android:id="@+id/rbStarterVanilla" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_starter_vanilla"
-                        android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbStarterFull" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:checked="true"
-                        android:text="@string/hoenn_starter_full" android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbStarterGen" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_starter_gen"
-                        android:textColor="@color/hoenn_text" />
-                    <RadioButton android:id="@+id/rbStarterType" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" android:text="@string/hoenn_starter_type"
-                        android:textColor="@color/hoenn_text" />
-                </RadioGroup>
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/buttonToggleAdvanced"
-                style="@style/Hoenn.Button.Ghost"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/hoenn_show_advanced" />
-
-            <LinearLayout
-                android:id="@+id/advancedPanel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:background="@drawable/hoenn_bg_card"
-                    android:orientation="vertical" android:padding="14dp">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:text="@string/hoenn_cat_personal" style="@style/Hoenn.Text.CardTitle" />
-                    <CheckBox android:id="@+id/cbPersonalTypes" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_types"
-                         />
-                    <CheckBox android:id="@+id/cbPersonalStats" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_stats"
-                         />
-                    <CheckBox android:id="@+id/cbPersonalAbilities" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_abilities"
-                         />
-                    <CheckBox android:id="@+id/cbPersonalTm" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_personal_tm"
-                         />
-                </LinearLayout>
-
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:background="@drawable/hoenn_bg_card"
-                    android:orientation="vertical" android:padding="14dp">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:text="@string/hoenn_cat_moves" style="@style/Hoenn.Text.CardTitle" />
-                    <CheckBox android:id="@+id/cbMoveTypes" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_move_types"
-                         />
-                    <CheckBox android:id="@+id/cbMoveCats" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_move_cats"
-                         />
-                    <CheckBox android:id="@+id/cbLevelUp" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_level_up"
-                         />
-                    <CheckBox android:id="@+id/cbEggMoves" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_egg_moves"
-                         />
-                    <CheckBox android:id="@+id/cbTmList" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_tm_list"
-                         />
-                </LinearLayout>
-
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:background="@drawable/hoenn_bg_card"
-                    android:orientation="vertical" android:padding="14dp">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:text="@string/hoenn_cat_misc" style="@style/Hoenn.Text.CardTitle" />
-                    <CheckBox android:id="@+id/cbEvolutions" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_evolutions"
-                         />
-                    <CheckBox android:id="@+id/cbMarts" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_marts"
-                         />
-                    <CheckBox android:id="@+id/cbStaticGifts" android:layout_width="match_parent"
-                        android:layout_height="wrap_content" style="@style/Hoenn.CheckBox" android:text="@string/hoenn_opt_static"
-                         />
-                </LinearLayout>
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/textWarning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:textColor="@color/hoenn_warning"
-                android:textSize="13sp"
-                android:visibility="gone" />
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/hoenn_summary_label"
-                style="@style/Hoenn.Text.CardTitle" />
-            <TextView
-                android:id="@+id/textSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                style="@style/Hoenn.Text.Mono"
-                android:textSize="12sp" />
-        </LinearLayout>
-    </ScrollView>
-
+    <!-- Preset cards -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:orientation="horizontal"
-        android:layout_marginTop="8dp">
-        <Button
-            android:id="@+id/buttonBack"
-            style="@style/Hoenn.Button.Secondary"
+        android:baselineAligned="false">
+        <LinearLayout
+            android:id="@+id/cardPresetLight"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/hoenn_bg_card"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:minHeight="72dp">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_preset_light"
+                style="@style/Hoenn.Text.CardTitle" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/hoenn_preset_light_desc"
+                style="@style/Hoenn.Text.Muted" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/cardPresetStandard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
+            android:background="@drawable/hoenn_bg_card_selected"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:minHeight="72dp">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_preset_standard"
+                style="@style/Hoenn.Text.CardTitle" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/hoenn_preset_standard_desc"
+                style="@style/Hoenn.Text.Muted" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/cardPresetChaos"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/hoenn_bg_card"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:minHeight="72dp">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_preset_chaos"
+                style="@style/Hoenn.Text.CardTitle" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/hoenn_preset_chaos_desc"
+                style="@style/Hoenn.Text.Muted" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Category grid row 1 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="12dp"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catWilds"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp" />
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catTrainers"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="3dp" />
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catStarters"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="3dp" />
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catPersonal"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catMoves"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp" />
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catEvolutions"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="3dp" />
+            <include layout="@layout/hoenn_category_card"
+                android:id="@+id/catMisc"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="3dp" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:gravity="center"
+                android:padding="12dp"
+                android:text="@string/hoenn_category_hint"
+                style="@style/Hoenn.Text.Caption" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Footer -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="8dp"
+            android:text="@string/hoenn_seed_share_hint"
+            style="@style/Hoenn.Text.Caption" />
+        <Button
+            android:id="@+id/buttonBack"
+            style="@style/Hoenn.Button.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="@string/hoenn_menu_back" />
         <Button
-            android:id="@+id/buttonForge"
+            android:id="@+id/buttonReview"
             style="@style/Hoenn.Button.Primary"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="2"
-            android:text="@string/hoenn_forge_run" />
+            android:layout_marginStart="8dp"
+            android:minWidth="160dp"
+            android:text="@string/hoenn_review_run" />
     </LinearLayout>
 </LinearLayout>

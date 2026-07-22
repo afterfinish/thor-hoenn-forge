@@ -51,6 +51,23 @@ class HoennPrefs(context: Context) {
             randomizerJson = value.toJsonString()
         }
 
+    /** Camera zoom assist (START menu). L/R zoom + wide FOV via Gateway cheats. */
+    var cameraZoomAssistEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CAM_ZOOM, false)
+        set(value) = prefs.edit { putBoolean(KEY_CAM_ZOOM, value) }
+
+    /** Right-stick free-look (START menu). Native freecam driver. */
+    var freelookEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FREELOOK, false)
+        set(value) = prefs.edit { putBoolean(KEY_FREELOOK, value) }
+
+    @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
+    var freecamEnabled: Boolean
+        get() = cameraZoomAssistEnabled
+        set(value) {
+            cameraZoomAssistEnabled = value
+        }
+
     val hasDump: Boolean
         get() = !dumpUri.isNullOrBlank() && !dumpTitleId.isNullOrBlank()
 
@@ -85,5 +102,18 @@ class HoennPrefs(context: Context) {
         private const val KEY_THOR = "thor_applied"
         private const val KEY_PREPARED = "prepared_ready"
         private const val KEY_RANDOMIZER = "randomizer_json"
+        private const val KEY_CAM_ZOOM = "camera_zoom_assist"
+        private const val KEY_FREELOOK = "freelook_enabled"
+        // legacy key migrated on first read via cameraZoomAssist if needed
+        private const val KEY_FREECAM_LEGACY = "freecam_enabled"
+    }
+
+    init {
+        // Migrate old freecam_enabled → camera zoom assist once
+        if (prefs.contains(KEY_FREECAM_LEGACY) && !prefs.contains(KEY_CAM_ZOOM)) {
+            prefs.edit {
+                putBoolean(KEY_CAM_ZOOM, prefs.getBoolean(KEY_FREECAM_LEGACY, false))
+            }
+        }
     }
 }

@@ -37,6 +37,7 @@
         android:name="org.citra.citra_emu.CitraApplication"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:appCategory="game"
         android:allowBackup="false"
         android:supportsRtl="true"
@@ -79,6 +80,18 @@
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.RandomizerActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name="org.citra.citra_emu.hoennforge.RandomizerCategoryActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name="org.citra.citra_emu.hoennforge.RandomizerSummaryActivity"
             android:theme="@style/Theme.Citra.Main"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />

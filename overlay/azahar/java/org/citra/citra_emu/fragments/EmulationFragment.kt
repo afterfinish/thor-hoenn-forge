@@ -509,6 +509,8 @@ class EmulationFragment :
                             binding.drawerLayout.setDrawerLockMode(
                                 EmulationMenuSettings.drawerLockMode
                             )
+                            // Restore free-camera assist if user left it on
+                            applyHoennFreecamIfNeeded()
                         }
                     }
                 }
@@ -521,8 +523,7 @@ class EmulationFragment :
     fun isDrawerOpen(): Boolean = binding.drawerLayout.isOpen
 
     /**
-     * Hoenn Forge: open a compact menu (Start on Thor) with save/load states.
-     * Expand later with more items as needed.
+     * Hoenn Forge: Start menu — free look, zoom assist, save/load.
      */
     fun openHoennQuickMenu() {
         if (!isAdded || _binding == null || !::emulationState.isInitialized) {
@@ -532,7 +533,24 @@ class EmulationFragment :
             return
         }
 
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val freelookOn = prefs.freelookEnabled
+        val zoomOn = prefs.cameraZoomAssistEnabled
         val items = arrayOf(
+            getString(
+                if (freelookOn) {
+                    R.string.hoenn_menu_freelook_on
+                } else {
+                    R.string.hoenn_menu_freelook_off
+                },
+            ),
+            getString(
+                if (zoomOn) {
+                    R.string.hoenn_menu_zoom_on
+                } else {
+                    R.string.hoenn_menu_zoom_off
+                },
+            ),
             getString(R.string.hoenn_menu_save_state),
             getString(R.string.hoenn_menu_load_state),
             getString(R.string.hoenn_menu_resume),
@@ -541,12 +559,93 @@ class EmulationFragment :
             .setTitle(R.string.hoenn_menu_title)
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> showHoennStateSlots(isSaving = true)
-                    1 -> showHoennStateSlots(isSaving = false)
+                    0 -> toggleHoennFreelook()
+                    1 -> toggleHoennZoomAssist()
+                    2 -> showHoennStateSlots(isSaving = true)
+                    3 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
             .show()
+    }
+
+    private fun toggleHoennFreelook() {
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val next = !prefs.freelookEnabled
+        prefs.freelookEnabled = next
+        try {
+            NativeLibrary.setHoennFreelook(next)
+        } catch (e: Exception) {
+            Log.error("[HoennForge] freelook native: $e")
+        }
+        Toast.makeText(
+            requireContext(),
+            if (next) {
+                R.string.hoenn_menu_freelook_enabled_toast
+            } else {
+                R.string.hoenn_menu_freelook_disabled_toast
+            },
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    private fun toggleHoennZoomAssist() {
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val next = !prefs.cameraZoomAssistEnabled
+        val ok = org.citra.citra_emu.hoennforge.HoennFreecam.apply(titleId, next)
+        if (!ok && next) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_zoom_failed,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        prefs.cameraZoomAssistEnabled = next
+        Toast.makeText(
+            requireContext(),
+            if (next) {
+                R.string.hoenn_menu_zoom_enabled_toast
+            } else {
+                R.string.hoenn_menu_zoom_disabled_toast
+            },
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    /** Re-apply camera tools after boot if the user left them on. */
+    private fun applyHoennFreecamIfNeeded() {
+        if (!::game.isInitialized || !NativeLibrary.isRunning()) return
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(game.titleId)) return
+        if (prefs.cameraZoomAssistEnabled) {
+            org.citra.citra_emu.hoennforge.HoennFreecam.apply(game.titleId, true)
+        }
+        if (prefs.freelookEnabled) {
+            try {
+                NativeLibrary.setHoennFreelook(true)
+            } catch (e: Exception) {
+                Log.error("[HoennForge] freelook restore: $e")
+            }
+        }
     }
 
     private fun showHoennStateSlots(isSaving: Boolean) {

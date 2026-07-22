@@ -17,6 +17,9 @@ class GarcArchive private constructor(
 
     fun getFile(index: Int): ByteArray = files[index].copyOf()
 
+    /** Original FATB slot budget (end − start) for in-place writes. */
+    fun maxLength(index: Int): Int = maxLengths[index]
+
     /**
      * Prefer in-place replace when [data] fits the original subfile budget.
      * Returns false if the file must grow (caller may full-repack).
