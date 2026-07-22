@@ -1,0 +1,15 @@
+// Copyright Citra Emulator Project / Azahar Emulator Project
+// Licensed under GPLv2 or any later version
+// Refer to the license.txt file included.
+
+#pragma once
+
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <jni.h>
+
+std::string GetJString(JNIEnv* env, jstring jstr);
+jstring ToJString(JNIEnv* env, std::string_view str);
+jobjectArray ToJStringArray(JNIEnv* env, const std::vector<std::string>& strs);

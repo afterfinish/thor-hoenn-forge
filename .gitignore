@@ -45,6 +45,9 @@ movable.sed
 *.apk
 *.ap_
 *.aab
+# Vendored Azahar tree is large; track overlay + build scripts instead
+/emulator/
+/dist/
 *.dex
 *.class
 bin/

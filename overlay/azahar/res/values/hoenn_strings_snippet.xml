@@ -1,0 +1,16 @@
+    <string name="hoenn_welcome_title">Hoenn Forge</string>
+    <string name="hoenn_welcome_body">Unofficial fan project — not affiliated with Nintendo or The Pokémon Company.\n\nThis app does not include Pokémon Omega Ruby or Alpha Sapphire. You must select a dump of a game you own.\n\nPowered by the Azahar 3DS emulator core (GPL).</string>
+    <string name="hoenn_welcome_checkbox">I own this game and will provide my own dump.</string>
+    <string name="hoenn_continue">Continue</string>
+    <string name="hoenn_dump_title">Choose your dump</string>
+    <string name="hoenn_dump_help">Select a decrypted .3ds or .cci of Omega Ruby or Alpha Sapphire.</string>
+    <string name="hoenn_dump_pick">Select dump file</string>
+    <string name="hoenn_dump_checking">Checking dump…</string>
+    <string name="hoenn_dump_ok">Ready: %1$s\nTitle ID: %2$s\nSize: ~%3$s GB</string>
+    <string name="hoenn_home_title">Ready to forge</string>
+    <string name="hoenn_home_meta">File: %1$s\nTitle: %2$s · Region: %3$s</string>
+    <string name="hoenn_play">Play</string>
+    <string name="hoenn_change_dump">Change dump</string>
+    <string name="hoenn_advanced">Advanced emulator UI</string>
+    <string name="hoenn_game_invalid">Could not load this dump as a 3DS game. Try a decrypted .cci/.3ds that boots in Azahar.</string>
+    <string name="hoenn_play_failed">Failed to start game: %1$s</string>
