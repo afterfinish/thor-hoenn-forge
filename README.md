@@ -60,8 +60,10 @@ APK (GPL-3, no game files)
 
 ## Contributing / AI assistants
 
-Read **[SOUL.md](SOUL.md)** first, then **[docs/PLAN.md](docs/PLAN.md)** and the milestone you are working on.  
+Read **[SOUL.md](SOUL.md)** and **[MEMORY.md](MEMORY.md)** first, then **[docs/PLAN.md](docs/PLAN.md)** and the milestone you are working on.  
 Milestone **A** before B/D product work; freecam research may proceed in parallel after A boots a dump.
+
+**After every small achievement:** commit → push → update `MEMORY.md`.
 
 ---
 

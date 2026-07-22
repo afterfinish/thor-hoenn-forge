@@ -5,6 +5,7 @@ Living index for product planning. Detailed docs:
 | Doc | Purpose |
 |-----|---------|
 | [SOUL.md](../SOUL.md) | Project identity, non-negotiables, how we work |
+| [MEMORY.md](../MEMORY.md) | Session handoff — update after every small achievement |
 | [product-scope.md](product-scope.md) | Requirements 1–6, v1 vs later |
 | [milestone-a-shell.md](milestone-a-shell.md) | **A** — baked emulator, dump pick, Thor upscale |
 | [onboarding-ux.md](onboarding-ux.md) | Full onboarding wireflow (dump → randomize → play) |
