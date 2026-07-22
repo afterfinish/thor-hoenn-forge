@@ -1,0 +1,79 @@
+# --- Never commit game data ---
+*.cci
+*.CIA
+*.cia
+*.3ds
+*.3DS
+*.cxi
+*.CXI
+*.app
+*.APP
+*.ncch
+*.NCCH
+# Game code dumps (prefer IPS patches in git, not full code.bin)
+**/code.bin
+**/.code.bin
+**/exefs/code.bin
+
+# Extracted / prepared game trees
+**/romfs/**
+**/exefs/**
+**/ExtractedRomFS/**
+**/ExtractedExeFS/**
+**/prepared/**
+**/dumps/**
+**/nand/**
+**/sdmc/**
+**/sdmc_dir/**
+**/user/nand/**
+**/user/sdmc/**
+
+# 3DS keys / secrets (never commit)
+aes_keys.txt
+*.keys
+boot9.bin
+boot11.bin
+seeddb.bin
+movable.sed
+
+# --- Android / Gradle (when code lands) ---
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+.cxx/
+captures/
+.externalNativeBuild/
+
+# NDK / CMake
+cmake-build-*/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# --- Python / misc research envs ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Large local artifacts
+*.7z
+*.zip
+!docs/**/*.zip
+*.rar
+*.rvz
+*.iso

@@ -1,0 +1,17 @@
+Copyright (c) 2026 Hoenn Forge contributors
+
+This project will be licensed under the GNU General Public License v3.0
+once application source is added, for compatibility with:
+
+  - Azahar / Citra-lineage emulator code (GPL)
+  - pk3DS (GPL-3.0)
+
+Until code lands, the planning documents in this repository are provided
+for project coordination. When the first application source commit is
+made, the full GPL-3.0 text shall be applied to the combined work.
+
+You can read the GPL-3.0 at:
+https://www.gnu.org/licenses/gpl-3.0.en.html
+
+NO GAME ROMS OR NINTENDO INTELLECTUAL PROPERTY ARE INCLUDED IN THIS
+REPOSITORY. Users must supply their own legally obtained game dumps.
