@@ -2,7 +2,7 @@
 
 **Delivers:** requirement **#5**  
 **Depends on:** Milestone A (dump in app, boot path, storage strategy)  
-**Status:** Not started  
+**Status:** UI + config + prepare shell in progress (engine modules pending)  
 
 ---
 

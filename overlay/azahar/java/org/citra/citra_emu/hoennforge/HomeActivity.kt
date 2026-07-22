@@ -7,6 +7,7 @@ import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -23,7 +24,6 @@ class HomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         prefs = HoennPrefs(this)
 
-        // Enforce onboarding order if user landed here early
         if (!Onboarding.hasDataDirectory(this)) {
             startActivity(Onboarding.intentTo(this, DataDirActivity::class.java))
             finish()
@@ -34,12 +34,27 @@ class HomeActivity : AppCompatActivity() {
             finish()
             return
         }
+        if (!prefs.preparedReady) {
+            startActivity(Onboarding.intentTo(this, PlayModeActivity::class.java))
+            finish()
+            return
+        }
 
         Onboarding.ensureDirectoriesInitialized(this)
 
         setContentView(R.layout.activity_hoenn_home)
+        val config = prefs.randomizerConfig
         findViewById<TextView>(R.id.textGame).text =
             prefs.dumpGameLabel ?: getString(R.string.app_name)
+        findViewById<TextView>(R.id.textMode).text = if (config.enabled) {
+            getString(
+                R.string.hoenn_home_mode_random,
+                config.modeLabel(),
+                config.seedDisplay(),
+            )
+        } else {
+            getString(R.string.hoenn_home_mode_vanilla)
+        }
         findViewById<TextView>(R.id.textMeta).text = getString(
             R.string.hoenn_home_meta,
             prefs.dumpDisplayName ?: "—",
@@ -48,6 +63,7 @@ class HomeActivity : AppCompatActivity() {
         )
 
         findViewById<Button>(R.id.buttonPlay).setOnClickListener { playDump() }
+        findViewById<Button>(R.id.buttonNewRun).setOnClickListener { confirmNewRun() }
         findViewById<Button>(R.id.buttonChangeDump).setOnClickListener {
             prefs.clearDump()
             startActivity(Onboarding.intentTo(this, DumpPickerActivity::class.java))
@@ -56,6 +72,19 @@ class HomeActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonAdvanced).setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
         }
+    }
+
+    private fun confirmNewRun() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.hoenn_new_run)
+            .setMessage(R.string.hoenn_new_run_confirm)
+            .setPositiveButton(R.string.hoenn_continue) { _, _ ->
+                prefs.clearPreparedRun()
+                startActivity(Onboarding.intentTo(this, PlayModeActivity::class.java))
+                finish()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun playDump() {
@@ -97,7 +126,8 @@ class HomeActivity : AppCompatActivity() {
             Log.i(
                 TAG,
                 "Game valid=${game.valid} title=${game.title} path=${game.path} " +
-                    "titleId=${game.titleId} regions=${game.regions}",
+                    "titleId=${game.titleId} regions=${game.regions} " +
+                    "randomizer=${prefs.randomizerConfig.enabled} seed=${prefs.randomizerConfig.seed}",
             )
 
             if (!game.valid) {
@@ -114,6 +144,8 @@ class HomeActivity : AppCompatActivity() {
                 return
             }
 
+            // Engine note: until randomizer extract/repack ships, Play still boots
+            // the original dump URI. Config is saved for the prepare pipeline.
             startActivity(
                 Intent(this, EmulationActivity::class.java).apply {
                     action = Intent.ACTION_VIEW

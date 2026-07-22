@@ -8,7 +8,7 @@ import org.citra.citra_emu.utils.PermissionsHandler
 
 /**
  * Shared onboarding routing:
- * Legal → Data folder → Dump → Home
+ * Legal → Data folder → Dump → Play mode → [Randomizer] → Prepare → Home
  */
 object Onboarding {
     fun hasDataDirectory(context: Context): Boolean =
@@ -18,11 +18,13 @@ object Onboarding {
     fun nextAfterLegal(context: Context, prefs: HoennPrefs): Class<*> {
         if (!hasDataDirectory(context)) return DataDirActivity::class.java
         if (!prefs.hasDump) return DumpPickerActivity::class.java
+        if (!prefs.preparedReady) return PlayModeActivity::class.java
         return HomeActivity::class.java
     }
 
     fun nextAfterDataDir(prefs: HoennPrefs): Class<*> {
         if (!prefs.hasDump) return DumpPickerActivity::class.java
+        if (!prefs.preparedReady) return PlayModeActivity::class.java
         return HomeActivity::class.java
     }
 

@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/hoenn_randomizer_title"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/hoenn_randomizer_subtitle"
+        android:textSize="13sp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="16dp">
+
+            <!-- Presets -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_presets"
+                android:textStyle="bold"
+                android:textSize="16sp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/buttonPresetLight"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/hoenn_preset_light" />
+                <Button
+                    android:id="@+id/buttonPresetStandard"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/hoenn_preset_standard" />
+                <Button
+                    android:id="@+id/buttonPresetChaos"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/hoenn_preset_chaos" />
+            </LinearLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/hoenn_presets_help"
+                android:textSize="12sp" />
+
+            <!-- Seed -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/hoenn_seed_label"
+                android:textStyle="bold"
+                android:textSize="16sp" />
+            <TextView
+                android:id="@+id/textSeed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textSize="18sp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/editSeed"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/hoenn_seed_hint"
+                    android:inputType="number"
+                    android:maxLines="1" />
+                <Button
+                    android:id="@+id/buttonApplySeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/hoenn_seed_apply" />
+                <Button
+                    android:id="@+id/buttonRerollSeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:text="@string/hoenn_seed_reroll" />
+            </LinearLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hoenn_seed_help"
+                android:textSize="12sp" />
+
+            <!-- Wilds -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/hoenn_cat_wilds"
+                android:textStyle="bold"
+                android:textSize="16sp" />
+            <CheckBox android:id="@+id/cbWildSpecies" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_wild_species" />
+            <CheckBox android:id="@+id/cbWildLevels" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_wild_levels" />
+            <CheckBox android:id="@+id/cbWildLegends" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_wild_legends" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/hoenn_opt_wild_theme" android:textSize="13sp" />
+            <RadioGroup android:id="@+id/rgWildTheme" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="horizontal">
+                <RadioButton android:id="@+id/rbThemeNone" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:checked="true"
+                    android:text="@string/hoenn_theme_none" />
+                <RadioButton android:id="@+id/rbThemeMono" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_theme_mono" />
+                <RadioButton android:id="@+id/rbThemeDual" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_theme_dual" />
+            </RadioGroup>
+
+            <!-- Trainers -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_cat_trainers"
+                android:textStyle="bold"
+                android:textSize="16sp" />
+            <CheckBox android:id="@+id/cbTrainerParties" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_trainer_parties" />
+            <CheckBox android:id="@+id/cbTrainerItems" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_trainer_items" />
+            <CheckBox android:id="@+id/cbTrainerMoves" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_trainer_moves" />
+            <CheckBox android:id="@+id/cbTrainerAbilities" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:text="@string/hoenn_opt_trainer_abilities" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/hoenn_opt_trainer_difficulty" android:textSize="13sp" />
+            <RadioGroup android:id="@+id/rgDifficulty" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="horizontal">
+                <RadioButton android:id="@+id/rbDiffWeaker" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_diff_weaker" />
+                <RadioButton android:id="@+id/rbDiffSimilar" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:checked="true"
+                    android:text="@string/hoenn_diff_similar" />
+                <RadioButton android:id="@+id/rbDiffStronger" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_diff_stronger" />
+                <RadioButton android:id="@+id/rbDiffRival" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_diff_rival" />
+            </RadioGroup>
+
+            <!-- Starters -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_cat_starters"
+                android:textStyle="bold"
+                android:textSize="16sp" />
+            <RadioGroup android:id="@+id/rgStarters" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical">
+                <RadioButton android:id="@+id/rbStarterVanilla" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_starter_vanilla" />
+                <RadioButton android:id="@+id/rbStarterFull" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:checked="true"
+                    android:text="@string/hoenn_starter_full" />
+                <RadioButton android:id="@+id/rbStarterGen" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_starter_gen" />
+                <RadioButton android:id="@+id/rbStarterType" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_starter_type" />
+            </RadioGroup>
+
+            <Button
+                android:id="@+id/buttonToggleAdvanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_show_advanced" />
+
+            <LinearLayout
+                android:id="@+id/advancedPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/hoenn_cat_personal"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+                <CheckBox android:id="@+id/cbPersonalTypes" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_personal_types" />
+                <CheckBox android:id="@+id/cbPersonalStats" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_personal_stats" />
+                <CheckBox android:id="@+id/cbPersonalAbilities" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_personal_abilities" />
+                <CheckBox android:id="@+id/cbPersonalTm" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_personal_tm" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/hoenn_cat_moves"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+                <CheckBox android:id="@+id/cbMoveTypes" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_move_types" />
+                <CheckBox android:id="@+id/cbMoveCats" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_move_cats" />
+                <CheckBox android:id="@+id/cbLevelUp" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_level_up" />
+                <CheckBox android:id="@+id/cbEggMoves" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_egg_moves" />
+                <CheckBox android:id="@+id/cbTmList" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_tm_list" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/hoenn_cat_misc"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+                <CheckBox android:id="@+id/cbEvolutions" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_evolutions" />
+                <CheckBox android:id="@+id/cbMarts" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_marts" />
+                <CheckBox android:id="@+id/cbStaticGifts" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:text="@string/hoenn_opt_static" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/textWarning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="#E9C46A"
+                android:textSize="13sp"
+                android:visibility="gone" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/hoenn_summary_label"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/textSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/buttonBack"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:text="@string/hoenn_menu_back" />
+        <Button
+            android:id="@+id/buttonForge"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="2"
+            android:text="@string/hoenn_forge_run" />
+    </LinearLayout>
+</LinearLayout>

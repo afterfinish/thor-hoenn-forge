@@ -52,26 +52,27 @@ if (Test-Path (Join-Path $Overlay "app-build.gradle.kts")) {
     Copy-Item (Join-Path $Overlay "app-build.gradle.kts") (Join-Path $Android "app\build.gradle.kts") -Force
 }
 
-# Merge hoenn strings if missing
+# Always re-inject Hoenn Forge strings (line-filter old hoenn_* then append snippet)
 $strings = Join-Path $Main "res\values\strings.xml"
-$s = Get-Content $strings -Raw
 $snippetPath = Join-Path $Overlay "res\values\hoenn_strings_snippet.xml"
-if (($s -notmatch 'hoenn_menu_title') -and (Test-Path $snippetPath)) {
-    $snippet = Get-Content $snippetPath -Raw
-    $s = $s -replace '>Azahar</string>', '>Hoenn Forge</string>', 1
-    if ($s -match 'hoenn_welcome_title') {
-        # update existing block by appending missing menu strings is harder; skip if welcome exists
-    } else {
-        $s = $s -replace '(<string name="app_name"[^>]*>.*?</string>)', "`$1`n$snippet"
+if ((Test-Path $strings) -and (Test-Path $snippetPath)) {
+    $lines = Get-Content $strings -Encoding UTF8 | Where-Object {
+        $_ -notmatch 'name="hoenn_' -and
+        $_ -notmatch 'Hoenn Forge UI strings' -and
+        $_ -notmatch '<!-- Prepare -->' -and
+        $_ -notmatch '<!-- Play mode -->' -and
+        $_ -notmatch '<!-- Randomizer -->'
     }
-    Set-Content $strings $s -NoNewline
-}
-# Always re-apply menu strings if missing
-if ($s -notmatch 'hoenn_menu_title' -and (Test-Path $snippetPath)) {
-    $snippet = Get-Content $snippetPath -Raw
-    $s = Get-Content $strings -Raw
-    $s = $s -replace '(</resources>)', "$snippet`n`$1"
-    Set-Content $strings $s -NoNewline
+    $text = ($lines -join "`n")
+    if ($text -match '>Azahar</string>') {
+        $text = $text.Replace('>Azahar</string>', '>Hoenn Forge</string>')
+    }
+    $snippet = (Get-Content $snippetPath -Raw -Encoding UTF8).TrimEnd()
+    if ($text -notmatch 'hoenn_welcome_title') {
+        $text = $text -replace '</resources>', ($snippet + "`n`n</resources>")
+    }
+    [System.IO.File]::WriteAllText($strings, $text + "`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Injected Hoenn Forge strings"
 }
 
 $env:JAVA_HOME = if (Test-Path "C:\Program Files\Android\Android Studio\jbr") {
@@ -82,10 +83,19 @@ $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 
 Push-Location $Android
 .\gradlew.bat :app:assembleVanillaRelWithDebInfo -x ktlintCheck
+$gradleExit = $LASTEXITCODE
 Pop-Location
+if ($gradleExit -ne 0) {
+    Write-Error "Gradle build failed with exit code $gradleExit"
+    exit $gradleExit
+}
 
 $apk = Get-ChildItem (Join-Path $Android "app\build\outputs\apk") -Recurse -Filter *.apk |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $apk) {
+    Write-Error "No APK produced"
+    exit 1
+}
 $dist = Join-Path $Root "dist"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $out = Join-Path $dist "HoennForge-vanilla-relWithDebInfo.apk"

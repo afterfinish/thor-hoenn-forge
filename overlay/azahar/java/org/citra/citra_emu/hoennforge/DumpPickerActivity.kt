@@ -67,7 +67,9 @@ class DumpPickerActivity : AppCompatActivity() {
             prefs.dumpTitleId = OrasTitles.formatTitleId(success.titleId)
             prefs.dumpGameLabel = success.entry.label
             prefs.dumpRegion = success.entry.region
-            startActivity(Onboarding.intentTo(this, HomeActivity::class.java))
+            // New dump → choose play mode (vanilla / randomizer), not straight home
+            prefs.clearPreparedRun()
+            startActivity(Onboarding.intentTo(this, PlayModeActivity::class.java))
             finish()
         }
     }
