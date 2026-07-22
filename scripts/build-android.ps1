@@ -21,26 +21,48 @@ if (-not (Test-Path $Android)) {
 
 Write-Host "Applying overlay..."
 $Main = Join-Path $Android "app\src\main"
-Copy-Item (Join-Path $Overlay "java\org\citra\citra_emu\hoennforge\*") `
-    (Join-Path $Main "java\org\citra\citra_emu\hoennforge\") -Force -Recurse
-New-Item -ItemType Directory -Force -Path (Join-Path $Main "java\org\citra\citra_emu\hoennforge") | Out-Null
-Copy-Item (Join-Path $Overlay "java\org\citra\citra_emu\hoennforge\*") `
-    (Join-Path $Main "java\org\citra\citra_emu\hoennforge\") -Force
-Copy-Item (Join-Path $Overlay "res\layout\*") (Join-Path $Main "res\layout\") -Force
-Copy-Item (Join-Path $Overlay "AndroidManifest.xml") (Join-Path $Main "AndroidManifest.xml") -Force
-Copy-Item (Join-Path $Overlay "jni\android_common\android_common.h") `
-    (Join-Path $Main "jni\android_common\android_common.h") -Force
-Copy-Item (Join-Path $Overlay "app-build.gradle.kts") (Join-Path $Android "app\build.gradle.kts") -Force
+$JavaDst = Join-Path $Main "java"
+$JavaSrc = Join-Path $Overlay "java"
+if (Test-Path $JavaSrc) {
+    Get-ChildItem $JavaSrc -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($JavaSrc.Length).TrimStart('\','/')
+        $target = Join-Path $JavaDst $rel
+        New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+        Copy-Item $_.FullName $target -Force
+    }
+}
+if (Test-Path (Join-Path $Overlay "res\layout")) {
+    Copy-Item (Join-Path $Overlay "res\layout\*") (Join-Path $Main "res\layout\") -Force
+}
+if (Test-Path (Join-Path $Overlay "AndroidManifest.xml")) {
+    Copy-Item (Join-Path $Overlay "AndroidManifest.xml") (Join-Path $Main "AndroidManifest.xml") -Force
+}
+if (Test-Path (Join-Path $Overlay "jni\android_common\android_common.h")) {
+    Copy-Item (Join-Path $Overlay "jni\android_common\android_common.h") (Join-Path $Main "jni\android_common\android_common.h") -Force
+}
+if (Test-Path (Join-Path $Overlay "app-build.gradle.kts")) {
+    Copy-Item (Join-Path $Overlay "app-build.gradle.kts") (Join-Path $Android "app\build.gradle.kts") -Force
+}
 
-# Ensure app_name + hoenn strings present (idempotent-ish: only if missing)
+# Merge hoenn strings if missing
 $strings = Join-Path $Main "res\values\strings.xml"
 $s = Get-Content $strings -Raw
-if ($s -notmatch 'hoenn_welcome_title') {
-    $snippet = Get-Content (Join-Path $Overlay "res\values\hoenn_strings_snippet.xml") -Raw
-    $s = $s -replace '(<string name="app_name"[^>]*>)[^<]*(</string>)', '${1}Hoenn Forge${2}'
-    $s = $s -replace '(<string name="app_name"[^>]*>Hoenn Forge</string>)', "`$1`n    $snippet"
-    # If app_name replace failed pattern, force simple replace of Azahar name
+$snippetPath = Join-Path $Overlay "res\values\hoenn_strings_snippet.xml"
+if (($s -notmatch 'hoenn_menu_title') -and (Test-Path $snippetPath)) {
+    $snippet = Get-Content $snippetPath -Raw
     $s = $s -replace '>Azahar</string>', '>Hoenn Forge</string>', 1
+    if ($s -match 'hoenn_welcome_title') {
+        # update existing block by appending missing menu strings is harder; skip if welcome exists
+    } else {
+        $s = $s -replace '(<string name="app_name"[^>]*>.*?</string>)', "`$1`n$snippet"
+    }
+    Set-Content $strings $s -NoNewline
+}
+# Always re-apply menu strings if missing
+if ($s -notmatch 'hoenn_menu_title' -and (Test-Path $snippetPath)) {
+    $snippet = Get-Content $snippetPath -Raw
+    $s = Get-Content $strings -Raw
+    $s = $s -replace '(</resources>)', "$snippet`n`$1"
     Set-Content $strings $s -NoNewline
 }
 

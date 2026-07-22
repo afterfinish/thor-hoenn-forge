@@ -73,6 +73,8 @@ object ThorProfile {
                 useAxisDpad = true,
             )
             applyL3TurboHotkey()
+            // Start is reserved for Hoenn quick menu (save states), not 3DS Start
+            unmap3dsStartButton()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply controller mappings", e)
         }
@@ -133,5 +135,19 @@ object ThorProfile {
             .apply()
 
         Log.i(TAG, "Mapped L3 ($hostKey) -> turbo hotkey $turboCode")
+    }
+
+    /** Start on Thor opens Hoenn menu; do not also send 3DS Start. */
+    private fun unmap3dsStartButton() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+        val hostKey = "${INPUT_MAPPING_PREFIX}_HostAxis_${KeyEvent.KEYCODE_BUTTON_START}"
+        val reverseKey =
+            "${INPUT_MAPPING_PREFIX}_ReverseMapping_${Settings.KEY_BUTTON_START}"
+        prefs.edit()
+            .remove(Settings.KEY_BUTTON_START)
+            .remove(hostKey)
+            .remove(reverseKey)
+            .apply()
+        Log.i(TAG, "Unmapped host Start from 3DS Start (reserved for quick menu)")
     }
 }

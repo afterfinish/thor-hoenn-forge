@@ -21,3 +21,9 @@
     <string name="hoenn_data_dir_required">A data folder is required to continue.</string>
     <string name="hoenn_data_dir_ok">Data folder set.</string>
     <string name="hoenn_game_invalid_detail">Could not load dump (file exists=%1$s). URI: %2$s</string>
+    <string name="hoenn_menu_title">Hoenn Forge</string>
+    <string name="hoenn_menu_save_state">Save state</string>
+    <string name="hoenn_menu_load_state">Load state</string>
+    <string name="hoenn_menu_resume">Resume</string>
+    <string name="hoenn_menu_back">Back</string>
+    <string name="hoenn_menu_slot_empty">That slot is empty</string>
