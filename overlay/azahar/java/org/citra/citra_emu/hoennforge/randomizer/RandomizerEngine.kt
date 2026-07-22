@@ -184,16 +184,32 @@ class RandomizerEngine(
     }
 
     // --- Wild encounters (encdata GARC) ---
+    // ORAS stores per-map tables (files 2+) often LZ11-compressed, AND a packed copy in
+    // file 1 (decStorage / "537.EN"). pk3DS writes both. Our earlier in-place path skipped
+    // almost every early route because decompress > compressed slot size.
     private fun randomizeWilds() {
-        val raw = modified[OrasPaths.ENCDATA]!!
+        val raw = modified[OrasPaths.ENCDATA] ?: error("encdata missing")
         val garc = GarcArchive.open(raw)
         val pool = SpeciesPool.allSpecies(config.wildLegendaries)
+        // File 1 = decStorage (EN pack). Not always LZ-compressed.
+        var decStorage = try {
+            Lz11.maybeDecompress(garc.getFile(1)).copyOf()
+        } catch (_: Exception) {
+            garc.getFile(1).copyOf()
+        }
         var tables = 0
+        var skipped = 0
         for (i in 2 until garc.fileCount) {
-            var file = Lz11.maybeDecompress(garc.getFile(i))
+            val original = garc.getFile(i)
+            if (original.isEmpty()) continue
+            val file = try {
+                Lz11.maybeDecompress(original)
+            } catch (_: Exception) {
+                skipped++
+                continue
+            }
             if (file.size < 0x20) continue
-            val bb = ByteBuffer.wrap(file).order(ByteOrder.LITTLE_ENDIAN)
-            val offset = bb.getInt(0x10) + 0xE
+            val offset = getU32(file, 0x10) + 0xE
             if (offset < 0 || offset + OrasPaths.ENCOUNTER_TABLE > file.size) continue
             val table = file.copyOfRange(offset, offset + OrasPaths.ENCOUNTER_TABLE)
             var changed = false
@@ -202,7 +218,6 @@ class RandomizerEngine(
                 if (so + 4 > table.size) break
                 val word = getU16(table, so)
                 val sp = word and 0x7FF
-                val form = word ushr 11
                 val lo = table[so + 2].toInt() and 0xFF
                 val hi = table[so + 3].toInt() and 0xFF
                 if (sp !in 1..SpeciesPool.MAX_SPECIES) continue
@@ -219,25 +234,40 @@ class RandomizerEngine(
                     newLo = (mid - delta).coerceIn(1, 100)
                     newHi = (mid + delta).coerceIn(newLo, 100)
                 }
-                // Force form 0 — non-zero forms on random species softlock models
-                val newWord = newSp and 0x7FF
-                putU16(table, so, newWord)
+                // form 0 — random formes softlock models
+                putU16(table, so, newSp and 0x7FF)
                 table[so + 2] = newLo.toByte()
                 table[so + 3] = newHi.toByte()
                 changed = true
             }
-            if (changed) {
-                System.arraycopy(table, 0, file, offset, table.size)
-                // Prefer in-place (keeps original GARC). Skip maps that grow past slot.
-                if (!garc.setFile(i, file)) {
-                    log.appendLine("wild map $i skipped (needs larger GARC slot)")
-                } else {
-                    tables++
+            if (!changed) continue
+
+            val patched = file.copyOf()
+            System.arraycopy(table, 0, patched, offset, table.size)
+            // Force write even if larger than LZ slot — save() will full-repack GARC
+            garc.setFileForce(i, patched)
+
+            // Mirror into decStorage like pk3DS RSWE (map index f = i - 2)
+            val f = i - 2
+            val ptrOff = (f + 1) * 4
+            if (ptrOff + 4 <= decStorage.size) {
+                val enBase = getU32(decStorage, ptrOff)
+                val enOfs = enBase + 0xE
+                // pk3DS copies 0xF4 bytes (61 slots * 4)
+                val copyLen = minOf(0xF4, table.size)
+                if (enBase >= 0 && enOfs + copyLen <= decStorage.size) {
+                    System.arraycopy(table, 0, decStorage, enOfs, copyLen)
                 }
             }
+            tables++
+        }
+        // Write updated EN pack back (in-place if size matches)
+        if (!garc.setFile(1, decStorage)) {
+            garc.setFileForce(1, decStorage)
         }
         modified[OrasPaths.ENCDATA] = garc.save()
-        log.appendLine("wild tables patched: $tables")
+        log.appendLine("wild tables patched: $tables (skipped $skipped)")
+        Log.i(TAG, "wild tables patched: $tables skipped=$skipped")
     }
 
     // --- Trainers ---
@@ -514,6 +544,12 @@ class RandomizerEngine(
 
     private fun getU16(b: ByteArray, off: Int): Int =
         (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8)
+
+    private fun getU32(b: ByteArray, off: Int): Int =
+        (b[off].toInt() and 0xFF) or
+            ((b[off + 1].toInt() and 0xFF) shl 8) or
+            ((b[off + 2].toInt() and 0xFF) shl 16) or
+            ((b[off + 3].toInt() and 0xFF) shl 24)
 
     private fun putU16(b: ByteArray, off: Int, value: Int) {
         b[off] = (value and 0xFF).toByte()
