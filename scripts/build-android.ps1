@@ -176,6 +176,24 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp zoom JNI"
     }
+    # L3 turbo: reset frame limiter when temporary limit is set (post-savestate lag)
+    if ($nc -notmatch "setTemporaryFrameLimit[\s\S]*frame_limiter\.Reset") {
+        $nc = Get-Content $nativeCpp -Raw
+        $nc = $nc -replace `
+            '(void Java_org_citra_citra_1emu_NativeLibrary_setTemporaryFrameLimit\(JNIEnv\* env, jobject obj,\s*\r?\n\s*jdouble speed\) \{\s*\r?\n\s*Settings::temporary_frame_limit = speed;\s*\r?\n\s*Settings::is_temporary_frame_limit = true;\s*\r?\n)(\})', `
+            "`$1    Core::System::GetInstance().frame_limiter.Reset();`r`n`$2"
+        $nc = $nc -replace `
+            '(void Java_org_citra_citra_1emu_NativeLibrary_disableTemporaryFrameLimit\(JNIEnv\* env, jobject obj\) \{\s*\r?\n\s*Settings::is_temporary_frame_limit = false;\s*\r?\n)(\})', `
+            "`$1    Core::System::GetInstance().frame_limiter.Reset();`r`n`$2"
+        if ($nc -match "setTemporaryFrameLimit[\s\S]*frame_limiter\.Reset") {
+            [System.IO.File]::WriteAllText($nativeCpp, $nc)
+            Write-Host "Patched native.cpp temporary frame limit Reset"
+        } else {
+            Write-Host "WARNING: could not patch setTemporaryFrameLimit Reset"
+        }
+    } else {
+        Write-Host "native.cpp temporary frame limit Reset already present"
+    }
 }
 $Main = Join-Path $Android "app\src\main"
 $JavaDst = Join-Path $Main "java"

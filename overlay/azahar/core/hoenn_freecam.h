@@ -43,6 +43,8 @@ public:
     void Tick(Core::System& system, u32 process_id);
     void OnModuleLoaded(std::string_view module_name, u32 load_address = 0);
     void OnModuleUnloaded(std::string_view module_name);
+    /** After savestate load / cheat engine reconnect — quiet + reseed camera writes. */
+    void OnCoreReconnect();
 
 private:
     FreeCam() = default;

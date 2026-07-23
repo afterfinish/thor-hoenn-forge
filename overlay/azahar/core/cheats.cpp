@@ -22,20 +22,30 @@ constexpr u64 run_interval_ticks = 50'000'000;
 // Freecam ~15Hz when tools on (enough for L/R + stick; lower CPU than 30–60Hz)
 constexpr u64 freecam_interval_ticks = 16'000'000;
 
-CheatEngine::CheatEngine(Core::System& system_) : system{system_} {}
+CheatEngine::CheatEngine(Core::System& system_) : system{system_}, event{nullptr} {}
 
 CheatEngine::~CheatEngine() {
-    if (system.IsPoweredOn()) {
+    if (event && system.IsPoweredOn()) {
+        system.CoreTiming().RemoveEvent(event);
         system.CoreTiming().UnscheduleEvent(event, 0);
     }
 }
 
 void CheatEngine::Connect(u32 process_id_) {
     this->process_id = process_id_;
+    // Savestate LoadState deserializes timing (may already have this event) then calls Connect.
+    // Without RemoveEvent, freecam/cheats double-schedule and burn CPU — turbo stays ~100% until
+    // a map transition. Always tear down the previous schedule first.
+    if (event) {
+        system.CoreTiming().RemoveEvent(event);
+        system.CoreTiming().UnscheduleEvent(event, 0);
+    }
     event = system.CoreTiming().RegisterEvent(
         "CheatCore::run_event",
         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
     system.CoreTiming().ScheduleEvent(run_interval_ticks, event);
+    // Let freecam reseed after memory rewind
+    Hoenn::FreeCam::GetInstance().OnCoreReconnect();
 }
 
 std::span<const std::shared_ptr<CheatBase>> CheatEngine::GetCheats() const {

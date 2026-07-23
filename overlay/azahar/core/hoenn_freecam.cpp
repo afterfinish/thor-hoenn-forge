@@ -104,6 +104,15 @@ void FreeCam::ResetYaw() {
     last_cam = 0;
 }
 
+void FreeCam::OnCoreReconnect() {
+    // Savestate rewound guest memory — stop thrashing old cam, quiet briefly, reseed next Tick
+    quiet_until = 1;
+    in_battle = false;
+    zero_fov_streak = 0;
+    ResetYaw();
+    LOG_INFO(Core, "Hoenn camera: core reconnect (savestate) — quiet then reseed");
+}
+
 void FreeCam::EnsureDevices() {
     if (!c_stick) {
         std::string param = Settings::values.current_input_profile.analogs[Settings::NativeAnalog::CStick];
