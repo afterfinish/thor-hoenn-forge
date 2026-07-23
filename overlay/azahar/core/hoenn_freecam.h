@@ -13,12 +13,15 @@ class System;
 namespace Hoenn {
 
 /**
- * Overworld freelook (stick Y → pitch) + zoom (L/R → FOV).
+ * Overworld freelook + zoom.
  *
- * Writes only the official camera object at *0x085F67DC.
- * After battle the slot often points at a dead object (FOV=0). We then
- * *rebind* the slot (one pointer write) to a nearby live camera — same
- * effect as entering a building, without touching random heap FOV fields.
+ * Pitch: stick Y → cam+0x98 (community third-person field).
+ * Orbit yaw: stick X rotates the horizontal XZ offset pair at +0x90/+0x94
+ *   (mirrored to +0x4C/+0x50). Writing only X was a slide; rotating the pair
+ *   orbits the camera around the player.
+ * FOV: L or R when zoom assist on.
+ *
+ * Never rewrite CAMERA_SLOT (post-battle rebind hard-crashed the guest).
  */
 class FreeCam {
 public:
@@ -51,15 +54,20 @@ private:
     bool freelook = false;
     bool zoom_assist = false;
     float sensitivity = 3.0f;
-    bool invert_x = false;
+    // Default true: raw stick X felt inverted for users
+    bool invert_x = true;
     bool invert_y = false;
 
     float user_fov = 480.f;
     float pitch = -12.74f;
 
+    // Horizontal orbit around player (radians), radius from live cam XZ pair
+    float orbit_angle = 0.f;
+    float orbit_radius = 43.f;
+    bool orbit_seeded = false;
+
     bool in_battle = false;
     u64 quiet_until = 0;
-    u64 next_rebind_attempt = 0;
     u32 zero_fov_streak = 0;
     u32 diag = 0;
 
@@ -68,7 +76,6 @@ private:
     std::unique_ptr<Input::ButtonDevice> btn_r;
 
     void EnsureDevices();
-    bool TryRebindLiveCamera(Core::System& system, u32 process_id);
 };
 
 } // namespace Hoenn

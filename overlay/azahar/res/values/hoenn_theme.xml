@@ -6,7 +6,8 @@
   or per-activity via android:theme, or in code with overrideActivityTransition().
 -->
 <resources>
-    <style name="Hoenn.WindowAnimation">
+    <!-- parent="" required: dotted style names without parent imply style/Hoenn (missing). -->
+    <style name="Hoenn.WindowAnimation" parent="">
         <item name="android:activityOpenEnterAnimation">@anim/hoenn_enter</item>
         <item name="android:activityOpenExitAnimation">@anim/hoenn_exit</item>
         <item name="android:activityCloseEnterAnimation">@anim/hoenn_pop_enter</item>
