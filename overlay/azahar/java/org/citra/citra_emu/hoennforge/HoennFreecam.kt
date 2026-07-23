@@ -8,8 +8,9 @@ import org.citra.citra_emu.NativeLibrary
  * Camera tools for Omega Ruby / Alpha Sapphire.
  *
  * Zoom assist and free-look are implemented in native [Hoenn::FreeCam]
- * (see core/hoenn_freecam.cpp). This object is a thin Kotlin façade used by the
- * START menu — no Gateway cheats (those were one-shot / extreme FOV).
+ * (see core/hoenn_freecam.cpp). START menu façade only.
+ *
+ * Free look: stick Y = pitch (+0x98), stick X = yaw (+0x9C, probe #14 locked).
  */
 object HoennFreecam {
     private const val TAG = "HoennForgeCam"

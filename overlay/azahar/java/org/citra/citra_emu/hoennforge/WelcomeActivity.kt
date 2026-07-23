@@ -29,6 +29,9 @@ class WelcomeActivity : AppCompatActivity() {
         button.isEnabled = false
         checkbox.setOnCheckedChangeListener { _, checked -> button.isEnabled = checked }
         button.setOnClickListener {
+            // Guard double-tap while next activity is slow to start
+            if (!button.isEnabled) return@setOnClickListener
+            button.isEnabled = false
             prefs.legalAccepted = true
             startActivity(Onboarding.intentTo(this, Onboarding.nextAfterLegal(this, prefs)))
             finish()

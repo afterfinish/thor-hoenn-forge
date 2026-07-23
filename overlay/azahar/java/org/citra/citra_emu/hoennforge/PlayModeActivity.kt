@@ -29,12 +29,19 @@ class PlayModeActivity : AppCompatActivity() {
         val vanilla = findViewById<Button>(R.id.buttonVanilla)
         val randomized = findViewById<Button>(R.id.buttonRandomized)
         vanilla.setOnClickListener {
+            if (!vanilla.isEnabled) return@setOnClickListener
+            vanilla.isEnabled = false
+            randomized.isEnabled = false
             prefs.randomizerConfig = RandomizerConfig.vanilla()
             startActivity(Onboarding.intentTo(this, PrepareActivity::class.java))
             finish()
         }
         randomized.setOnClickListener {
+            if (!randomized.isEnabled) return@setOnClickListener
+            vanilla.isEnabled = false
+            randomized.isEnabled = false
             startActivity(Onboarding.intentTo(this, RandomizerActivity::class.java))
+            finish()
         }
         val root = findViewById<android.view.View>(android.R.id.content)
         HoennFocus.enable(root)

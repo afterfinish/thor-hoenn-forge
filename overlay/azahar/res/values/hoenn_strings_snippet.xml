@@ -99,7 +99,7 @@
     <string name="hoenn_menu_zoom_failed">Could not enable camera tool</string>
     <string name="hoenn_menu_freelook_on">Free look (right stick): On</string>
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
-    <string name="hoenn_menu_freelook_enabled_toast">Free look on — move the right stick to orbit the camera. Works best outdoors. Try with zoom assist off first. Mauville/gyms may ignore it.</string>
+    <string name="hoenn_menu_freelook_enabled_toast">Free look on — right stick Y = pitch, X = yaw (left/right). Works best outdoors. Mauville/gyms may ignore it.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <!-- Play mode -->

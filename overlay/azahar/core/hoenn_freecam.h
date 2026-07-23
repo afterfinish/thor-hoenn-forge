@@ -13,15 +13,11 @@ class System;
 namespace Hoenn {
 
 /**
- * Overworld freelook + zoom.
+ * Pitch: stick Y → cam+0x98 (proven).
+ * Yaw:   stick X → cam+0x9C (RE probe #14, dogfood 2026-07-23).
+ * Zoom:  L/R → cam+0xB0.
  *
- * Pitch: stick Y → cam+0x98 (community third-person field).
- * Orbit yaw: stick X rotates the horizontal XZ offset pair at +0x90/+0x94
- *   (mirrored to +0x4C/+0x50). Writing only X was a slide; rotating the pair
- *   orbits the camera around the player.
- * FOV: L or R when zoom assist on.
- *
- * Never rewrite CAMERA_SLOT (post-battle rebind hard-crashed the guest).
+ * Never rewrite CAMERA_SLOT.
  */
 class FreeCam {
 public:
@@ -45,7 +41,7 @@ public:
     void SetInvertY(bool invert);
 
     void Tick(Core::System& system, u32 process_id);
-    void OnModuleLoaded(std::string_view module_name);
+    void OnModuleLoaded(std::string_view module_name, u32 load_address = 0);
     void OnModuleUnloaded(std::string_view module_name);
 
 private:
@@ -54,28 +50,26 @@ private:
     bool freelook = false;
     bool zoom_assist = false;
     float sensitivity = 3.0f;
-    // Default true: raw stick X felt inverted for users
     bool invert_x = true;
     bool invert_y = false;
 
     float user_fov = 480.f;
     float pitch = -12.74f;
-
-    // Horizontal orbit around player (radians), radius from live cam XZ pair
-    float orbit_angle = 0.f;
-    float orbit_radius = 43.f;
-    bool orbit_seeded = false;
+    float yaw = 0.f;
+    bool yaw_seeded = false;
 
     bool in_battle = false;
     u64 quiet_until = 0;
     u32 zero_fov_streak = 0;
     u32 diag = 0;
+    u32 last_cam = 0;
 
     std::unique_ptr<Input::AnalogDevice> c_stick;
     std::unique_ptr<Input::ButtonDevice> btn_l;
     std::unique_ptr<Input::ButtonDevice> btn_r;
 
     void EnsureDevices();
+    void ResetYaw();
 };
 
 } // namespace Hoenn

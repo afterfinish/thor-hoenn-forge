@@ -190,21 +190,41 @@ object ThorProfile {
         )
     }
 
-    private fun applyL3TurboHotkey() {
+    /**
+     * Bind host L3 (thumb-left click) → turbo hotkey.
+     * Public so emulation can re-apply after freecam / settings load (was dead until
+     * map/camera refresh after freecam work).
+     *
+     * Uses StringSet mapping (same as InputBindingSetting.writeButtonMapping). Also
+     * removes a leftover Int mapping at the same key so getButtonSet does not ClassCast
+     * or ignore the turbo code.
+     */
+    fun applyL3TurboHotkey() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+        // Same key scheme as InputBindingSetting.getInputButtonKey(keyId)
         val hostKey = "${INPUT_MAPPING_PREFIX}_HostAxis_${KeyEvent.KEYCODE_BUTTON_THUMBL}"
         val reverseKey =
             "${INPUT_MAPPING_PREFIX}_ReverseMapping_${Settings.HOTKEY_TURBO_LIMIT}"
         val turboCode = Hotkey.TURBO_LIMIT.button.toString()
 
+        // Merge with any existing codes on this key (don't wipe other binds)
+        val existing = try {
+            prefs.getStringSet(hostKey, null)?.toMutableSet() ?: mutableSetOf()
+        } catch (_: ClassCastException) {
+            // Old int-style bind — drop it so StringSet turbo can land
+            prefs.edit().remove(hostKey).apply()
+            mutableSetOf()
+        }
+        existing.add(turboCode)
+
         prefs.edit()
-            .putString(Settings.HOTKEY_ENABLE, "")
+            .putString(Settings.HOTKEY_ENABLE, "") // empty = hotkeys always armed
             .putString(Settings.HOTKEY_TURBO_LIMIT, "Button L3")
-            .putStringSet(hostKey, mutableSetOf(turboCode))
+            .putStringSet(hostKey, existing)
             .putString(reverseKey, hostKey)
             .apply()
 
-        Log.i(TAG, "Mapped L3 ($hostKey) -> turbo hotkey $turboCode")
+        Log.i(TAG, "Mapped L3 ($hostKey) -> turbo hotkey $turboCode codes=$existing")
     }
 
     private fun ensureCStickMapped() {

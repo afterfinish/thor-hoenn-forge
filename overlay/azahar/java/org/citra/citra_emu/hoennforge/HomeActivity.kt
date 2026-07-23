@@ -20,6 +20,8 @@ import org.citra.citra_emu.utils.GameHelper
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var prefs: HoennPrefs
+    /** Prevents double-tap / slow-load double launch of EmulationActivity (crash). */
+    private var playLaunchInFlight = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,7 +93,7 @@ class HomeActivity : AppCompatActivity() {
         }
 
         val play = findViewById<Button>(R.id.buttonPlay)
-        play.setOnClickListener { playDump() }
+        play.setOnClickListener { playDump(play) }
         findViewById<Button>(R.id.buttonNewRun).setOnClickListener { confirmNewRun() }
         findViewById<Button>(R.id.buttonVanilla).setOnClickListener { confirmVanilla() }
         findViewById<Button>(R.id.buttonSettings).setOnClickListener {
@@ -101,6 +103,13 @@ class HomeActivity : AppCompatActivity() {
         HoennFocus.enable(root)
         HoennFocus.installKeyRouting(this, root)
         play.post { play.requestFocus() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning from a failed/cancelled play path re-enables Continue/Play
+        playLaunchInFlight = false
+        findViewById<Button?>(R.id.buttonPlay)?.isEnabled = true
     }
 
     private fun confirmNewRun() {
@@ -130,15 +139,23 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun playDump() {
+    private fun playDump(playButton: Button? = null) {
+        if (playLaunchInFlight) {
+            Log.w(TAG, "playDump ignored — launch already in flight")
+            return
+        }
         val uriString = prefs.dumpUri
         if (uriString.isNullOrBlank()) {
             Toast.makeText(this, R.string.hoenn_game_invalid, Toast.LENGTH_LONG).show()
             return
         }
+        playLaunchInFlight = true
+        playButton?.isEnabled = false
         val uri = uriString.toUri()
         try {
             if (!Onboarding.hasDataDirectory(this)) {
+                playLaunchInFlight = false
+                playButton?.isEnabled = true
                 startActivity(Onboarding.intentTo(this, DataDirActivity::class.java))
                 finish()
                 return
@@ -173,6 +190,8 @@ class HomeActivity : AppCompatActivity() {
             )
 
             if (!game.valid) {
+                playLaunchInFlight = false
+                playButton?.isEnabled = true
                 val exists = DocumentFile.fromSingleUri(this, uri)?.exists() == true
                 Toast.makeText(
                     this,
@@ -191,9 +210,13 @@ class HomeActivity : AppCompatActivity() {
                     action = Intent.ACTION_VIEW
                     data = uri
                     putExtra("game", game)
+                    // Single-top style: avoid stacking duplicate emulators on double-tap
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 },
             )
         } catch (e: Exception) {
+            playLaunchInFlight = false
+            playButton?.isEnabled = true
             Log.e(TAG, "playDump failed", e)
             Toast.makeText(
                 this,

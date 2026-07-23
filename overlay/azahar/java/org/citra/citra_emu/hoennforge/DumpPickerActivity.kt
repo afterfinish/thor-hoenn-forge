@@ -66,8 +66,11 @@ class DumpPickerActivity : AppCompatActivity() {
                 .show()
         }
         buttonContinue.setOnClickListener {
+            if (!buttonContinue.isEnabled) return@setOnClickListener
             val success = pendingSuccess ?: return@setOnClickListener
             val uri = pendingUri ?: return@setOnClickListener
+            // Guard double-tap while next screen is slow to load
+            buttonContinue.isEnabled = false
             val prefs = HoennPrefs(this)
             prefs.dumpUri = uri.toString()
             prefs.dumpDisplayName = success.displayName

@@ -638,6 +638,12 @@ class EmulationFragment :
     /** Re-apply camera tools after boot if the user left them on. */
     private fun applyHoennFreecamIfNeeded() {
         if (!::game.isInitialized || !NativeLibrary.isRunning()) return
+        // L3 turbo can be wiped by settings load / freecam device setup — re-bind every boot
+        try {
+            org.citra.citra_emu.hoennforge.ThorProfile.applyL3TurboHotkey()
+        } catch (e: Exception) {
+            android.util.Log.w("HoennForge", "re-apply L3 turbo failed", e)
+        }
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(game.titleId)) return
         if (prefs.cameraZoomAssistEnabled) {

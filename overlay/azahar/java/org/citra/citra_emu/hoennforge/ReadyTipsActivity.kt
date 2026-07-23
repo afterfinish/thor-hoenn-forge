@@ -13,6 +13,8 @@ class ReadyTipsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_hoenn_ready_tips)
         val start = findViewById<Button>(R.id.buttonStart)
         start.setOnClickListener {
+            if (!start.isEnabled) return@setOnClickListener
+            start.isEnabled = false
             startActivity(Onboarding.intentTo(this, HomeActivity::class.java))
             finish()
         }

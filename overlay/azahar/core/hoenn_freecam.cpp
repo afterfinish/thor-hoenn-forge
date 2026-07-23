@@ -1,11 +1,12 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 //
-// Pitch (stick Y → +0x98): product path.
-// Orbit (stick X): rotate horizontal XZ pair (+0x90/+0x94), mirror (+0x4C/+0x50).
-//   Writing only +0x90 slid the camera; rotating both orbits around the player.
-// FOV: L/R exclusive when zoom assist on.
+// Pitch: stick Y → cam+0x98 (product path).
+// Yaw:   stick X → cam+0x9C (locked — RE probe #14, user dogfood 2026-07-23).
+// Zoom:  L or R → cam+0xB0 (exclusive). Never rewrite CAMERA_SLOT.
 //
-// Post-battle: FOV=0 → pause writes. NEVER rewrite CAMERA_SLOT (rebind crashed).
+// Failed / do not restore as primary:
+//   F1 +0x90 only · F2/F3 sin/cos 0x90+0x94 · +0x94 alone (vertical) · F4 multi FOV
+//   F5 slot rebind · F6 false eye/target · pad-train · N2 false pairs · multi-probe menu
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -25,35 +26,24 @@ namespace Hoenn {
 namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_PITCH = 0x98;
+constexpr u32 OFF_YAW = 0x9C; // probe #14 — horizontal freelook (confirmed)
 constexpr u32 OFF_FOV = 0xB0;
-
-// Primary orientation block (matches community pitch/FOV offsets)
-constexpr u32 OFF_ORBIT_X = 0x90;
-constexpr u32 OFF_ORBIT_Z = 0x94;
-// Duplicate earlier block (same floats in dumps — keep both in sync)
-constexpr u32 OFF_ORBIT_X_ALT = 0x4C;
-constexpr u32 OFF_ORBIT_Z_ALT = 0x50;
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
 constexpr float PITCH_MAX = 0.f;
 constexpr float PITCH_STEP = 0.30f;
 
-// Orbit angular speed (radians per tick at full stick * sensitivity)
-constexpr float ORBIT_STEP = 0.055f;
-constexpr float ORBIT_RADIUS_MIN = 8.f;
-constexpr float ORBIT_RADIUS_MAX = 200.f;
-constexpr float ORBIT_RADIUS_DEFAULT = 43.f; // observed idle ~ hypot(30.2, 30.8)
+constexpr float YAW_STEP = 0.85f;
 
 constexpr float FOV_MIN = 220.f;
 constexpr float FOV_MAX = 750.f;
 constexpr float FOV_ASSIST = 480.f;
 constexpr float FOV_STEP = 12.f;
-constexpr float STICK_DEADZONE = 0.20f;
+constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
-constexpr float PI = 3.14159265358979323846f;
 
 u32 FBits(float f) {
     u32 b = 0;
@@ -74,6 +64,10 @@ bool OkFov(float f) {
     return std::isfinite(f) && f >= 100.f && f <= 1200.f;
 }
 
+bool OkFloat(float f) {
+    return std::isfinite(f) && std::fabs(f) < 1.0e8f;
+}
+
 std::shared_ptr<Kernel::Process> Resolve(Core::System& sys, u32 pid) {
     auto p = sys.Kernel().GetProcessById(pid);
     if (p) {
@@ -91,20 +85,23 @@ bool IsFieldMod(std::string_view n) {
     return n == "DllField";
 }
 
-void WriteOrbitPair(Memory::MemorySystem& mem, Kernel::Process& process, Core::System& system,
-                    u32 cam, float x, float z) {
-    mem.Write32(process, cam + OFF_ORBIT_X, FBits(x));
-    mem.Write32(process, cam + OFF_ORBIT_Z, FBits(z));
-    mem.Write32(process, cam + OFF_ORBIT_X_ALT, FBits(x));
-    mem.Write32(process, cam + OFF_ORBIT_Z_ALT, FBits(z));
-    system.InvalidateCacheRange(cam + OFF_ORBIT_X_ALT, 8);
-    system.InvalidateCacheRange(cam + OFF_ORBIT_X, 8);
+void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, Core::System& system, u32 addr,
+            float v) {
+    mem.Write32(process, addr, FBits(v));
+    system.InvalidateCacheRange(addr, 4);
 }
+
 } // namespace
 
 FreeCam& FreeCam::GetInstance() {
     static FreeCam i;
     return i;
+}
+
+void FreeCam::ResetYaw() {
+    yaw_seeded = false;
+    yaw = 0.f;
+    last_cam = 0;
 }
 
 void FreeCam::EnsureDevices() {
@@ -127,7 +124,7 @@ void FreeCam::EnsureDevices() {
     }
 }
 
-void FreeCam::OnModuleLoaded(std::string_view name) {
+void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
     if (name == "DllBattle") {
         in_battle = true;
         zero_fov_streak = 0;
@@ -138,7 +135,7 @@ void FreeCam::OnModuleLoaded(std::string_view name) {
         in_battle = false;
         quiet_until = 1;
         pitch = PITCH_BASE;
-        orbit_seeded = false;
+        ResetYaw();
         zero_fov_streak = 0;
         LOG_WARNING(Core, "Hoenn camera: DllField loaded — will quiet then drive");
     }
@@ -148,13 +145,13 @@ void FreeCam::OnModuleUnloaded(std::string_view name) {
     if (name == "DllField") {
         in_battle = true;
         zero_fov_streak = 0;
-        orbit_seeded = false;
+        ResetYaw();
         LOG_INFO(Core, "Hoenn camera: DllField unload — pause");
     } else if (name == "DllBattle") {
         in_battle = false;
         quiet_until = 1;
         pitch = PITCH_BASE;
-        orbit_seeded = false;
+        ResetYaw();
         zero_fov_streak = 0;
         LOG_INFO(Core, "Hoenn camera: battle exit — will quiet then drive");
     }
@@ -168,8 +165,8 @@ void FreeCam::SetFreelookEnabled(bool e) {
     c_stick.reset();
     if (freelook) {
         pitch = PITCH_BASE;
-        orbit_seeded = false;
-        LOG_WARNING(Core, "Hoenn free-look ON — pitch=Y, orbit yaw=X (XZ pair +0x90/+0x94)");
+        ResetYaw();
+        LOG_WARNING(Core, "Hoenn free-look ON — pitch=Y (+0x98); yaw=X (+0x9C)");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -250,10 +247,16 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         return;
     }
 
+    if (cam != last_cam) {
+        LOG_WARNING(Core, "Hoenn camera: cam {:08X} → {:08X} — reseed yaw", last_cam, cam);
+        yaw_seeded = false;
+        last_cam = cam;
+    }
+
     const float cur_fov = BFloat(mem.Read32(*process, cam + OFF_FOV));
     if (cur_fov == 0.f || !OkFov(cur_fov)) {
         zero_fov_streak++;
-        orbit_seeded = false;
+        yaw_seeded = false;
         if ((diag++ % 40) == 0) {
             LOG_WARNING(Core,
                         "Hoenn camera: dead/invalid cam={:08X} fov={:.2f} — pause (enter "
@@ -264,7 +267,6 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
     zero_fov_streak = 0;
 
-    // --- Zoom L/R (exclusive) ---
     if (zoom_assist) {
         bool l = false, r = false;
         try {
@@ -283,8 +285,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         } else if (r && !l) {
             user_fov = std::max(FOV_MIN, user_fov - FOV_STEP);
         }
-        mem.Write32(*process, cam + OFF_FOV, FBits(user_fov));
-        system.InvalidateCacheRange(cam + OFF_FOV, 4);
+        WriteF(mem, *process, system, cam + OFF_FOV, user_fov);
     }
 
     if (!freelook) {
@@ -300,61 +301,36 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         c_stick.reset();
     }
 
-    // --- Pitch: stick Y (unchanged product path) ---
+    // --- Pitch (stick Y) ---
     if (std::fabs(sy) >= STICK_DEADZONE) {
         const float y = invert_y ? sy : -sy;
         pitch += y * sensitivity * PITCH_STEP;
         pitch = std::clamp(pitch, PITCH_MIN, PITCH_MAX);
     }
-    mem.Write32(*process, cam + OFF_PITCH, FBits(pitch));
-    system.InvalidateCacheRange(cam + OFF_PITCH, 4);
+    WriteF(mem, *process, system, cam + OFF_PITCH, pitch);
 
-    // --- Orbit yaw: stick X rotates XZ horizontal offset around player ---
-    if (!orbit_seeded) {
-        float ox = BFloat(mem.Read32(*process, cam + OFF_ORBIT_X));
-        float oz = BFloat(mem.Read32(*process, cam + OFF_ORBIT_Z));
-        if (!std::isfinite(ox) || !std::isfinite(oz)) {
-            ox = BFloat(mem.Read32(*process, cam + OFF_ORBIT_X_ALT));
-            oz = BFloat(mem.Read32(*process, cam + OFF_ORBIT_Z_ALT));
+    // --- Yaw (stick X → +0x9C) ---
+    if (!yaw_seeded) {
+        yaw = BFloat(mem.Read32(*process, cam + OFF_YAW));
+        if (!OkFloat(yaw)) {
+            yaw = 0.f;
         }
-        float r = std::hypot(ox, oz);
-        if (!std::isfinite(r) || r < ORBIT_RADIUS_MIN || r > ORBIT_RADIUS_MAX) {
-            r = ORBIT_RADIUS_DEFAULT;
-            ox = r; // seed facing +X if garbage
-            oz = 0.f;
-        }
-        orbit_radius = r;
-        orbit_angle = std::atan2(oz, ox);
-        orbit_seeded = true;
-        LOG_WARNING(Core, "Hoenn orbit seed angle={:.2f} rad radius={:.1f} xz=({:.1f},{:.1f})",
-                    orbit_angle, orbit_radius, ox, oz);
+        yaw_seeded = true;
+        LOG_WARNING(Core, "Hoenn yaw SEED +0x9C = {:.4g} cam={:08X}", yaw, cam);
     }
-
     if (std::fabs(sx) >= STICK_DEADZONE) {
-        // invert_x defaults true so stick right → orbit that feels natural
         const float x = invert_x ? -sx : sx;
-        orbit_angle += x * sensitivity * ORBIT_STEP;
-        // Keep angle in [-pi, pi] for tidy logs
-        while (orbit_angle > PI) {
-            orbit_angle -= 2.f * PI;
-        }
-        while (orbit_angle < -PI) {
-            orbit_angle += 2.f * PI;
-        }
+        yaw += x * sensitivity * YAW_STEP;
     }
-
-    // Hold orbit every frame (like pitch) so game does not snap back
-    {
-        const float nx = std::cos(orbit_angle) * orbit_radius;
-        const float nz = std::sin(orbit_angle) * orbit_radius;
-        WriteOrbitPair(mem, *process, system, cam, nx, nz);
+    if (OkFloat(yaw)) {
+        WriteF(mem, *process, system, cam + OFF_YAW, yaw);
     }
 
     if ((diag++ % 60) == 0) {
         LOG_INFO(Core,
-                 "Hoenn camera: ok cam={:08X} fov={:.1f} pitch={:.2f} orbit={:.1f}° r={:.1f}",
-                 cam, BFloat(mem.Read32(*process, cam + OFF_FOV)), pitch,
-                 orbit_angle * (180.f / PI), orbit_radius);
+                 "Hoenn camera: ok cam={:08X} fov={:.0f} pitch={:.2f} yaw={:.3g} (+0x9C) "
+                 "sx={:+.2f} sy={:+.2f}",
+                 cam, BFloat(mem.Read32(*process, cam + OFF_FOV)), pitch, yaw, sx, sy);
     }
 }
 
