@@ -9,14 +9,13 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.citra.citra_emu.R
 
-class DumpPickerActivity : AppCompatActivity() {
+class DumpPickerActivity : HoennActivity() {
     private var pendingUri: Uri? = null
     private var pendingSuccess: DumpValidator.Result.Success? = null
 

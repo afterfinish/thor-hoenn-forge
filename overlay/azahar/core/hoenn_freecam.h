@@ -18,7 +18,8 @@ namespace Hoenn {
  * Zoom:  L/R → cam+0xB0.
  *
  * Independent of L3 turbo (do not pause freecam during turbo).
- * Never rewrite CAMERA_SLOT.
+ * Never rewrite CAMERA_SLOT (hard-crash history).
+ * Map transitions: if FOV dies but pitch/yaw still look live, keep driving freelook.
  */
 class FreeCam {
 public:

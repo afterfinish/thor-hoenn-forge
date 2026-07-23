@@ -7,7 +7,9 @@
 // Freecam and L3 turbo are independent — never pause freecam while turbo is on
 // (both work together after a map refresh; post-savestate turbo lag is a known open bug).
 //
-// Never rewrite CAMERA_SLOT. No InvalidateCacheRange on data float writes.
+// Never rewrite CAMERA_SLOT (hard-crashed). No InvalidateCacheRange on data float writes.
+// Map transitions (house floors, post-battle): recover via live pitch/yaw layout when FOV
+// is 0/invalid — interiors often zero FOV briefly or use a different FOV scale.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -67,6 +69,21 @@ bool OkFov(float f) {
 
 bool OkFloat(float f) {
     return std::isfinite(f) && std::fabs(f) < 1.0e8f;
+}
+
+/**
+ * Pitch/yaw look like angles on a field camera (FOV may be dead in interiors / transitions).
+ * All-zero is treated as wiped/dead memory — not a live camera.
+ */
+bool OkAngleLayout(float pitch_v, float yaw_v) {
+    if (!OkFloat(pitch_v) || !OkFloat(yaw_v)) {
+        return false;
+    }
+    if (std::fabs(pitch_v) >= 89.f || std::fabs(yaw_v) >= 1.0e4f) {
+        return false;
+    }
+    // Wiped object is usually all zeros; require at least one non-trivial angle.
+    return std::fabs(pitch_v) > 1.0e-3f || std::fabs(yaw_v) > 1.0e-3f;
 }
 
 std::shared_ptr<Kernel::Process> Resolve(Core::System& sys, u32 pid) {
@@ -255,27 +272,52 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     if (cam != last_cam) {
-        LOG_WARNING(Core, "Hoenn camera: cam {:08X} → {:08X} — reseed yaw", last_cam, cam);
+        LOG_WARNING(Core, "Hoenn camera: cam {:08X} → {:08X} — reseed yaw (map/object change)",
+                    last_cam, cam);
         yaw_seeded = false;
         last_cam = cam;
+        // Brief quiet so the game finishes constructing the new camera object
+        quiet_until = now + QUIET_AFTER_FIELD / 4; // ~50ms of emu time scale
+        zero_fov_streak = 0;
+        return;
     }
 
     const float cur_fov = BFloat(mem.Read32(*process, cam + OFF_FOV));
-    if (cur_fov == 0.f || !OkFov(cur_fov)) {
+    const float peek_pitch = BFloat(mem.Read32(*process, cam + OFF_PITCH));
+    const float peek_yaw = BFloat(mem.Read32(*process, cam + OFF_YAW));
+    const bool fov_live = OkFov(cur_fov);
+    const bool angles_live = OkAngleLayout(peek_pitch, peek_yaw);
+
+    // Full dead object: neither FOV nor angle layout looks like a field camera.
+    // Do NOT rewrite CAMERA_SLOT (crash history). Wait for game to publish a live cam.
+    if (!fov_live && !angles_live) {
         zero_fov_streak++;
         yaw_seeded = false;
         if ((diag++ % 40) == 0) {
             LOG_WARNING(Core,
-                        "Hoenn camera: dead/invalid cam={:08X} fov={:.2f} — pause (enter "
-                        "building to recover)",
-                        cam, cur_fov);
+                        "Hoenn camera: dead cam={:08X} fov={:.2f} pitch={:.2f} yaw={:.2f} — "
+                        "wait for live object (map transition / post-battle)",
+                        cam, cur_fov, peek_pitch, peek_yaw);
         }
         return;
     }
-    zero_fov_streak = 0;
 
-    // --- Zoom L/R (exclusive) — always available, including during turbo ---
-    if (zoom_assist) {
+    if (!fov_live) {
+        // Transition / interior: FOV zero or out of range, but pitch/yaw still valid.
+        // Drive freelook only; skip FOV writes so we don't blast a dead field.
+        zero_fov_streak++;
+        if ((diag++ % 60) == 0) {
+            LOG_INFO(Core,
+                     "Hoenn camera: FOV inactive cam={:08X} fov={:.2f} — pitch/yaw drive only "
+                     "(house floor / transition recovery)",
+                     cam, cur_fov);
+        }
+    } else {
+        zero_fov_streak = 0;
+    }
+
+    // --- Zoom L/R — only when FOV field is live ---
+    if (zoom_assist && fov_live) {
         bool l = false, r = false;
         try {
             if (btn_l) {

@@ -3,11 +3,10 @@ package org.citra.citra_emu.hoennforge
 
 import android.os.Bundle
 import android.widget.Button
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 
 /** Design 22 — tips after prepare, before Home. */
-class ReadyTipsActivity : AppCompatActivity() {
+class ReadyTipsActivity : HoennActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_hoenn_ready_tips)

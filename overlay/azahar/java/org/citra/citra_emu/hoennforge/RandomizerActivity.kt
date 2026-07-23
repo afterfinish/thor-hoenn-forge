@@ -6,7 +6,6 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.Preset
@@ -14,7 +13,7 @@ import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.Preset
 /**
  * Design screen 12 — randomizer hub: presets + category cards → fine-tune / review.
  */
-class RandomizerActivity : AppCompatActivity() {
+class RandomizerActivity : HoennActivity() {
     private lateinit var prefs: HoennPrefs
     private var config: RandomizerConfig = RandomizerConfig.fromPreset(Preset.STANDARD)
 

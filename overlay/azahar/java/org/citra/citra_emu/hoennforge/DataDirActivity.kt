@@ -8,7 +8,6 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.utils.DirectoryInitialization
 import org.citra.citra_emu.utils.PermissionsHandler
@@ -16,7 +15,7 @@ import org.citra.citra_emu.utils.PermissionsHandler
 /**
  * Onboarding step: pick Azahar/Citra user-data folder (saves, config, shaders).
  */
-class DataDirActivity : AppCompatActivity() {
+class DataDirActivity : HoennActivity() {
     private val pickDataDir = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->

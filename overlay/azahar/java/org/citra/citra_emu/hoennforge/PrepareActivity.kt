@@ -6,7 +6,6 @@ import android.util.Log
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +20,7 @@ import java.io.File
  * Prepare pipeline: extract needed RomFS files → apply randomizer → LayeredFS deploy.
  * Original dump is never modified.
  */
-class PrepareActivity : AppCompatActivity() {
+class PrepareActivity : HoennActivity() {
     private lateinit var prefs: HoennPrefs
     private lateinit var textStage: TextView
     private lateinit var textDetail: TextView

@@ -6,12 +6,11 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.ui.main.MainActivity
 
 /** Design 25 — Hoenn settings hub (Thor defaults + escape hatch to Azahar). */
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : HoennActivity() {
     private lateinit var textTitle: TextView
     private lateinit var textBody: TextView
     private val navIds = listOf(

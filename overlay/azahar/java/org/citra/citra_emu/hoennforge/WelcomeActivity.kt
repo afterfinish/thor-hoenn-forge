@@ -6,10 +6,9 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 
-class WelcomeActivity : AppCompatActivity() {
+class WelcomeActivity : HoennActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = HoennPrefs(this)

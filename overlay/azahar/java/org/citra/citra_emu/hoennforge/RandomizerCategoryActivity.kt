@@ -10,7 +10,6 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.CompoundButtonCompat
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
@@ -21,7 +20,7 @@ import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig.TypeTheme
 /**
  * Category fine-tune screen (design 13–18 pattern).
  */
-class RandomizerCategoryActivity : AppCompatActivity() {
+class RandomizerCategoryActivity : HoennActivity() {
     private lateinit var prefs: HoennPrefs
     private lateinit var config: RandomizerConfig
     private lateinit var category: String

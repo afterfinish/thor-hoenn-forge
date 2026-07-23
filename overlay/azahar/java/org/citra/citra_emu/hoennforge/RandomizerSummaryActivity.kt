@@ -6,14 +6,13 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
 
 /**
  * Design screen 19 — review run before prepare.
  */
-class RandomizerSummaryActivity : AppCompatActivity() {
+class RandomizerSummaryActivity : HoennActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = HoennPrefs(this)

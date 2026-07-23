@@ -4,14 +4,13 @@ package org.citra.citra_emu.hoennforge
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import org.citra.citra_emu.R
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
 
 /**
  * After dump validation: Vanilla vs Randomized.
  */
-class PlayModeActivity : AppCompatActivity() {
+class PlayModeActivity : HoennActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = HoennPrefs(this)

@@ -9,7 +9,6 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import org.citra.citra_emu.R
@@ -18,7 +17,7 @@ import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
 import org.citra.citra_emu.model.Game
 import org.citra.citra_emu.utils.GameHelper
 
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : HoennActivity() {
     private lateinit var prefs: HoennPrefs
     /** Prevents double-tap / slow-load double launch of EmulationActivity (crash). */
     private var playLaunchInFlight = false
