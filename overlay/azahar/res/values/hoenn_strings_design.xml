@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings for the design-fidelity screens (splash, quick menu, save/load, hints). -->
+<resources>
+    <!-- Splash -->
+    <string name="hoenn_splash_subtitle">An unofficial fan project</string>
+    <string name="hoenn_splash_legal">Not affiliated with Nintendo or The Pokémon Company</string>
+    <string name="hoenn_version">v0.4.1</string>
+
+    <!-- Quick menu row subtitles -->
+    <string name="hoenn_menu_save_desc">Slot 2 last used · 4 min ago</string>
+    <string name="hoenn_menu_load_desc">3 slots used</string>
+
+    <!-- Controller hint glyphs + labels -->
+    <string name="hoenn_glyph_a">A</string>
+    <string name="hoenn_glyph_b">B</string>
+    <string name="hoenn_glyph_start">START</string>
+    <string name="hoenn_hint_select">Select</string>
+    <string name="hoenn_hint_resume">Resume</string>
+    <string name="hoenn_hint_close">Close</string>
+    <string name="hoenn_hint_back">Back</string>
+    <string name="hoenn_hint_confirm">Confirm</string>
+
+    <!-- Save / load slots -->
+    <string name="hoenn_slots_save_title">Save state</string>
+    <string name="hoenn_slots_load_title">Load state</string>
+    <string name="hoenn_slot_auto">Auto</string>
+    <string name="hoenn_slot_1">Slot 1</string>
+    <string name="hoenn_slot_2">Slot 2</string>
+    <string name="hoenn_slot_3">Slot 3</string>
+    <string name="hoenn_slot_empty_label">Empty</string>
+    <string name="hoenn_slot_overwrite">Ⓐ overwrite</string>
+    <string name="hoenn_slot_load">Ⓐ load</string>
+    <string name="hoenn_slot_auto_tag">every 5 min</string>
+    <string name="hoenn_slot_meta_4min">4 min ago</string>
+    <string name="hoenn_slot_meta_1h">1 h ago</string>
+</resources>

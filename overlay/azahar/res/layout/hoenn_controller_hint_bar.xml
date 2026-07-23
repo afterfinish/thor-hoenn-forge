@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reusable controller-hint bar (A / B / START). Screens set the label text in
+  code; defaults suit the in-game quick menu (A Select · B Resume · START Close).
+  Glyph TextViews carry an outline ring/pill; letters are muted.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+
+    <TextView android:id="@+id/hintAGlyph"
+        android:layout_width="24dp" android:layout_height="24dp"
+        android:background="@drawable/hoenn_glyph_circle"
+        android:gravity="center" android:text="@string/hoenn_glyph_a"
+        android:textColor="@color/hoenn_muted" android:fontFamily="@font/inter_semibold"
+        android:textSize="11sp" />
+    <TextView android:id="@+id/hintALabel"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="7dp" android:text="@string/hoenn_hint_select"
+        style="@style/Hoenn.Text.Caption" />
+
+    <TextView android:id="@+id/hintBGlyph"
+        android:layout_width="24dp" android:layout_height="24dp"
+        android:layout_marginStart="18dp"
+        android:background="@drawable/hoenn_glyph_circle"
+        android:gravity="center" android:text="@string/hoenn_glyph_b"
+        android:textColor="@color/hoenn_muted" android:fontFamily="@font/inter_semibold"
+        android:textSize="11sp" />
+    <TextView android:id="@+id/hintBLabel"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="7dp" android:text="@string/hoenn_hint_resume"
+        style="@style/Hoenn.Text.Caption" />
+
+    <TextView android:id="@+id/hintStartGlyph"
+        android:layout_width="wrap_content" android:layout_height="24dp"
+        android:layout_marginStart="18dp"
+        android:paddingHorizontal="10dp"
+        android:background="@drawable/hoenn_glyph_pill"
+        android:gravity="center" android:text="@string/hoenn_glyph_start"
+        android:textColor="@color/hoenn_muted" android:fontFamily="@font/inter_semibold"
+        android:textSize="10sp" android:letterSpacing="0.06" />
+    <TextView android:id="@+id/hintStartLabel"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="7dp" android:text="@string/hoenn_hint_close"
+        style="@style/Hoenn.Text.Caption" />
+</LinearLayout>

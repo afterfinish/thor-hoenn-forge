@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Modal dialog surface (quick menu, save/load slots): surface fill, 14dp, hairline edge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/hoenn_surface" />
+    <corners android:radius="@dimen/hoenn_radius_dialog" />
+    <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_stroke" />
+</shape>

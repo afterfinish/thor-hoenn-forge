@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash / preparing / ready ground: dark bg with a soft blurple radial bloom. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.4"
+        android:gradientRadius="440dp"
+        android:startColor="@color/hoenn_accent_900"
+        android:endColor="@color/hoenn_bg" />
+</shape>

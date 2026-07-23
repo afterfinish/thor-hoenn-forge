@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Window transition animation for Hoenn Forge screens (soft fade + slight slide).
+  Apply by adding to the app theme:
+      <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
+  or per-activity via android:theme, or in code with overrideActivityTransition().
+-->
+<resources>
+    <style name="Hoenn.WindowAnimation">
+        <item name="android:activityOpenEnterAnimation">@anim/hoenn_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/hoenn_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/hoenn_pop_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/hoenn_pop_exit</item>
+    </style>
+
+    <!-- Optional theme overlay: font default + window transitions in one place.
+         Merge these items into the activity theme used by the Hoenn screens. -->
+    <style name="ThemeOverlay.Hoenn" parent="">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
+    </style>
+</resources>

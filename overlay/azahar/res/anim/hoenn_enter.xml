@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Screen enter: soft fade + slight slide (brief §8: fade + 8–12% slide, 200–280ms). -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/fast_out_slow_in">
+    <alpha android:fromAlpha="0.0" android:toAlpha="1.0" android:duration="220" />
+    <translate android:fromXDelta="9%p" android:toXDelta="0" android:duration="260" />
+</set>

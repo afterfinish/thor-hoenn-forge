@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  01 Splash — brand moment (≤ 1.5 s). Radial blurple bloom, brand mark + wordmark,
+  fading divider rule, subtitle, thin indeterminate loader, legal + version.
+  Reveal: mark glows/fades in, then fades to Legal (first run) or Home.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/hoenn_bg_splash">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <ImageView
+            android:id="@+id/splashMark"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@drawable/hoenn_mark"
+            android:contentDescription="@string/hoenn_brand" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/hoenn_brand"
+            android:textAllCaps="true"
+            android:fontFamily="@font/inter_medium"
+            android:textColor="@color/hoenn_text"
+            android:textSize="30sp"
+            android:letterSpacing="0.24" />
+
+        <View
+            android:layout_width="220dp"
+            android:layout_height="1dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/hoenn_rule_fade" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/hoenn_splash_subtitle"
+            android:textAllCaps="true"
+            android:fontFamily="@font/inter_regular"
+            android:textColor="@color/hoenn_muted"
+            android:textSize="12sp"
+            android:letterSpacing="0.14" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/splashLoader"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="180dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="88dp"
+        android:indeterminate="true"
+        android:indeterminateTint="@color/hoenn_accent" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="@dimen/hoenn_margin_outer"
+        android:text="@string/hoenn_splash_legal"
+        android:fontFamily="@font/inter_regular"
+        android:textColor="@color/hoenn_neutral_600"
+        android:textSize="10sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="@dimen/hoenn_margin_outer"
+        android:text="@string/hoenn_version"
+        android:fontFamily="@font/hoenn_mono"
+        android:textColor="@color/hoenn_neutral_600"
+        android:textSize="11sp" />
+</FrameLayout>

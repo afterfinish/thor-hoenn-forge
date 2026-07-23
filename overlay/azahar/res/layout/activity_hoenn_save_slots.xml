@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  34 Save state — slots (35 Load is the same shell with load data + an Auto slot).
+  Modal over dimmed gameplay: header, four slot rows (thumbnail + title + meta),
+  empty slots shown as dashed "+", A/B/START controller bar.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/hoenn_scrim">
+
+    <LinearLayout
+        android:layout_width="560dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:background="@drawable/hoenn_bg_dialog"
+        android:padding="22dp">
+
+        <!-- header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <ImageView
+                android:layout_width="40dp" android:layout_height="40dp"
+                android:background="@drawable/hoenn_badge" android:padding="9dp"
+                android:src="@drawable/hoenn_mark" android:contentDescription="@string/hoenn_brand" />
+            <TextView
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="12dp"
+                android:text="@string/hoenn_slots_save_title" style="@style/Hoenn.Text.Title" />
+            <TextView
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:background="@drawable/hoenn_chip"
+                android:paddingHorizontal="12dp" android:paddingVertical="6dp"
+                android:text="Alpha Sapphire" android:fontFamily="@font/inter_medium"
+                android:textColor="@color/hoenn_accent_100" android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Slot 1 (focused) -->
+        <LinearLayout
+            android:id="@+id/slot1"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:minHeight="64dp"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:background="@drawable/hoenn_row_menu" android:padding="10dp"
+            android:focusable="true" android:clickable="true">
+            <requestFocus />
+            <View android:layout_width="84dp" android:layout_height="48dp"
+                android:background="@drawable/hoenn_slot_thumb" />
+            <LinearLayout
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="14dp"
+                android:orientation="vertical">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/hoenn_slot_1" style="@style/Hoenn.Text.CardTitle" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/hoenn_slot_meta_4min" style="@style/Hoenn.Text.Muted" />
+            </LinearLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/hoenn_slot_overwrite" style="@style/Hoenn.Text.Accent" />
+        </LinearLayout>
+
+        <!-- Slot 2 -->
+        <LinearLayout
+            android:id="@+id/slot2"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:minHeight="64dp"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:background="@drawable/hoenn_row_menu" android:padding="10dp"
+            android:focusable="true" android:clickable="true">
+            <View android:layout_width="84dp" android:layout_height="48dp"
+                android:background="@drawable/hoenn_slot_thumb" />
+            <LinearLayout
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="14dp"
+                android:orientation="vertical">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/hoenn_slot_2" style="@style/Hoenn.Text.CardTitle" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="@string/hoenn_slot_meta_1h" style="@style/Hoenn.Text.Muted" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Slot 3 (empty) -->
+        <LinearLayout
+            android:id="@+id/slot3"
+            android:layout_width="match_parent" android:layout_height="64dp"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:background="@drawable/hoenn_slot_empty" android:padding="10dp"
+            android:focusable="true" android:clickable="true">
+            <TextView android:layout_width="84dp" android:layout_height="48dp"
+                android:gravity="center" android:text="+"
+                android:textColor="@color/hoenn_neutral_600"
+                android:fontFamily="@font/inter_regular" android:textSize="24sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginStart="14dp" android:text="@string/hoenn_slot_empty_label"
+                style="@style/Hoenn.Text.Muted" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent" android:layout_height="1dp"
+            android:layout_marginTop="16dp" android:background="@drawable/hoenn_rule_fade" />
+
+        <include
+            layout="@layout/hoenn_controller_hint_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="14dp" />
+    </LinearLayout>
+</FrameLayout>

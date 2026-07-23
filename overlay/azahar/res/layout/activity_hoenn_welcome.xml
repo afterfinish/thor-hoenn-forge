@@ -10,12 +10,11 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top"
         android:orientation="horizontal">
-        <TextView
+        <include
+            layout="@layout/hoenn_brand_header"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/hoenn_brand"
-            style="@style/Hoenn.Text.Brand" />
+            android:layout_weight="1" />
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
