@@ -5,10 +5,27 @@
         <item name="colorPrimaryVariant">@color/hoenn_primary_dark</item>
         <item name="colorOnPrimary">@color/hoenn_bg</item>
         <item name="colorSecondary">@color/hoenn_accent</item>
+        <item name="colorSurface">@color/hoenn_surface</item>
+        <item name="colorError">@color/hoenn_error</item>
         <item name="android:statusBarColor">@color/hoenn_bg</item>
         <item name="android:navigationBarColor">@color/hoenn_bg</item>
         <item name="android:windowBackground">@color/hoenn_bg</item>
         <item name="android:textColorPrimary">@color/hoenn_text</item>
         <item name="android:textColorSecondary">@color/hoenn_text_muted</item>
+        <!-- Inter face + outlined buttons (Nocturne "never a fill") -->
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+        <item name="materialButtonStyle">@style/Widget.HoennForge.Button</item>
+    </style>
+
+    <style name="Widget.HoennForge.Button" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="strokeColor">@color/hoenn_primary</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="android:textColor">@color/hoenn_primary</item>
+        <item name="rippleColor">@color/hoenn_accent</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:minHeight">56dp</item>
     </style>
 </resources>

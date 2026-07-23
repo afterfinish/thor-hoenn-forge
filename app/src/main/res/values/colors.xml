@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Nocturne palette (matches overlay/azahar). Prototype module; blurple, not emerald. -->
 <resources>
-    <color name="hoenn_bg">#0B1A24</color>
-    <color name="hoenn_surface">#132A38</color>
-    <color name="hoenn_primary">#3DDC97</color>
-    <color name="hoenn_primary_dark">#2BA872</color>
-    <color name="hoenn_accent">#F4A261</color>
-    <color name="hoenn_text">#E8F1F5</color>
-    <color name="hoenn_text_muted">#9BB4C0</color>
-    <color name="hoenn_error">#E76F51</color>
-    <color name="ic_launcher_background">#0B1A24</color>
+    <color name="hoenn_bg">#161826</color>
+    <color name="hoenn_surface">#232532</color>
+    <color name="hoenn_surface_elevated">#2A2C3C</color>
+    <color name="hoenn_primary">#9184D9</color>
+    <color name="hoenn_primary_dark">#5D5294</color>
+    <color name="hoenn_accent">#9184D9</color>
+    <color name="hoenn_accent_300">#D2CEFD</color>
+    <color name="hoenn_text">#E9E9ED</color>
+    <color name="hoenn_text_muted">#9397AB</color>
+    <color name="hoenn_success">#63C6A2</color>
+    <color name="hoenn_error">#D67F72</color>
+    <color name="ic_launcher_background">#161826</color>
 </resources>
