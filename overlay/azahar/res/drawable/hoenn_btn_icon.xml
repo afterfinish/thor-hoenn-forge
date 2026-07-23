@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square icon button (seed re-roll / manual entry). Outlined; accent ring on focus. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_accent_tint_12" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_accent_tint_22" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+            <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+            <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_divider" />
+        </shape>
+    </item>
+</selector>

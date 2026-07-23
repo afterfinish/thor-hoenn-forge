@@ -1,34 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Primary action — Nocturne outlined button: transparent ground, a 2px accent
+  outline, accent label. NEVER an accent flood. Pressed = a faint accent tint.
+  Focused (controller) = the signature double ring: an outer accent ring, a gap,
+  then the button's own accent outline.
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Disabled: muted, still readable -->
+
+    <!-- Disabled: dim outline, no fill (label drops to muted via the text color list) -->
     <item android:state_enabled="false">
         <shape android:shape="rectangle">
-            <solid android:color="#FF2A2C3C" />
+            <solid android:color="@android:color/transparent" />
             <corners android:radius="@dimen/hoenn_radius_btn" />
-            <stroke android:width="1dp" android:color="#55FFFFFF" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_neutral_700" />
         </shape>
     </item>
-    <!-- Focused (controller): bright accent fill -->
+
+    <!-- Focused (D-pad / stick): outer ring + gap + inner accent outline, faint tint -->
     <item android:state_focused="true">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/hoenn_accent" />
-            <corners android:radius="@dimen/hoenn_radius_btn" />
-            <stroke android:width="3dp" android:color="@color/hoenn_accent_300" />
-        </shape>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@android:color/transparent" />
+                    <corners android:radius="14dp" />
+                    <stroke android:width="@dimen/hoenn_focus_ring" android:color="@color/hoenn_accent" />
+                </shape>
+            </item>
+            <item android:left="5dp" android:top="5dp" android:right="5dp" android:bottom="5dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/hoenn_accent_tint_12" />
+                    <corners android:radius="@dimen/hoenn_radius_btn" />
+                    <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
+                </shape>
+            </item>
+        </layer-list>
     </item>
-    <!-- Pressed -->
+
+    <!-- Pressed: stronger accent tint under the outline -->
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/hoenn_accent_800" />
+            <solid android:color="@color/hoenn_accent_tint_22" />
             <corners android:radius="@dimen/hoenn_radius_btn" />
-            <stroke android:width="2dp" android:color="@color/hoenn_accent_300" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
         </shape>
     </item>
-    <!-- Enabled default: solid accent so white text is readable -->
+
+    <!-- Default: transparent, 2px accent outline -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/hoenn_accent" />
+            <solid android:color="@android:color/transparent" />
             <corners android:radius="@dimen/hoenn_radius_btn" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
         </shape>
     </item>
 </selector>

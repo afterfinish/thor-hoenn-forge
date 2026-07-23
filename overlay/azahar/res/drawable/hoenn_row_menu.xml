@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  In-game quick-menu row. Transparent by default; focused row lifts to a 2px
+  accent ring on a faint surface fill (the "Resume" row in 33-start-quick-menu).
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_surface" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_text_tint_07" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+        </shape>
+    </item>
+</selector>

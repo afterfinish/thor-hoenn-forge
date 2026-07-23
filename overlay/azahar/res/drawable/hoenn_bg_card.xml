@@ -1,6 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/hoenn_surface" />
-    <corners android:radius="@dimen/hoenn_radius_card" />
-    <stroke android:width="1dp" android:color="@color/hoenn_stroke" />
-</shape>
+<!--
+  Surface card. Default: surface fill + neutral hairline edge (Nocturne elevation
+  = an edge, not a heavy shadow). Focused (controller): the hairline lifts to a
+  2px accent ring. Pressed: a hair brighter. Radius = card (14dp).
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_surface" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+            <stroke android:width="@dimen/hoenn_stroke" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_surface_elevated" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+            <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_surface" />
+            <corners android:radius="@dimen/hoenn_radius_card" />
+            <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_stroke" />
+        </shape>
+    </item>
+</selector>

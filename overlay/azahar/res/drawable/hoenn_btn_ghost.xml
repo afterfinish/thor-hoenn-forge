@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ghost action — accent label, no border; a faint accent tint on interaction. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_accent_tint_12" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+            <stroke android:width="@dimen/hoenn_focus_ring" android:color="@color/hoenn_accent" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_accent_tint_22" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/hoenn_radius_input" />
+        </shape>
+    </item>
+</selector>

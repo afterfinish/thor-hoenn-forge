@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hoenn Forge brand mark (design symbol "i-mark", direction A): a 4-point forge
+  SPARK over Hoenn's SEA wave, stroked in the blurple accent. Used on the splash,
+  every header wordmark, the lockups, and the compact quick-menu chip.
+  (The launcher icon uses the separate ball-wave "i-ball" mark.)
+  24-grid; override the accent with a drawableTint where a muted mark is needed.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- forge spark -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/hoenn_accent"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M12,2.6 l1.7,4.5 l4.5,1.7 l-4.5,1.7 L12,15 l-1.7,-4.5 l-4.5,-1.7 l4.5,-1.7 Z" />
+    <!-- sea wave -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/hoenn_accent"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M3.5,20 c1.9,-2.7 3.8,-2.7 5.7,0 s3.8,2.7 5.7,0 3.8,-2.7 5.7,0" />
+</vector>

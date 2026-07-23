@@ -1,32 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ball-wave glyph from design handoff (#i-ball): circle + Hoenn wave band + spark center -->
+<!--
+  Adaptive launcher foreground — the app-icon "ball-wave" mark (design symbol
+  "i-ball", direction B): a ball silhouette whose band is Hoenn's wave, with the
+  forge spark-point at its centre. Never the official Poké Ball geometry (no
+  straight band, no ringed button). 24-grid scaled/centred inside the 66dp safe
+  circle of the 108 viewport.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Safe zone centered ~66dp circle region scaled to viewport -->
-    <group
-        android:translateX="30"
-        android:translateY="30"
-        android:scaleX="2"
-        android:scaleY="2">
-        <!-- outer ball -->
-        <path
-            android:fillColor="#00000000"
-            android:strokeColor="#FF9184D9"
-            android:strokeWidth="2"
+    <group android:translateX="25.2" android:translateY="25.2" android:scaleX="2.4" android:scaleY="2.4">
+        <!-- ball silhouette -->
+        <path android:fillColor="#00000000" android:strokeColor="#FF9184D9"
+            android:strokeWidth="1.8" android:strokeLineCap="round"
             android:pathData="M12,3 a9,9 0 1,1 0,18 a9,9 0 1,1 0,-18" />
-        <!-- wave band through middle -->
-        <path
-            android:fillColor="#00000000"
-            android:strokeColor="#FF9184D9"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
+        <!-- wave band (replaces the straight ball band) -->
+        <path android:fillColor="#00000000" android:strokeColor="#FF9184D9"
+            android:strokeWidth="1.8" android:strokeLineCap="round"
             android:pathData="M3,12 c3,-3.4 6,-3.4 9,0 s6,3.4 9,0" />
-        <!-- forge spark center -->
-        <path
-            android:fillColor="#FF9184D9"
+        <!-- forge spark-point -->
+        <path android:fillColor="#FF9184D9"
             android:pathData="M12,10.1 a1.9,1.9 0 1,1 0,3.8 a1.9,1.9 0 1,1 0,-3.8" />
     </group>
 </vector>

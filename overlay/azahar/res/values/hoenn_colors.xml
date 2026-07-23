@@ -1,19 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hoenn Forge — Nocturne design tokens.
+  Source of truth: design system styles.css (nocturne-030bdd51) + design/exports/42-design-tokens.png.
+  Nocturne is a quiet dark theme: near-neutral blue-grey ground, a single blurple
+  accent used as a LINE and a GLOW (never a flood). Contrast comes from the tonal
+  ramps, not saturation. Do not hard-code hex in layouts/drawables — use these.
+-->
 <resources>
-    <!-- Hoenn Forge design tokens (from design/exports/42-design-tokens.png) -->
-    <color name="hoenn_bg">#FF161826</color>
-    <color name="hoenn_surface">#FF232532</color>
+    <!-- ── Core roles ── -->
+    <color name="hoenn_bg">#FF161826</color>            <!-- ground -->
+    <color name="hoenn_surface">#FF232532</color>       <!-- card / pane fill -->
     <color name="hoenn_surface_elevated">#FF2A2C3C</color>
     <color name="hoenn_text">#FFE9E9ED</color>
-    <color name="hoenn_muted">#FF9397AB</color>
-    <color name="hoenn_accent">#FF9184D9</color>
-    <color name="hoenn_accent_300">#FFB8AEF0</color>
-    <color name="hoenn_accent_800">#FF5C4FA8</color>
-    <color name="hoenn_accent_glow">#669184D9</color>
+    <color name="hoenn_muted">#FF9397AB</color>         <!-- = neutral-500 -->
+    <color name="hoenn_accent">#FF9184D9</color>        <!-- lines & glows only -->
+
+    <!-- ── Neutral ramp (OKLCH, shared lightness scale) ── -->
+    <color name="hoenn_neutral_100">#FFF3F5FE</color>
+    <color name="hoenn_neutral_200">#FFE4E7F5</color>
+    <color name="hoenn_neutral_300">#FFCFD3E5</color>
+    <color name="hoenn_neutral_400">#FFB2B6CA</color>
+    <color name="hoenn_neutral_500">#FF9397AB</color>
+    <color name="hoenn_neutral_600">#FF75798C</color>
+    <color name="hoenn_neutral_700">#FF595D6C</color>
+    <color name="hoenn_neutral_800">#FF3F424D</color>
+    <color name="hoenn_neutral_900">#FF292B31</color>
+
+    <!-- ── Accent ramp (blurple) ── -->
+    <color name="hoenn_accent_100">#FFF5F4FF</color>
+    <color name="hoenn_accent_200">#FFE7E5FE</color>
+    <color name="hoenn_accent_300">#FFD2CEFD</color>   <!-- body-size accent text -->
+    <color name="hoenn_accent_400">#FFB5ABFC</color>
+    <color name="hoenn_accent_500">#FF968AE0</color>
+    <color name="hoenn_accent_600">#FF796CBF</color>
+    <color name="hoenn_accent_700">#FF5D5294</color>
+    <color name="hoenn_accent_800">#FF423A6A</color>   <!-- tag / "On" chip fill -->
+    <color name="hoenn_accent_900">#FF2B2741</color>
+
+    <!-- ── Semantic ── -->
     <color name="hoenn_success">#FF63C6A2</color>
     <color name="hoenn_warning">#FFD8B46C</color>
     <color name="hoenn_danger">#FFD67F72</color>
-    <color name="hoenn_stroke">#33FFFFFF</color>
+
+    <!-- ── Lines, edges, glows ── -->
+    <!-- Card / control hairline = neutral-800 (Nocturne shadow-sm edge) -->
+    <color name="hoenn_stroke">#FF3F424D</color>
     <color name="hoenn_stroke_accent">#FF9184D9</color>
+    <!-- Freestanding rule / row separator = 16% text (fades at ends via drawable) -->
+    <color name="hoenn_divider">#29E9E9ED</color>
+    <!-- Accent glow for focus / splash bloom -->
+    <color name="hoenn_accent_glow">#669184D9</color>
+    <color name="hoenn_accent_glow_soft">#339184D9</color>
+
+    <!-- ── Component-specific ── -->
     <color name="hoenn_progress_track">#FF2E3040</color>
+    <!-- Pressed tints for outlined controls (accent over ground) -->
+    <color name="hoenn_accent_tint_12">#1F9184D9</color>
+    <color name="hoenn_accent_tint_22">#389184D9</color>
+    <color name="hoenn_text_tint_07">#12E9E9ED</color>
+    <color name="hoenn_text_tint_14">#24E9E9ED</color>
+    <color name="hoenn_danger_tint_12">#1FD67F72</color>
+    <color name="hoenn_danger_tint_22">#38D67F72</color>
+    <!-- Inset panel (last-session snapshot) gradient stops -->
+    <color name="hoenn_inset_top">#FF1B1E2E</color>
+    <color name="hoenn_inset_bottom">#FF14161F</color>
+    <!-- Scrim for dimming gameplay behind the in-game menu -->
+    <color name="hoenn_scrim">#B3111220</color>
 </resources>

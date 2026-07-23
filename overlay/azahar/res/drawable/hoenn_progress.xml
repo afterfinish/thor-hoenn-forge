@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Determinate progress: neutral-800 track, accent-700 → accent gradient fill. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
         <shape android:shape="rectangle">
-            <corners android:radius="6dp" />
-            <solid android:color="@color/hoenn_progress_track" />
+            <corners android:radius="3dp" />
+            <solid android:color="@color/hoenn_neutral_800" />
         </shape>
     </item>
     <item android:id="@android:id/progress">
         <clip>
             <shape android:shape="rectangle">
-                <corners android:radius="6dp" />
+                <corners android:radius="3dp" />
                 <gradient
-                    android:startColor="@color/hoenn_accent_800"
+                    android:startColor="@color/hoenn_accent_700"
                     android:endColor="@color/hoenn_accent"
                     android:angle="0" />
             </shape>

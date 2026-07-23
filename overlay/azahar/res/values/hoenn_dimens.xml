@@ -1,15 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hoenn Forge — spacing, radius, touch and motion tokens.
+  Radii come from the design-tokens board: chips 6 · inputs 8 · buttons 10 · dialogs 14.
+  Large surface cards use the dialog radius (14). Touch: 44 min · 48 rows · 56 heroes.
+-->
 <resources>
+    <!-- Outer safe margin (landscape handheld) -->
     <dimen name="hoenn_margin_outer">32dp</dimen>
+
+    <!-- Spacing scale: 8 · 12 · 16 · 24 · 32 · 56 -->
+    <dimen name="hoenn_space_4">4dp</dimen>
     <dimen name="hoenn_space_8">8dp</dimen>
     <dimen name="hoenn_space_12">12dp</dimen>
     <dimen name="hoenn_space_16">16dp</dimen>
     <dimen name="hoenn_space_24">24dp</dimen>
     <dimen name="hoenn_space_32">32dp</dimen>
-    <dimen name="hoenn_radius_card">16dp</dimen>
-    <dimen name="hoenn_radius_btn">14dp</dimen>
-    <dimen name="hoenn_radius_chip">10dp</dimen>
-    <dimen name="hoenn_btn_height">56dp</dimen>
+    <dimen name="hoenn_space_56">56dp</dimen>
+
+    <!-- Radii (design-tokens board) -->
+    <dimen name="hoenn_radius_chip">6dp</dimen>
+    <dimen name="hoenn_radius_input">8dp</dimen>
+    <dimen name="hoenn_radius_btn">10dp</dimen>
+    <dimen name="hoenn_radius_dialog">14dp</dimen>
+    <dimen name="hoenn_radius_card">12dp</dimen>
+
+    <!-- Touch / rhythm -->
+    <dimen name="hoenn_touch_min">44dp</dimen>
     <dimen name="hoenn_row_min">48dp</dimen>
-    <dimen name="hoenn_stroke">2dp</dimen>
+    <dimen name="hoenn_btn_height">56dp</dimen>
+
+    <!-- Strokes -->
+    <dimen name="hoenn_hairline">1dp</dimen>
+    <dimen name="hoenn_stroke">2dp</dimen>        <!-- accent outline / focus ring -->
+
+    <!-- Controller focus ring: 2px accent, offset 2–3px -->
+    <dimen name="hoenn_focus_ring">2dp</dimen>
+    <dimen name="hoenn_focus_offset">3dp</dimen>
+
+    <!-- Fading-rule end fade (Nocturne signature) -->
+    <dimen name="hoenn_rule_fade">48dp</dimen>
+
+    <!-- Padding presets -->
+    <dimen name="hoenn_card_pad">20dp</dimen>
+    <dimen name="hoenn_btn_pad_h">20dp</dimen>
 </resources>

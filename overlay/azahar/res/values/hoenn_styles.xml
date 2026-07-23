@@ -1,86 +1,141 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hoenn Forge type + control styles. Face: Inter (headings/buttons semibold 600,
+  brand medium 500, body regular 400); seeds/IDs in IBM Plex Mono. Buttons are
+  outlined (see hoenn_btn_* drawables) with a 0.98 press scale.
+-->
 <resources>
+
+    <!-- ── Type ── -->
     <style name="Hoenn.Text.Brand" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:textColor">@color/hoenn_muted</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:letterSpacing">0.16</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+    <style name="Hoenn.Text.Kicker" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textColor">@color/hoenn_accent</item>
+        <item name="android:textSize">11sp</item>
         <item name="android:letterSpacing">0.12</item>
         <item name="android:textAllCaps">true</item>
     </style>
     <style name="Hoenn.Text.Display" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_semibold</item>
         <item name="android:textColor">@color/hoenn_text</item>
         <item name="android:textSize">28sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.01</item>
     </style>
     <style name="Hoenn.Text.Title" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_semibold</item>
         <item name="android:textColor">@color/hoenn_text</item>
         <item name="android:textSize">21sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.01</item>
     </style>
     <style name="Hoenn.Text.CardTitle" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_semibold</item>
         <item name="android:textColor">@color/hoenn_text</item>
         <item name="android:textSize">16sp</item>
-        <item name="android:textStyle">bold</item>
     </style>
     <style name="Hoenn.Text.Body" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:textColor">@color/hoenn_text</item>
         <item name="android:textSize">15sp</item>
-        <item name="android:lineSpacingMultiplier">1.35</item>
+        <item name="android:lineSpacingMultiplier">1.4</item>
     </style>
     <style name="Hoenn.Text.Muted" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:textColor">@color/hoenn_muted</item>
         <item name="android:textSize">13sp</item>
+        <item name="android:lineSpacingMultiplier">1.35</item>
     </style>
     <style name="Hoenn.Text.Caption" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:textColor">@color/hoenn_muted</item>
         <item name="android:textSize">11.5sp</item>
     </style>
     <style name="Hoenn.Text.Mono" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/hoenn_mono</item>
         <item name="android:textColor">@color/hoenn_accent_300</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0.02</item>
     </style>
     <style name="Hoenn.Text.Accent" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:textColor">@color/hoenn_accent_300</item>
         <item name="android:textSize">14sp</item>
     </style>
+
+    <!-- ── Buttons (outlined; 0.98 press scale) ── -->
     <style name="Hoenn.Button.Primary" parent="Widget.AppCompat.Button">
+        <item name="android:fontFamily">@font/inter_semibold</item>
         <item name="android:background">@drawable/hoenn_btn_primary</item>
         <item name="android:textColor">@color/hoenn_btn_primary_text</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textSize">16sp</item>
-        <item name="android:textStyle">bold</item>
         <item name="android:minHeight">@dimen/hoenn_btn_height</item>
-        <item name="android:stateListAnimator">@null</item>
+        <item name="android:paddingLeft">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:paddingRight">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:drawablePadding">10dp</item>
+        <item name="android:drawableTint">@color/hoenn_accent</item>
+        <item name="android:stateListAnimator">@animator/hoenn_press</item>
         <item name="android:focusable">true</item>
         <item name="android:focusableInTouchMode">false</item>
         <item name="android:clickable">true</item>
     </style>
     <style name="Hoenn.Button.Secondary" parent="Widget.AppCompat.Button">
+        <item name="android:fontFamily">@font/inter_semibold</item>
         <item name="android:background">@drawable/hoenn_btn_secondary</item>
         <item name="android:textColor">@color/hoenn_btn_secondary_text</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textSize">15sp</item>
         <item name="android:minHeight">@dimen/hoenn_btn_height</item>
-        <item name="android:stateListAnimator">@null</item>
+        <item name="android:paddingLeft">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:paddingRight">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:stateListAnimator">@animator/hoenn_press</item>
+        <item name="android:focusable">true</item>
+        <item name="android:focusableInTouchMode">false</item>
+        <item name="android:clickable">true</item>
+    </style>
+    <style name="Hoenn.Button.Danger" parent="Widget.AppCompat.Button">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:background">@drawable/hoenn_btn_danger</item>
+        <item name="android:textColor">@color/hoenn_btn_danger_text</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:minHeight">@dimen/hoenn_btn_height</item>
+        <item name="android:paddingLeft">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:paddingRight">@dimen/hoenn_btn_pad_h</item>
+        <item name="android:drawableTint">@color/hoenn_danger</item>
+        <item name="android:stateListAnimator">@animator/hoenn_press</item>
         <item name="android:focusable">true</item>
         <item name="android:focusableInTouchMode">false</item>
         <item name="android:clickable">true</item>
     </style>
     <style name="Hoenn.Button.Ghost" parent="Widget.AppCompat.Button.Borderless">
-        <item name="android:textColor">@color/hoenn_accent_300</item>
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:background">@drawable/hoenn_btn_ghost</item>
+        <item name="android:textColor">@color/hoenn_accent</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textSize">14sp</item>
-        <item name="android:minHeight">48dp</item>
+        <item name="android:minHeight">@dimen/hoenn_row_min</item>
+        <item name="android:stateListAnimator">@animator/hoenn_press</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
     </style>
-    <!-- AppCompat tints button drawables by default — disable tint so the V is visible -->
+
+    <!-- ── Checkbox ── -->
     <style name="Hoenn.CheckBox" parent="Widget.AppCompat.CompoundButton.CheckBox">
+        <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:button">@drawable/hoenn_checkbox</item>
         <item name="buttonCompat">@drawable/hoenn_checkbox</item>
         <item name="android:buttonTint">@null</item>
         <item name="buttonTint">@null</item>
         <item name="android:textColor">@color/hoenn_text</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:paddingStart">12dp</item>
         <item name="android:focusable">true</item>
-        <item name="android:minHeight">48dp</item>
+        <item name="android:minHeight">@dimen/hoenn_row_min</item>
     </style>
 </resources>
