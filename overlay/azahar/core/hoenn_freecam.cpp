@@ -85,10 +85,10 @@ bool IsFieldMod(std::string_view n) {
     return n == "DllField";
 }
 
-void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, Core::System& system, u32 addr,
-            float v) {
+// Data-only camera floats: guest code re-reads RAM each frame. Do NOT InvalidateCacheRange —
+// that thrashing Dynarmic after freelook+zoom+savestate capped speed at ~100% until map change.
+void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, u32 addr, float v) {
     mem.Write32(process, addr, FBits(v));
-    system.InvalidateCacheRange(addr, 4);
 }
 
 } // namespace
@@ -285,7 +285,8 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         } else if (r && !l) {
             user_fov = std::max(FOV_MIN, user_fov - FOV_STEP);
         }
-        WriteF(mem, *process, system, cam + OFF_FOV, user_fov);
+        // Hold FOV so game does not snap; no JIT invalidate (data write only)
+        WriteF(mem, *process, cam + OFF_FOV, user_fov);
     }
 
     if (!freelook) {
@@ -307,7 +308,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         pitch += y * sensitivity * PITCH_STEP;
         pitch = std::clamp(pitch, PITCH_MIN, PITCH_MAX);
     }
-    WriteF(mem, *process, system, cam + OFF_PITCH, pitch);
+    WriteF(mem, *process, cam + OFF_PITCH, pitch);
 
     // --- Yaw (stick X → +0x9C) ---
     if (!yaw_seeded) {
@@ -323,7 +324,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         yaw += x * sensitivity * YAW_STEP;
     }
     if (OkFloat(yaw)) {
-        WriteF(mem, *process, system, cam + OFF_YAW, yaw);
+        WriteF(mem, *process, cam + OFF_YAW, yaw);
     }
 
     if ((diag++ % 60) == 0) {

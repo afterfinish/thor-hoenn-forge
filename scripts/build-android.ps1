@@ -28,11 +28,13 @@ if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
     Copy-Item $ssSrc $ssDst -Force
     Write-Host "Applied savestate.cpp LoadState null-check"
 }
-# Hoenn free-look core
+# Hoenn free-look core + frame limiter reset (turbo after savestate)
 foreach ($pair in @(
     @("core\hoenn_freecam.cpp", "src\core\hoenn_freecam.cpp"),
     @("core\hoenn_freecam.h", "src\core\hoenn_freecam.h"),
-    @("core\cheats.cpp", "src\core\cheats\cheats.cpp")
+    @("core\cheats.cpp", "src\core\cheats\cheats.cpp"),
+    @("core\perf_stats.h", "src\core\perf_stats.h"),
+    @("core\perf_stats.cpp", "src\core\perf_stats.cpp")
 )) {
     $src = Join-Path $Overlay $pair[0]
     $dst = Join-Path $Azahar $pair[1]
@@ -40,6 +42,24 @@ foreach ($pair in @(
         New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
         Copy-Item $src $dst -Force
         Write-Host "Applied $($pair[0])"
+    }
+}
+# After LoadState success: reset frame limiter so turbo limit applies immediately
+$coreCpp = Join-Path $Azahar "src\core\core.cpp"
+if (Test-Path $coreCpp) {
+    $cc = Get-Content $coreCpp -Raw
+    if ($cc -notmatch "frame_limiter\.Reset\(\)") {
+        $cc = $cc -replace `
+            '(System::LoadState\(slot\);\s*\r?\n\s*LOG_INFO\(Core, "Load completed"\);\s*\r?\n\s*\} catch \(const std::exception& e\) \{[\s\S]*?return ResultStatus::ErrorSavestate;\s*\r?\n\s*\}\s*\r?\n\s*)frame_limiter\.WaitOnce\(\);', `
+            "`$1frame_limiter.Reset();`r`n        frame_limiter.WaitOnce();"
+        if ($cc -match "frame_limiter\.Reset\(\)") {
+            [System.IO.File]::WriteAllText($coreCpp, $cc)
+            Write-Host "Patched core.cpp FrameLimiter::Reset after LoadState"
+        } else {
+            Write-Host "WARNING: could not patch core.cpp FrameLimiter::Reset"
+        }
+    } else {
+        Write-Host "core.cpp FrameLimiter::Reset already present"
     }
 }
 # Hook LDR CRO load/unload so freecam suspends in battle and re-applies on field return

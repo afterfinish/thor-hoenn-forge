@@ -695,11 +695,27 @@ class EmulationFragment :
                     Toast.makeText(context, R.string.saving, Toast.LENGTH_SHORT).show()
                 } else {
                     NativeLibrary.loadState(slot)
+                    reapplyTurboAfterLoad()
                     Toast.makeText(context, R.string.loading, Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton(R.string.hoenn_menu_back) { _, _ -> openHoennQuickMenu() }
             .show()
+    }
+
+    /**
+     * After savestate load, re-push temporary frame limit if turbo is still "on" in UI.
+     * Native limiter is also Reset() after LoadState (core); this covers the Kotlin turbo flag.
+     */
+    private fun reapplyTurboAfterLoad() {
+        try {
+            if (org.citra.citra_emu.utils.TurboHelper.isTurboSpeedEnabled()) {
+                org.citra.citra_emu.utils.TurboHelper.reloadTurbo(showToast = false)
+            }
+            org.citra.citra_emu.hoennforge.ThorProfile.applyL3TurboHotkey()
+        } catch (e: Exception) {
+            android.util.Log.w("HoennForge", "reapplyTurboAfterLoad failed", e)
+        }
     }
 
     private fun togglePause() {
@@ -841,6 +857,7 @@ class EmulationFragment :
                         ).show()
                     } else {
                         NativeLibrary.loadState(slot)
+                        reapplyTurboAfterLoad()
                         binding.drawerLayout.close()
                         Toast.makeText(
                             context,
