@@ -145,6 +145,7 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
     }
 
     auto& cam = Hoenn::FreeCam::GetInstance();
+    // Freecam always ticks when tools on — independent of L3 turbo
     if (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()) {
         cam.Tick(system, process_id);
     }

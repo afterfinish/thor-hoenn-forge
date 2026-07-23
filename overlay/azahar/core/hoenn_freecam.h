@@ -17,6 +17,7 @@ namespace Hoenn {
  * Yaw:   stick X → cam+0x9C (RE probe #14, dogfood 2026-07-23).
  * Zoom:  L/R → cam+0xB0.
  *
+ * Independent of L3 turbo (do not pause freecam during turbo).
  * Never rewrite CAMERA_SLOT.
  */
 class FreeCam {
@@ -43,7 +44,7 @@ public:
     void Tick(Core::System& system, u32 process_id);
     void OnModuleLoaded(std::string_view module_name, u32 load_address = 0);
     void OnModuleUnloaded(std::string_view module_name);
-    /** After savestate load / cheat engine reconnect — quiet + reseed camera writes. */
+    /** After savestate load / cheat engine reconnect. */
     void OnCoreReconnect();
 
 private:

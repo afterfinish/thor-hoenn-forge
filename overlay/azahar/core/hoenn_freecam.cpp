@@ -1,12 +1,13 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 //
-// Pitch: stick Y → cam+0x98 (product path).
-// Yaw:   stick X → cam+0x9C (locked — RE probe #14, user dogfood 2026-07-23).
-// Zoom:  L or R → cam+0xB0 (exclusive). Never rewrite CAMERA_SLOT.
+// Pitch: stick Y → cam+0x98.
+// Yaw:   stick X → cam+0x9C (probe #14 locked).
+// Zoom:  L or R → cam+0xB0.
 //
-// Failed / do not restore as primary:
-//   F1 +0x90 only · F2/F3 sin/cos 0x90+0x94 · +0x94 alone (vertical) · F4 multi FOV
-//   F5 slot rebind · F6 false eye/target · pad-train · N2 false pairs · multi-probe menu
+// Freecam and L3 turbo are independent — never pause freecam while turbo is on
+// (both work together after a map refresh; post-savestate turbo lag is a known open bug).
+//
+// Never rewrite CAMERA_SLOT. No InvalidateCacheRange on data float writes.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -26,7 +27,7 @@ namespace Hoenn {
 namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_PITCH = 0x98;
-constexpr u32 OFF_YAW = 0x9C; // probe #14 — horizontal freelook (confirmed)
+constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
 
 constexpr float PITCH_BASE = -12.74f;
@@ -85,8 +86,6 @@ bool IsFieldMod(std::string_view n) {
     return n == "DllField";
 }
 
-// Data-only camera floats: guest code re-reads RAM each frame. Do NOT InvalidateCacheRange —
-// that thrashing Dynarmic after freelook+zoom+savestate capped speed at ~100% until map change.
 void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, u32 addr, float v) {
     mem.Write32(process, addr, FBits(v));
 }
@@ -105,7 +104,6 @@ void FreeCam::ResetYaw() {
 }
 
 void FreeCam::OnCoreReconnect() {
-    // Savestate rewound guest memory — stop thrashing old cam, quiet briefly, reseed next Tick
     quiet_until = 1;
     in_battle = false;
     zero_fov_streak = 0;
@@ -236,7 +234,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     const u64 now = system.CoreTiming().GetTicks();
     if (now < quiet_until) {
         if ((diag++ % 40) == 0) {
-            LOG_INFO(Core, "Hoenn camera: quiet after field/battle…");
+            LOG_INFO(Core, "Hoenn camera: quiet after field/battle/savestate…");
         }
         return;
     }
@@ -276,6 +274,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
     zero_fov_streak = 0;
 
+    // --- Zoom L/R (exclusive) — always available, including during turbo ---
     if (zoom_assist) {
         bool l = false, r = false;
         try {
@@ -294,7 +293,6 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         } else if (r && !l) {
             user_fov = std::max(FOV_MIN, user_fov - FOV_STEP);
         }
-        // Hold FOV so game does not snap; no JIT invalidate (data write only)
         WriteF(mem, *process, cam + OFF_FOV, user_fov);
     }
 
@@ -311,7 +309,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         c_stick.reset();
     }
 
-    // --- Pitch (stick Y) ---
+    // --- Pitch Y ---
     if (std::fabs(sy) >= STICK_DEADZONE) {
         const float y = invert_y ? sy : -sy;
         pitch += y * sensitivity * PITCH_STEP;
@@ -319,7 +317,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
     WriteF(mem, *process, cam + OFF_PITCH, pitch);
 
-    // --- Yaw (stick X → +0x9C) ---
+    // --- Yaw X → +0x9C ---
     if (!yaw_seeded) {
         yaw = BFloat(mem.Read32(*process, cam + OFF_YAW));
         if (!OkFloat(yaw)) {
