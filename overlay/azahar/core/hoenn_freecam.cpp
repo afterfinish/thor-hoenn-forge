@@ -444,11 +444,15 @@ void FreeCam::LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process,
     if (!HeapPtr(slot_cam)) {
         return;
     }
+    const float pri_fov =
+        primary_cam ? BFloat(mem.Read32(process, primary_cam + OFF_FOV)) : 225.f;
     struct W {
         u32 base;
         float fov;
         float pitch;
+        float yaw;
         u32 flag;
+        float score;
     };
     std::vector<W> wide;
     const u32 lo = slot_cam > SCAN_RADIUS ? slot_cam - SCAN_RADIUS : 0x08000000;
@@ -460,20 +464,48 @@ void FreeCam::LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process,
         }
         const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
         const u32 fl = mem.Read32(process, base + OFF_FLAG);
-        if (fl != LIVE_FLAG && !OkPitchLayout(pitch_v)) {
+        if (fl != LIVE_FLAG && !OkPitchLayout(pitch_v) && std::fabs(pitch_v) > 0.01f) {
             continue;
         }
-        wide.push_back({base, fov, pitch_v, fl});
+        // Prefer FOV near primary (deep RE: real shadows match pri FOV, not 200 junk)
+        float s = std::fabs(fov - pri_fov);
+        if (fl == LIVE_FLAG) {
+            s -= 50.f;
+        } else if (fl == 0 && s <= ECHO_FOV_MATCH) {
+            s -= 20.f; // flag=0 FOV-matched shadow class
+        }
+        wide.push_back({base, fov, pitch_v, BFloat(mem.Read32(process, base + OFF_YAW)), fl, s});
     }
-    std::sort(wide.begin(), wide.end(), [](const W& a, const W& b) {
-        return std::fabs(a.fov - 225.f) < std::fabs(b.fov - 225.f);
-    });
+    std::sort(wide.begin(), wide.end(),
+              [](const W& a, const W& b) { return a.score < b.score; });
     const int n = std::min(static_cast<int>(wide.size()), 20);
-    LOG_WARNING(Core, "Hoenn RE WIDE (read-only) near {:08X}: {}/{}", slot_cam, n, wide.size());
+    LOG_WARNING(Core, "Hoenn RE WIDE (read-only) near {:08X} pri_fov={:.1f}: {}/{}", slot_cam,
+                pri_fov, n, wide.size());
     for (int i = 0; i < n; ++i) {
         const auto& w = wide[static_cast<size_t>(i)];
-        LOG_WARNING(Core, "Hoenn RE WIDE[{}] {:08X} fov={:.1f} p={:.2f} fl={:08X} {}", i, w.base,
-                    w.fov, w.pitch, w.flag, w.flag == LIVE_FLAG ? "GOLD" : "other");
+        const char* tag = w.flag == LIVE_FLAG                      ? "GOLD"
+                          : (w.flag == 0 && std::fabs(w.fov - pri_fov) <= ECHO_FOV_MATCH)
+                              ? "SHADOW?"
+                              : "other";
+        LOG_WARNING(Core, "Hoenn RE WIDE[{}] {:08X} fov={:.1f} p={:.2f} y={:.2f} fl={:08X} {}", i,
+                    w.base, w.fov, w.pitch, w.yaw, w.flag, tag);
+    }
+    // Deep RE: full dual-block dump of top FOV-matched flag=0 shadows (read-only)
+    int dumped = 0;
+    for (const auto& w : wide) {
+        if (dumped >= 2) {
+            break;
+        }
+        if (w.flag != 0 || std::fabs(w.fov - pri_fov) > ECHO_FOV_MATCH) {
+            continue;
+        }
+        LOG_WARNING(Core, "Hoenn RE SHADOW-FULL base={:08X} (FOV-matched flag=0)", w.base);
+        for (u32 off = 0x40; off <= 0xB8; off += 4) {
+            const u32 raw = mem.Read32(process, w.base + off);
+            LOG_WARNING(Core, "Hoenn RE SHADOW +{:02X}: raw={:08X} f={:.6g}", off, raw,
+                        BFloat(raw));
+        }
+        dumped++;
     }
 }
 
