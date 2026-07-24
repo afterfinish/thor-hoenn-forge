@@ -26,17 +26,15 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * Gold LIVE (RE): flag+0x80==0x0F + FOV 150–400 — works most overworld/house.
- * Zone dogfood: freelook dies while multi still has gold LIVE siblings
- * (08188228, 082D3920) that accept pitch writes but are NOT the render cam.
- * Working moments: slot itself gold LIVE (082D3458 / 082D4898).
- * Bad zone: slot DEAD; need SILVER candidates (FOV band + pitch layout, any flag).
- * Multi-write pitch/yaw to gold+silver. Never multi FOV. Never CAMERA_SLOT rewrite.
+ * LIVE = flag+0x80==0x0F + FOV 150–400 (RE dumps). Multi-write pitch/yaw only
+ * to GOLD live cams (max few). SILVER (no-flag FOV) removed — caused camera
+ * chaos by writing into random heap floats (log: 12 SILVER all p=-23.83).
+ * Never rewrite CAMERA_SLOT. Never multi FOV.
  */
 class FreeCam {
 public:
-    static constexpr int kMaxCamCandidates = 20;
-    static constexpr int kMaxLiveTargets = 12;
+    static constexpr int kMaxCamCandidates = 16;
+    static constexpr int kMaxLiveTargets = 6;
 
     static FreeCam& GetInstance();
 
@@ -80,8 +78,7 @@ private:
         float yaw = 0.f;
         u32 flag80 = 0;
         bool is_slot = false;
-        bool gold = false;
-        bool silver = false;
+        bool live = false;
         float score = 0.f;
     };
 
@@ -126,8 +123,6 @@ private:
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
 
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    bool IsSilverLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    bool IsDriveTarget(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
     void WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process);
     void LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam) const;

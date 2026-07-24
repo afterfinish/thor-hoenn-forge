@@ -1,13 +1,12 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 //
-// Pitch +0x98 / yaw +0x9C / FOV +0xB0 (L/R on primary only).
+// Pitch +0x98 / yaw +0x9C / FOV +0xB0 (L/R on primary GOLD only).
 //
-// Zone logs (multi-write build): freelook dead while multi still had gold LIVE
-// 08188228/082D3920 with sticky pitch — those are NOT the render cam in the
-// bad zone. Freelook works when slot itself is gold LIVE (082D3458/082D4898).
-// Bad zone: slot DEAD (fl=0 fov=junk). Need SILVER: FOV 200–300 + pitch layout
-// without requiring flag 0x0F. Multi-write gold+silver pitch/yaw only.
-// Never rewrite CAMERA_SLOT. Never multi-write FOV.
+// SILVER multi-write (FOV-only, no flag) caused camera chaos on 2F — wrote
+// pitch into ~12 random heap floats (log: all SILVER p=-23.83). Reverted to
+// GOLD only: flag+0x80==0x0F + FOV 150–400. Multi-write pitch/yaw to at most
+// a few GOLD siblings near the slot. RE dump still logs WIDE scan (read-only).
+// Never rewrite CAMERA_SLOT. Never multi FOV.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -43,9 +42,6 @@ constexpr float YAW_STEP = 0.85f;
 
 constexpr float FOV_GOLD_LO = 150.f;
 constexpr float FOV_GOLD_HI = 400.f;
-// Tighter band for silver (no flag) — avoid 798-class fakes
-constexpr float FOV_SILVER_LO = 200.f;
-constexpr float FOV_SILVER_HI = 300.f;
 constexpr float FOV_ZOOM_MIN = 220.f;
 constexpr float FOV_ZOOM_MAX = 750.f;
 constexpr float FOV_ASSIST = 480.f;
@@ -54,8 +50,8 @@ constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
-constexpr u64 COLLECT_INTERVAL = 25'000'000; // refresh often in zones
-constexpr u32 SCAN_RADIUS = 0x280000;
+constexpr u64 COLLECT_INTERVAL = 40'000'000;
+constexpr u32 SCAN_RADIUS = 0x180000; // keep GOLD siblings only, not half the heap
 constexpr u32 SCAN_STEP = 0x10;
 
 u32 FBits(float f) {
@@ -81,16 +77,8 @@ bool OkGoldFov(float f) {
     return std::isfinite(f) && f >= FOV_GOLD_LO && f <= FOV_GOLD_HI;
 }
 
-bool OkSilverFov(float f) {
-    return std::isfinite(f) && f >= FOV_SILVER_LO && f <= FOV_SILVER_HI;
-}
-
 bool OkPitchLayout(float p) {
     return OkFloat(p) && p >= -45.f && p <= 15.f;
-}
-
-bool OkYawLayout(float y) {
-    return OkFloat(y) && std::fabs(y) < 1.0e4f;
 }
 
 std::shared_ptr<Kernel::Process> Resolve(Core::System& sys, u32 pid) {
@@ -203,7 +191,7 @@ void FreeCam::SetFreelookEnabled(bool e) {
         live_count = 0;
         primary_cam = 0;
         last_collect_tick = 0;
-        LOG_WARNING(Core, "Hoenn free-look ON — gold+silver multi-write");
+        LOG_WARNING(Core, "Hoenn free-look ON — GOLD multi only (no silver)");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -254,28 +242,6 @@ bool FreeCam::IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u3
     return flag == LIVE_FLAG && OkGoldFov(fov);
 }
 
-bool FreeCam::IsSilverLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const {
-    if (!HeapPtr(base) || base + OFF_FOV + 4 >= 0x0C000000) {
-        return false;
-    }
-    // No flag gate — bad-zone render cam may not use 0x0F
-    const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
-    const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
-    const float yaw_v = BFloat(mem.Read32(process, base + OFF_YAW));
-    if (!OkSilverFov(fov) || !OkPitchLayout(pitch_v) || !OkYawLayout(yaw_v)) {
-        return false;
-    }
-    // Reject denorm-looking neighbor junk: require pitch magnitude or yaw motion-ish
-    if (std::fabs(pitch_v) < 0.01f && std::fabs(yaw_v) < 0.01f) {
-        return false;
-    }
-    return true;
-}
-
-bool FreeCam::IsDriveTarget(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const {
-    return IsGoldLive(mem, process, base) || IsSilverLive(mem, process, base);
-}
-
 void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process,
                                  u32 slot_cam) {
     live_count = 0;
@@ -284,39 +250,25 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
 
     struct Hit {
         u32 base;
-        bool gold;
         float score;
     };
     std::vector<Hit> hits;
-    hits.reserve(64);
 
     auto consider = [&](u32 base) {
-        if (!HeapPtr(base) || seen.count(base)) {
-            return;
-        }
-        const bool gold = IsGoldLive(mem, process, base);
-        const bool silver = !gold && IsSilverLive(mem, process, base);
-        if (!gold && !silver) {
+        if (!IsGoldLive(mem, process, base) || seen.count(base)) {
             return;
         }
         seen.insert(base);
         const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
         float s = std::fabs(fov - 225.f);
-        if (gold) {
-            s -= 100.f;
-        }
         if (base == slot_cam) {
-            s -= 50.f;
+            s -= 100.f;
         }
         if (HeapPtr(slot_cam)) {
             const u32 dist = base > slot_cam ? base - slot_cam : slot_cam - base;
-            s += static_cast<float>(dist) / 8192.f;
+            s += static_cast<float>(dist) / 4096.f;
         }
-        const u32 fl = mem.Read32(process, base + OFF_FLAG);
-        if (fl == LIVE_FLAG) {
-            s -= 20.f;
-        }
-        hits.push_back({base, gold, s});
+        hits.push_back({base, s});
     };
 
     consider(slot_cam);
@@ -334,11 +286,11 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
     };
     scan_near(slot_cam);
     scan_near(last_good_cam);
+    // Known house cam band from RE
     scan_near(0x082D0000);
-    scan_near(0x08180000); // saw 08188228 in logs
 
     const u32 bss0 = static_cast<u32>(CAMERA_SLOT);
-    for (u32 a = bss0 - 0x80; a <= bss0 + 0x80; a += 4) {
+    for (u32 a = bss0 - 0x40; a <= bss0 + 0x40; a += 4) {
         consider(mem.Read32(process, a));
     }
 
@@ -352,19 +304,10 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
         live_targets[static_cast<size_t>(live_count++)] = h.base;
     }
 
-    // Primary: prefer gold slot, else best gold, else best overall
     if (IsGoldLive(mem, process, slot_cam)) {
         primary_cam = slot_cam;
-    } else {
-        for (const auto& h : hits) {
-            if (h.gold) {
-                primary_cam = h.base;
-                break;
-            }
-        }
-        if (primary_cam == 0 && live_count > 0) {
-            primary_cam = live_targets[0];
-        }
+    } else if (live_count > 0) {
+        primary_cam = live_targets[0];
     }
     if (primary_cam) {
         last_good_cam = primary_cam;
@@ -373,7 +316,7 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
 
 void FreeCam::LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process,
                           u32 slot_cam) const {
-    // RE helper: every FOV-in-range object near slot (any flag) — find bad-zone cam
+    // Read-only RE: list FOV candidates near slot (do NOT write these)
     if (!HeapPtr(slot_cam)) {
         return;
     }
@@ -382,7 +325,6 @@ void FreeCam::LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process,
         float fov;
         float pitch;
         u32 flag;
-        float dist;
     };
     std::vector<W> wide;
     const u32 lo = slot_cam > SCAN_RADIUS ? slot_cam - SCAN_RADIUS : 0x08000000;
@@ -393,24 +335,21 @@ void FreeCam::LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process,
             continue;
         }
         const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
-        if (!OkPitchLayout(pitch_v) && !(mem.Read32(process, base + OFF_FLAG) == LIVE_FLAG)) {
+        const u32 fl = mem.Read32(process, base + OFF_FLAG);
+        if (fl != LIVE_FLAG && !OkPitchLayout(pitch_v)) {
             continue;
         }
-        const u32 dist = base > slot_cam ? base - slot_cam : slot_cam - base;
-        wide.push_back({base, fov, pitch_v, mem.Read32(process, base + OFF_FLAG),
-                        static_cast<float>(dist)});
+        wide.push_back({base, fov, pitch_v, fl});
     }
     std::sort(wide.begin(), wide.end(), [](const W& a, const W& b) {
         return std::fabs(a.fov - 225.f) < std::fabs(b.fov - 225.f);
     });
-    const int n = std::min(static_cast<int>(wide.size()), 24);
-    LOG_WARNING(Core, "Hoenn RE WIDE scan near {:08X}: showing {}/{}", slot_cam, n, wide.size());
+    const int n = std::min(static_cast<int>(wide.size()), 20);
+    LOG_WARNING(Core, "Hoenn RE WIDE (read-only) near {:08X}: {}/{}", slot_cam, n, wide.size());
     for (int i = 0; i < n; ++i) {
         const auto& w = wide[static_cast<size_t>(i)];
-        const bool g = (w.flag == LIVE_FLAG && OkGoldFov(w.fov));
-        LOG_WARNING(Core, "Hoenn RE WIDE[{}] {:08X} fov={:.1f} p={:.2f} fl={:08X} dist={:X} {}", i,
-                    w.base, w.fov, w.pitch, w.flag, static_cast<u32>(w.dist),
-                    g ? "GOLD" : "sil/other");
+        LOG_WARNING(Core, "Hoenn RE WIDE[{}] {:08X} fov={:.1f} p={:.2f} fl={:08X} {}", i, w.base,
+                    w.fov, w.pitch, w.flag, w.flag == LIVE_FLAG ? "GOLD" : "other");
     }
 }
 
@@ -428,14 +367,14 @@ void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& proc
     } else {
         pitch = PITCH_BASE;
     }
-    yaw = OkYawLayout(y) ? y : 0.f;
+    yaw = OkFloat(y) ? y : 0.f;
     yaw_seeded = true;
 }
 
 void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process) {
     for (int i = 0; i < live_count; ++i) {
         const u32 cam = live_targets[static_cast<size_t>(i)];
-        if (!IsDriveTarget(mem, process, cam)) {
+        if (!IsGoldLive(mem, process, cam)) {
             continue;
         }
         WriteF(mem, process, cam + OFF_PITCH, pitch);
@@ -464,8 +403,7 @@ int FreeCam::ScanCamCandidates(Core::System& system) {
     CamCandidate c0;
     c0.base = slot_cam;
     c0.is_slot = true;
-    c0.gold = IsGoldLive(mem, *process, slot_cam);
-    c0.silver = !c0.gold && IsSilverLive(mem, *process, slot_cam);
+    c0.live = IsGoldLive(mem, *process, slot_cam);
     if (HeapPtr(slot_cam)) {
         c0.fov = BFloat(mem.Read32(*process, slot_cam + OFF_FOV));
         c0.pitch = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
@@ -481,15 +419,14 @@ int FreeCam::ScanCamCandidates(Core::System& system) {
         }
         CamCandidate c;
         c.base = b;
-        c.gold = IsGoldLive(mem, *process, b);
-        c.silver = !c.gold;
+        c.live = true;
         c.fov = BFloat(mem.Read32(*process, b + OFF_FOV));
         c.pitch = BFloat(mem.Read32(*process, b + OFF_PITCH));
         c.yaw = BFloat(mem.Read32(*process, b + OFF_YAW));
         c.flag80 = mem.Read32(*process, b + OFF_FLAG);
         candidates.push_back(c);
     }
-    LOG_WARNING(Core, "Hoenn camProbe: multi={} pri={:08X}", live_count, primary_cam);
+    LOG_WARNING(Core, "Hoenn camProbe: gold_n={} pri={:08X}", live_count, primary_cam);
     return static_cast<int>(candidates.size());
 }
 
@@ -503,12 +440,11 @@ std::string FreeCam::GetCamCandidateLabel(int index) const {
     }
     const auto& c = candidates[static_cast<size_t>(index)];
     char buf[160];
-    const char* tier = c.gold ? "GOLD" : (c.silver || c.is_slot ? "sil" : "DEAD");
     if (c.is_slot) {
-        std::snprintf(buf, sizeof(buf), "#%d SLOT %08X %s fov=%.0f fl=%X n=%d", index, c.base, tier,
-                      c.fov, c.flag80, live_count);
+        std::snprintf(buf, sizeof(buf), "#%d SLOT %08X %s fov=%.0f fl=%X n=%d", index, c.base,
+                      c.live ? "GOLD" : "DEAD", c.fov, c.flag80, live_count);
     } else {
-        std::snprintf(buf, sizeof(buf), "#%d %08X %s fov=%.0f fl=%X", index, c.base, tier, c.fov,
+        std::snprintf(buf, sizeof(buf), "#%d %08X GOLD fov=%.0f fl=%X", index, c.base, c.fov,
                       c.flag80);
     }
     return std::string(buf);
@@ -518,10 +454,12 @@ void FreeCam::SetCamProbeIndex(int index) {
     probe_index = std::max(0, index);
     if (probe_index > 0 && probe_index < static_cast<int>(candidates.size())) {
         const auto& c = candidates[static_cast<size_t>(probe_index)];
-        primary_cam = c.base;
-        pitch = PITCH_BASE;
-        yaw = c.yaw;
-        yaw_seeded = true;
+        if (c.live) {
+            primary_cam = c.base;
+            pitch = PITCH_BASE;
+            yaw = c.yaw;
+            yaw_seeded = true;
+        }
     }
 }
 
@@ -547,14 +485,13 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
     CollectLiveTargets(mem, *process, slot_cam);
 
     LOG_WARNING(Core,
-                "========== Hoenn RE DUMP [{}] slot={:08X} multi={} pri={:08X} ==========", t,
+                "========== Hoenn RE DUMP [{}] slot={:08X} gold_n={} pri={:08X} ==========", t,
                 slot_cam, live_count, primary_cam);
     for (int i = 0; i < live_count; ++i) {
         const u32 b = live_targets[static_cast<size_t>(i)];
-        const bool g = IsGoldLive(mem, *process, b);
-        LOG_WARNING(Core, "Hoenn RE LIVE[{}] {:08X} fov={:.0f} fl={:X} p={:.2f} {}", i, b,
+        LOG_WARNING(Core, "Hoenn RE GOLD[{}] {:08X} fov={:.0f} fl={:X} p={:.2f}", i, b,
                     BFloat(mem.Read32(*process, b + OFF_FOV)), mem.Read32(*process, b + OFF_FLAG),
-                    BFloat(mem.Read32(*process, b + OFF_PITCH)), g ? "GOLD" : "SILVER");
+                    BFloat(mem.Read32(*process, b + OFF_PITCH)));
     }
     LogWideScan(mem, *process, slot_cam);
 
@@ -577,17 +514,16 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
                 n_diff++;
             }
         }
-        LOG_WARNING(Core, "Hoenn RE DIFF: {} words vs prev", n_diff);
+        LOG_WARNING(Core, "Hoenn RE DIFF: {} words", n_diff);
     }
     dump_prev_base = slot_cam;
     std::memcpy(dump_prev_words, words, sizeof(words));
     dump_prev_valid = true;
     std::snprintf(dump_prev_tag, sizeof(dump_prev_tag), "%s", t);
 
-    const bool sg = IsGoldLive(mem, *process, slot_cam);
     char toast[96];
-    std::snprintf(toast, sizeof(toast), "RE multi=%d pri=%08X slot=%s", live_count, primary_cam,
-                  sg ? "GOLD" : "dead");
+    std::snprintf(toast, sizeof(toast), "RE gold=%d pri=%08X slot=%s", live_count, primary_cam,
+                  IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead");
     return std::string(toast);
 }
 
@@ -629,33 +565,19 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         return;
     }
 
-    float sx = 0.f, sy = 0.f;
-    try {
-        if (c_stick) {
-            std::tie(sx, sy) = c_stick->GetStatus();
-        }
-    } catch (...) {
-        c_stick.reset();
-    }
-    const bool stick_active =
-        std::fabs(sx) >= STICK_DEADZONE || std::fabs(sy) >= STICK_DEADZONE;
-
-    // Faster recollect when stick active (zone cam may switch under us)
-    const u64 collect_gap = stick_active ? COLLECT_INTERVAL / 2 : COLLECT_INTERVAL;
-    if (last_collect_tick == 0 || now >= last_collect_tick + collect_gap) {
+    if (last_collect_tick == 0 || now >= last_collect_tick + COLLECT_INTERVAL) {
         const int prev_n = live_count;
         const u32 prev_pri = primary_cam;
         CollectLiveTargets(mem, *process, slot_cam);
         last_collect_tick = now;
         if (live_count != prev_n || primary_cam != prev_pri) {
-            LOG_WARNING(Core, "Hoenn multi: n={} pri={:08X} slot={:08X}", live_count, primary_cam,
-                        slot_cam);
+            LOG_WARNING(Core, "Hoenn gold multi: n={} pri={:08X} slot={:08X}", live_count,
+                        primary_cam, slot_cam);
             for (int i = 0; i < live_count; ++i) {
                 const u32 b = live_targets[static_cast<size_t>(i)];
-                LOG_INFO(Core, "Hoenn multi[{}] {:08X} fov={:.0f} fl={:X} {}", i, b,
+                LOG_INFO(Core, "Hoenn gold[{}] {:08X} fov={:.0f} fl={:X}", i, b,
                          BFloat(mem.Read32(*process, b + OFF_FOV)),
-                         mem.Read32(*process, b + OFF_FLAG),
-                         IsGoldLive(mem, *process, b) ? "GOLD" : "SILVER");
+                         mem.Read32(*process, b + OFF_FLAG));
             }
             if (primary_cam && primary_cam != prev_pri) {
                 SeedAnglesFromCam(mem, *process, primary_cam);
@@ -691,10 +613,19 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
 
     if (live_count == 0) {
         if ((diag++ % 40) == 0) {
-            LOG_WARNING(Core, "Hoenn: no gold/silver cams slot={:08X} — force rescan", slot_cam);
+            LOG_WARNING(Core, "Hoenn: no GOLD cams (slot={:08X}) — wait", slot_cam);
         }
         last_collect_tick = 0;
         return;
+    }
+
+    float sx = 0.f, sy = 0.f;
+    try {
+        if (c_stick) {
+            std::tie(sx, sy) = c_stick->GetStatus();
+        }
+    } catch (...) {
+        c_stick.reset();
     }
 
     if (std::fabs(sy) >= STICK_DEADZONE) {
@@ -715,7 +646,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     WriteFreelookToAllLive(mem, *process);
 
     if ((diag++ % 60) == 0) {
-        LOG_INFO(Core, "Hoenn ok multi={} pri={:08X} slot={:08X} p={:.1f}", live_count, primary_cam,
+        LOG_INFO(Core, "Hoenn ok gold_n={} pri={:08X} slot={:08X} p={:.1f}", live_count, primary_cam,
                  slot_cam, pitch);
     }
 }
