@@ -198,7 +198,7 @@ void FreeCam::SetFreelookEnabled(bool e) {
         live_count = 0;
         primary_cam = 0;
         last_collect_tick = 0;
-        LOG_WARNING(Core, "Hoenn free-look ON — GOLD multi only (no silver)");
+        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=mode-unlock-v3 GOLD+mode+dual");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -397,13 +397,13 @@ void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process&
         }
         // 4-dump RE: town GOLD uses mode 0x000D0001 (freelook dead); house uses
         // 0x00020001 (freelook works). Force freelook-capable mode while driving.
-        const u32 mode = mem.Read32(process, cam + OFF_MODE);
-        if (mode != MODE_FREELOOK) {
-            mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
-            if ((diag % 45) == 0) {
-                LOG_WARNING(Core, "Hoenn mode unlock cam={:08X} {:08X} → {:08X}", cam, mode,
-                            MODE_FREELOOK);
-            }
+        // Always re-assert freelook mode (game may rewrite 0x000D0001 every frame in town)
+        const u32 mode_before = mem.Read32(process, cam + OFF_MODE);
+        mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
+        const u32 mode_after = mem.Read32(process, cam + OFF_MODE);
+        if (mode_before != MODE_FREELOOK && (diag % 20) == 0) {
+            LOG_WARNING(Core, "Hoenn mode unlock cam={:08X} before={:08X} after={:08X}", cam,
+                        mode_before, mode_after);
         }
         // Primary block
         WriteF(mem, process, cam + OFF_PITCH, pitch);
@@ -710,8 +710,10 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     if ((diag++ % 60) == 0) {
         const float rb =
             primary_cam ? BFloat(mem.Read32(*process, primary_cam + OFF_PITCH)) : 0.f;
-        LOG_INFO(Core, "Hoenn ok gold_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} ow={}",
-                 live_count, primary_cam, slot_cam, pitch, rb, overwrite_streak);
+        const u32 mode = primary_cam ? mem.Read32(*process, primary_cam + OFF_MODE) : 0;
+        LOG_INFO(Core,
+                 "Hoenn ok v3 gold_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} mode={:08X} ow={}",
+                 live_count, primary_cam, slot_cam, pitch, rb, mode, overwrite_streak);
     }
 }
 
