@@ -536,6 +536,11 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val freelookOn = prefs.freelookEnabled
         val zoomOn = prefs.cameraZoomAssistEnabled
+        val expLabel = try {
+            org.citra.citra_emu.hoennforge.HoennFreecam.getExperimentLabel(prefs.freelookExperiment)
+        } catch (_: Exception) {
+            "#${prefs.freelookExperiment}"
+        }
         val probeN = try {
             org.citra.citra_emu.hoennforge.HoennFreecam.getCamProbeIndex()
         } catch (_: Exception) {
@@ -549,6 +554,7 @@ class EmulationFragment :
                     R.string.hoenn_menu_freelook_off
                 },
             ),
+            getString(R.string.hoenn_menu_freelook_exp) + "\n$expLabel",
             getString(
                 if (zoomOn) {
                     R.string.hoenn_menu_zoom_on
@@ -567,14 +573,76 @@ class EmulationFragment :
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> toggleHoennFreelook()
-                    1 -> toggleHoennZoomAssist()
-                    2 -> showHoennCamProbeMenu()
-                    3 -> dumpHoennCamRE()
-                    4 -> showHoennStateSlots(isSaving = true)
-                    5 -> showHoennStateSlots(isSaving = false)
+                    1 -> showHoennFreelookExperimentMenu()
+                    2 -> toggleHoennZoomAssist()
+                    3 -> showHoennCamProbeMenu()
+                    4 -> dumpHoennCamRE()
+                    5 -> showHoennStateSlots(isSaving = true)
+                    6 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
+            .show()
+    }
+
+    /**
+     * Dogfood: freelook experiment without rebuild.
+     * 0 = stable house path. 1+ = untried code-adjacent paths (old float thrash removed).
+     */
+    private fun showHoennFreelookExperimentMenu() {
+        if (!isAdded) return
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val labels = try {
+            org.citra.citra_emu.hoennforge.HoennFreecam.experimentLabels()
+        } catch (_: Exception) {
+            emptyArray()
+        }
+        if (labels.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.hoenn_menu_zoom_failed, Toast.LENGTH_SHORT)
+                .show()
+            return
+        }
+        val active = prefs.freelookExperiment.coerceIn(0, labels.lastIndex)
+        val rows = Array(labels.size) { i ->
+            val mark = if (i == active) "● " else "○ "
+            mark + labels[i]
+        }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.hoenn_menu_freelook_exp_title)
+            .setItems(rows) { _, which ->
+                if (which !in labels.indices) return@setItems
+                val ok = org.citra.citra_emu.hoennforge.HoennFreecam.setExperimentMode(which)
+                if (!ok) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.hoenn_menu_zoom_failed,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@setItems
+                }
+                prefs.freelookExperiment = which
+                // Ensure freelook is on so the experiment actually runs
+                if (!prefs.freelookEnabled) {
+                    if (org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(titleId, true)) {
+                        prefs.freelookEnabled = true
+                    }
+                }
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.hoenn_menu_freelook_exp_toast, labels[which]),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            .setNegativeButton(R.string.hoenn_menu_back, null)
             .show()
     }
 
@@ -735,6 +803,7 @@ class EmulationFragment :
             org.citra.citra_emu.hoennforge.HoennFreecam.applyZoomAssist(game.titleId, true)
         }
         if (prefs.freelookEnabled) {
+            org.citra.citra_emu.hoennforge.HoennFreecam.setExperimentMode(prefs.freelookExperiment)
             org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(game.titleId, true)
         }
     }

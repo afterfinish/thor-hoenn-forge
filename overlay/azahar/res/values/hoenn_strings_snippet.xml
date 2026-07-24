@@ -99,8 +99,12 @@
     <string name="hoenn_menu_zoom_failed">Could not enable camera tool</string>
     <string name="hoenn_menu_freelook_on">Free look (right stick): On</string>
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
-    <string name="hoenn_menu_freelook_enabled_toast">Free look on — right stick Y = pitch, X = yaw (left/right). Works best outdoors. Mauville/gyms may ignore it.</string>
+    <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick Y = pitch, X = yaw. Works best outdoors. Mauville/gyms may ignore it.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
+    <string name="hoenn_menu_freelook_exp">Cam experiment...</string>
+    <string name="hoenn_menu_freelook_exp_title">Freelook experiment mode</string>
+    <string name="hoenn_menu_freelook_exp_toast">Experiment: %1$s - freelook ON to test. Report which # works in town/house.</string>
+    <string name="hoenn_menu_freelook_exp_active">Active: %1$s</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_cam_probe">Cam address probe…</string>
     <string name="hoenn_menu_cam_re_dump">RE dump cam (logcat diff)</string>

@@ -7,14 +7,8 @@ import org.citra.citra_emu.NativeLibrary
 /**
  * Camera tools for Omega Ruby / Alpha Sapphire.
  *
- * Zoom assist and free-look are implemented in native [Hoenn::FreeCam]
- * (see core/hoenn_freecam.cpp). START menu façade only.
- *
- * Free look: stick Y = pitch (+0x98), stick X = yaw (+0x9C, probe #14 locked).
- *
- * Cam-address probe: after map transitions the official slot may be dead.
- * START menu → "Cam address probe" rescans heap and lists numbered candidates;
- * pick one to drive. Never rewrites CAMERA_SLOT.
+ * Zoom assist and free-look are implemented in native [Hoenn::FreeCam].
+ * START menu selects freelook **experiment modes** so dogfood can A/B without rebuilds.
  */
 object HoennFreecam {
     private const val TAG = "HoennForgeCam"
@@ -22,7 +16,6 @@ object HoennFreecam {
     fun isSupportedTitle(titleId: Long): Boolean =
         OrasTitles.find(titleId) != null
 
-    /** Enable/disable continuous L/R zoom assist (native). */
     fun applyZoomAssist(titleId: Long, enabled: Boolean): Boolean {
         if (titleId == 0L || !isSupportedTitle(titleId)) {
             Log.w(TAG, "zoom: unsupported title")
@@ -38,7 +31,6 @@ object HoennFreecam {
         }
     }
 
-    /** Enable/disable right-stick free-look (native). */
     fun applyFreelook(titleId: Long, enabled: Boolean): Boolean {
         if (titleId == 0L || !isSupportedTitle(titleId)) {
             Log.w(TAG, "freelook: unsupported title")
@@ -54,10 +46,49 @@ object HoennFreecam {
         }
     }
 
-    /**
-     * Scan heap for camera-like objects. Returns START-menu labels
-     * (#0 SLOT, #1 cam=…, …). Empty if not running / scan failed.
-     */
+    fun setExperimentMode(mode: Int): Boolean {
+        return try {
+            NativeLibrary.setHoennFreelookExperiment(mode)
+            Log.i(TAG, "freelook exp=$mode")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "set experiment failed", e)
+            false
+        }
+    }
+
+    fun getExperimentMode(): Int {
+        return try {
+            NativeLibrary.getHoennFreelookExperiment()
+        } catch (e: Exception) {
+            Log.e(TAG, "get experiment failed", e)
+            0
+        }
+    }
+
+    fun getExperimentCount(): Int {
+        return try {
+            NativeLibrary.getHoennFreelookExperimentCount()
+        } catch (e: Exception) {
+            Log.e(TAG, "get experiment count failed", e)
+            0
+        }
+    }
+
+    fun getExperimentLabel(mode: Int): String {
+        return try {
+            NativeLibrary.getHoennFreelookExperimentLabel(mode)
+        } catch (e: Exception) {
+            Log.e(TAG, "get experiment label failed", e)
+            "#$mode"
+        }
+    }
+
+    fun experimentLabels(): Array<String> {
+        val n = getExperimentCount().coerceAtLeast(0)
+        return Array(n) { i -> getExperimentLabel(i) }
+    }
+
     fun scanCamProbeLabels(): Array<String> {
         return try {
             val n = NativeLibrary.hoennScanCamCandidates()
@@ -87,10 +118,6 @@ object HoennFreecam {
         }
     }
 
-    /**
-     * Full RE dump of slot camera object + stickiness + diff vs last dump.
-     * Dogfood: dump on working 1F, go 2F (dead), dump again — same base 082D3458.
-     */
     fun dumpCamRE(tag: String): String {
         return try {
             val msg = NativeLibrary.hoennDumpCamRE(tag)

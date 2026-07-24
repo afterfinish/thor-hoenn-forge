@@ -151,8 +151,9 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
     }
 
     // NEVER schedule 0 or underflow — that was burning freecam settle/recovery in <100ms
+    // HighRateStack experiment shortens freecam interval via GetScheduleInterval().
     const u64 base = (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled())
-                         ? freecam_interval_ticks
+                         ? cam.GetScheduleInterval()
                          : run_interval_ticks;
     u64 next = base;
     if (cycles_late > 0 && static_cast<u64>(cycles_late) < base) {

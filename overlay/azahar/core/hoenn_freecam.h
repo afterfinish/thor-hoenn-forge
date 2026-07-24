@@ -24,16 +24,31 @@ class MemorySystem;
 namespace Hoenn {
 
 /**
- * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
- *
- * GOLD only (flag+0x80==0x0F + FOV 150–400). Dual pitch/yaw +0x54/+0x58.
- * Shadows collected for RE dump only — never written (v5 poison). No mode write.
+ * Free-look + zoom + selectable experiment modes (START menu).
+ * Default experiment = Stable (house-proven GOLD dual eulers).
+ * Failed one-shot probes are available as menu options for dogfood without rebuild.
  */
 class FreeCam {
 public:
     static constexpr int kMaxCamCandidates = 16;
     static constexpr int kMaxLiveTargets = 6;
     static constexpr int kMaxEchoTargets = 2;
+    /**
+     * START menu experiments — failed float thrash (old 1–19) removed.
+     * 0 = ship baseline. 1+ = untried / code-adjacent paths only.
+     */
+    static constexpr int kExperimentCount = 8;
+
+    enum class Experiment : int {
+        Stable = 0,         // GOLD dual eulers (house OK)
+        ConstScan = 1,      // scan process for 000D0001 mode-table hits → FREE
+        MatrixBand = 2,     // stick builds Ry matrix into post-dual / pre-dual bands
+        MatrixTwin = 3,     // matrix on FOV-twin only
+        OrbitWorld = 4,     // XZ orbit world-pos triples (improved)
+        ConstModeGold = 5,  // const-scan + TOWN mode freeze + gold eulers
+        MatrixMode = 6,     // matrix band + TOWN mode freeze
+        HighRateStack = 7,  // ~60Hz tick + const-scan + matrix + gold eulers
+    };
 
     static FreeCam& GetInstance();
 
@@ -53,6 +68,13 @@ public:
     float GetSensitivity() const;
     void SetInvertX(bool invert);
     void SetInvertY(bool invert);
+
+    void SetExperimentMode(int mode);
+    int GetExperimentMode() const;
+    int GetExperimentCount() const;
+    std::string GetExperimentLabel(int mode) const;
+    /** CoreTiming gap when freelook/zoom on (HighRateStack shortens). */
+    u64 GetScheduleInterval() const;
 
     int ScanCamCandidates(Core::System& system);
     int GetCamCandidateCount() const;
@@ -81,16 +103,34 @@ private:
         float score = 0.f;
     };
 
+    struct ExpFlags {
+        bool gold_euler = true;
+        bool pitch = true;
+        bool yaw = true;
+        bool mode_unlock = false;
+        bool const_scan = false;
+        bool matrix_band = false;
+        bool matrix_twin_only = false;
+        bool orbit_world = false;
+        bool high_rate = false;
+    };
+
     bool freelook = false;
     bool zoom_assist = false;
     float sensitivity = 3.0f;
     bool invert_x = false;
     bool invert_y = true;
+    int experiment_mode = 0;
 
     float user_fov = 480.f;
     float pitch = -12.74f;
     float yaw = 0.f;
     bool yaw_seeded = false;
+    float orbit_angle = 15.85f;
+    bool orbit_seeded = false;
+    float town_fov = 270.f;
+    float town_dist = 2300.f;
+    bool town_seeded = false;
 
     bool in_battle = false;
     u64 quiet_until = 0;
@@ -110,6 +150,50 @@ private:
     int echo_count = 0;
     u32 primary_cam = 0;
 
+    struct ZoneSnap {
+        u32 slot = 0;
+        u32 pri = 0;
+        u32 mode48 = 0;
+        u32 mode8c = 0;
+        u32 flag = 0;
+        float pitch = 0.f;
+        float yaw = 0.f;
+        float fov = 0.f;
+        float fov_alt = 0.f;
+        float dist = 0.f;
+        float dist_alt = 0.f;
+        float angle50 = 0.f;
+        float angle94 = 0.f;
+        bool valid = false;
+    };
+    ZoneSnap zone_prev{};
+    u32 zone_seq = 0;
+
+    static constexpr int kPadWords = 192;
+    u32 pad_base = 0;
+    u32 pad_prev[kPadWords]{};
+    bool pad_valid = false;
+    u32 pad_seq = 0;
+
+    float t8_last_fov = 0.f;
+    bool t8_fov_seeded = false;
+    u64 t8_last_scan_tick = 0;
+    u32 t8_seq = 0;
+    static constexpr int kT8Track = 8;
+    std::array<u32, kT8Track> t8_track{};
+    int t8_track_n = 0;
+    u32 town_shadow_base = 0;
+    u32 t6_mode_unlock_count = 0;
+
+    u32 dllfield_base = 0;
+    bool dllfield_town_patched = false;
+
+    // Orbit world-pos cache
+    u32 orbit_obj = 0;
+    u32 orbit_eye_off = 0;
+    u32 orbit_tgt_off = 0;
+    bool orbit_have_tgt = false;
+
     int probe_index = 0;
     std::vector<CamCandidate> candidates;
 
@@ -128,9 +212,32 @@ private:
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
 
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
+    void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                            bool collect_echoes = false);
     void WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process);
     void LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam) const;
+    void WatchZoneShift(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                        float stick_x, float stick_y);
+    void WatchPadVariance(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                          float stick_x, float stick_y);
+    void WatchFovCorrelate(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                           u64 now_ticks);
+    u32 ResolveTownShadowBase(Memory::MemorySystem& mem, Kernel::Process& process, u32 gold) const;
+    void TryPatchDllFieldTownConstant(Memory::MemorySystem& mem, Kernel::Process& process);
+    void WriteTownModeUnlock(Memory::MemorySystem& mem, Kernel::Process& process);
+    ExpFlags FlagsFor(Experiment e) const;
+    void WriteEulerToCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam,
+                         const ExpFlags& f);
+    void WriteOrbitWorld(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam, float sx,
+                         float sy);
+    void WriteMatrixBand(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam, bool twin_only);
+    void ScanAndPatchTownConsts(Memory::MemorySystem& mem, Kernel::Process& process);
+    bool LooksWorldPos(float x, float y, float z) const;
+
+    float stick_sx = 0.f;
+    float stick_sy = 0.f;
+    float mat_yaw = 0.f; // radians, matrix experiments
+    bool const_scan_done = false;
 };
 
 } // namespace Hoenn
