@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include "common/common_types.h"
 #include "core/frontend/input.h"
@@ -23,20 +24,16 @@ class MemorySystem;
 namespace Hoenn {
 
 /**
- * Pitch: stick Y → cam+0x98 (proven).
- * Yaw:   stick X → cam+0x9C (RE probe #14, dogfood 2026-07-23).
- * Zoom:  L/R → cam+0xB0.
+ * Pitch +0x98 / yaw +0x9C. Zoom FOV on SLOT only.
  *
- * Cam-address RE probe (START menu, numbered):
- *   After map transitions the official slot may point at a dead object while
- *   the live camera lives elsewhere. Scan heap candidates and drive one
- *   selected base. Never rewrite CAMERA_SLOT (hard-crash history).
- *
- * Independent of L3 turbo. No multi-write blast of all candidates.
+ * Dogfood: freelook dies after house enter / floor change; **manual Rescan
+ * restores it**. So recovery is "re-acquire drive base", not FOV tricks.
+ * Auto-run the same recover path on map transitions / FOV snaps / quiet end.
+ * Never rewrite CAMERA_SLOT.
  */
 class FreeCam {
 public:
-    static constexpr int kMaxCamCandidates = 16;
+    static constexpr int kMaxCamCandidates = 20;
 
     static FreeCam& GetInstance();
 
@@ -57,26 +54,17 @@ public:
     void SetInvertX(bool invert);
     void SetInvertY(bool invert);
 
-    /**
-     * RE: scan heap for camera-like objects. Fills numbered list.
-     * #0 is always "slot" (follow *CAMERA_SLOT). #1..N are candidates.
-     * Safe to call from JNI while powered on. Does not write CAMERA_SLOT.
-     * @return number of entries (including #0)
-     */
+    /** Same path as START → Cam probe → Rescan (user-proven recovery). */
     int ScanCamCandidates(Core::System& system);
     int GetCamCandidateCount() const;
-    /** Human label for START menu: "#3 cam=082D2F48 fov=250 p=-12.7" */
     std::string GetCamCandidateLabel(int index) const;
-    /** Drive this candidate; 0 = follow official slot (auto). */
     void SetCamProbeIndex(int index);
     int GetCamProbeIndex() const;
-    /** Currently driven cam base (0 if unknown). */
     u32 GetActiveCamBase() const;
 
     void Tick(Core::System& system, u32 process_id);
     void OnModuleLoaded(std::string_view module_name, u32 load_address = 0);
     void OnModuleUnloaded(std::string_view module_name);
-    /** After savestate load / cheat engine reconnect. */
     void OnCoreReconnect();
 
 private:
@@ -87,9 +75,15 @@ private:
         float fov = 0.f;
         float pitch = 0.f;
         float yaw = 0.f;
-        bool is_slot = false; // index 0 entry
+        bool is_slot = false;
+        bool is_new = false;
+        bool from_bss = false;
+        bool sticky = false;
         float score = 0.f;
+        u32 bss_slot = 0;
     };
+
+    enum class HuntPhase { Idle, Testing };
 
     bool freelook = false;
     bool zoom_assist = false;
@@ -104,14 +98,36 @@ private:
 
     bool in_battle = false;
     u64 quiet_until = 0;
-    u32 zero_fov_streak = 0;
+    bool recover_after_quiet = false;
     u32 diag = 0;
     u32 last_cam = 0;
     u32 last_process_id = 0;
+    u32 last_good_cam = 0;
+    u32 last_slot_cam = 0;
+    float last_slot_fov = -1.f;
+    float last_slot_pitch = 0.f;
+    bool slot_snapshot_valid = false;
+    u64 last_auto_recover_tick = 0;
 
-    // Cam-address probe: 0 = follow slot; >0 = drive candidates[index].base
+    u32 drive_override = 0;
+    bool drive_lost = false;
+    u32 unsticky_streak = 0;
+    float last_written_pitch = 0.f;
+    bool wrote_pitch_last = false;
+
     int probe_index = 0;
     std::vector<CamCandidate> candidates;
+    std::unordered_set<u32> prev_scan_bases;
+
+    HuntPhase hunt = HuntPhase::Idle;
+    std::vector<u32> hunt_queue;
+    size_t hunt_qi = 0;
+    u32 hunt_base = 0;
+    float hunt_saved_pitch = 0.f;
+    float hunt_test_pitch = 0.f;
+    u32 hunt_wait = 0;
+    u32 hunt_slot_cam = 0; // ranking anchor
+    std::vector<u32> sticky_found;
 
     std::unique_ptr<Input::AnalogDevice> c_stick;
     std::unique_ptr<Input::ButtonDevice> btn_l;
@@ -120,6 +136,18 @@ private:
     void EnsureDevices();
     void ResetYaw();
     u32 ResolveCamBase(Memory::MemorySystem& mem, Kernel::Process& process) const;
+    void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
+    void DumpCamObject(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam,
+                       const char* tag);
+    /** Clear stale override + sticky-hunt (menu Rescan / auto house-enter). */
+    void RequestRecover(Memory::MemorySystem& mem, Kernel::Process& process, const char* reason);
+    void BeginStickyHunt(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                         u32 dead_cam);
+    void TickStickyHunt(Memory::MemorySystem& mem, Kernel::Process& process);
+    void PickBestStickyOverride(Memory::MemorySystem& mem, Kernel::Process& process);
+    void OnTransition(Memory::MemorySystem& mem, Kernel::Process& process, u32 old_slot,
+                      u32 new_slot);
+    bool DetectSlotContentSnap(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
 };
 
 } // namespace Hoenn

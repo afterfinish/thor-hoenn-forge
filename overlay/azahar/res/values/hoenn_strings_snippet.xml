@@ -103,11 +103,11 @@
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_cam_probe">Cam address probe…</string>
-    <string name="hoenn_menu_cam_probe_title">Cam address probe (RE)</string>
-    <string name="hoenn_menu_cam_probe_rescan">Rescan candidates</string>
+    <string name="hoenn_menu_cam_probe_title">Cam address (sticky hunt)</string>
+    <string name="hoenn_menu_cam_probe_rescan">Rescan + sticky hunt (run on 2F / broken 1F)</string>
     <string name="hoenn_menu_cam_probe_empty">No candidates — freelook on, wait on field, then rescan</string>
-    <string name="hoenn_menu_cam_probe_picked">Cam probe #%1$d active — try right stick. Note which # works (house 2F / post-battle).</string>
-    <string name="hoenn_menu_cam_probe_rescanned">Rescanned %1$d candidates — pick a number</string>
+    <string name="hoenn_menu_cam_probe_picked">Probe #%1$d — if cam dies after floors, hunt auto-pauses writes (no poison). Prefer STICKY.</string>
+    <string name="hoenn_menu_cam_probe_rescanned">Rescanned %1$d — sticky hunt running; wait ~2s then try stick</string>
     <!-- Play mode -->
     <string name="hoenn_play_mode_title">How do you want to play?</string>
     <string name="hoenn_play_mode_body">Vanilla keeps the original game. Randomized builds a unique run from your dump.</string>
