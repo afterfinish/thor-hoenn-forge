@@ -1,16 +1,16 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 //
-// Pitch +0x98 / yaw +0x9C / FOV zoom on SLOT only.
+// Pitch +0x98 / yaw +0x9C / FOV +0xB0 (zoom).
 //
-// Dogfood 2026-07-24 (critical):
-//   Enter house → freelook dead. START → Cam probe → Rescan → works again.
-//   So recovery = re-acquire drive base (same as manual rescan), not more FOV
-//   probes. Auto-run RequestRecover on: slot ptr change, FOV/pitch snap at
-//   slot, quiet end after field load, freelook enable.
-//
-// Sticky hunt: do NOT take the first sticky (dead floats are sticky; live cams
-// are often overwritten). Collect all, rank near slot / FOV-live, then override.
-// NEVER rewrite CAMERA_SLOT.
+// RE dumps 2026-07-24 @ cam=082D3458 (same pointer all three times):
+//   LIVE  (1F / after leave+reenter+probe): +0x80=0x0F, +0xB0=225 FOV, freelook works
+//   DEAD  (2F):                             +0x80=0,    +0xB0=garbage, pitch sticky unused
+// Fix:
+//   • IsLiveFieldCam = OkFov(+B0) && OkFieldPitch(+98) [flag +0x80 optional bonus]
+//   • Each tick: if slot live → clear override, drive slot
+//   • If slot dead → hunt nearby live FOV cam (not sticky-write junk)
+//   • Never write freelook into a dead layout
+//   • NEVER rewrite CAMERA_SLOT
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -31,9 +31,11 @@ namespace Hoenn {
 
 namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
+constexpr u32 OFF_FLAG = 0x80; // RE: 0x0F live, 0 dead after 2F
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
+constexpr u32 LIVE_FLAG_HINT = 0x0F; // observed when freelook works
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
@@ -49,15 +51,9 @@ constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
-constexpr u64 RECOVER_COOLDOWN = 80'000'000; // ~0.3s emu — don't spam hunt
-constexpr u32 SCAN_RADIUS = 0x600000;
+constexpr u64 HUNT_COOLDOWN = 100'000'000; // ~0.4s between hunts
+constexpr u32 SCAN_RADIUS = 0x500000;
 constexpr u32 SCAN_STEP = 0x10;
-constexpr u32 BSS_SLOT_SCAN = 0x80;
-constexpr u32 UNSTICKY_BEFORE_HUNT = 8;
-constexpr float STICKY_EPS = 0.35f;
-constexpr float HUNT_TEST_PITCH = -18.5f;
-constexpr float FOV_SNAP = 40.f;
-constexpr float PITCH_SNAP = 8.f;
 
 u32 FBits(float f) {
     u32 b = 0;
@@ -75,6 +71,7 @@ bool HeapPtr(u32 p) {
 }
 
 bool OkFov(float f) {
+    // RE: live FOV ~225; reject denorms/garbage that parse as tiny floats
     return std::isfinite(f) && f >= 100.f && f <= 1200.f;
 }
 
@@ -111,63 +108,6 @@ void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, u32 addr, float
     mem.Write32(process, addr, FBits(v));
 }
 
-float ScoreByPitch(float pitch_v, float yaw_v, u32 base, u32 anchor, bool is_new) {
-    float s = std::fabs(pitch_v - PITCH_BASE) * 2.f;
-    if (!OkFieldYaw(yaw_v)) {
-        s += 20.f;
-    }
-    if (HeapPtr(anchor)) {
-        const u32 dist = base > anchor ? base - anchor : anchor - base;
-        s += static_cast<float>(dist) / static_cast<float>(0x8000);
-    }
-    if (is_new) {
-        s -= 30.f;
-    }
-    return s;
-}
-
-bool LooksLikeCamObject(Memory::MemorySystem& mem, Kernel::Process& process, u32 base,
-                        float& out_pitch, float& out_yaw, float& out_fov) {
-    if (!HeapPtr(base) || base + OFF_FOV + 4 >= 0x0C000000) {
-        return false;
-    }
-    out_pitch = BFloat(mem.Read32(process, base + OFF_PITCH));
-    out_yaw = BFloat(mem.Read32(process, base + OFF_YAW));
-    out_fov = BFloat(mem.Read32(process, base + OFF_FOV));
-    return OkFieldPitch(out_pitch) && OkFieldYaw(out_yaw);
-}
-
-/** Lower score = better sticky pick (prefer near slot, live FOV, 082D band). */
-float RankSticky(u32 base, u32 slot_cam, Memory::MemorySystem& mem, Kernel::Process& process) {
-    float s = 0.f;
-    if (base == slot_cam) {
-        return -1000.f; // always prefer official slot if it was sticky
-    }
-    if (HeapPtr(slot_cam)) {
-        const u32 dist = base > slot_cam ? base - slot_cam : slot_cam - base;
-        s += static_cast<float>(dist) / 4096.f;
-    }
-    // Working cams in dogfood clustered ~0x082Dxxxx
-    if (base >= 0x082C0000 && base < 0x08320000) {
-        s -= 40.f;
-    }
-    if (base >= 0x08000000 && base < 0x08100000) {
-        s += 25.f; // earlier false sticky band (080E…) deprioritize
-    }
-    const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
-    const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
-    if (OkFov(fov)) {
-        s -= 15.f;
-        s += std::fabs(fov - 270.f) * 0.02f;
-    } else {
-        s += 10.f;
-    }
-    if (OkFieldPitch(pitch_v)) {
-        s += std::fabs(pitch_v - PITCH_BASE) * 0.5f;
-    }
-    return s;
-}
-
 } // namespace
 
 FreeCam& FreeCam::GetInstance() {
@@ -183,18 +123,11 @@ void FreeCam::ResetYaw() {
 
 void FreeCam::OnCoreReconnect() {
     quiet_until = 1;
-    recover_after_quiet = true;
     in_battle = false;
     drive_override = 0;
-    drive_lost = false;
-    unsticky_streak = 0;
-    wrote_pitch_last = false;
-    hunt = HuntPhase::Idle;
-    hunt_queue.clear();
-    sticky_found.clear();
-    slot_snapshot_valid = false;
+    last_slot_live = false;
     ResetYaw();
-    LOG_INFO(Core, "Hoenn camera: core reconnect — will auto-recover after quiet");
+    LOG_INFO(Core, "Hoenn camera: core reconnect");
 }
 
 void FreeCam::EnsureDevices() {
@@ -221,26 +154,17 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
     if (name == "DllBattle") {
         in_battle = true;
         drive_override = 0;
-        drive_lost = false;
-        hunt = HuntPhase::Idle;
         LOG_WARNING(Core, "Hoenn camera: battle enter — pause");
         return;
     }
     if (IsFieldMod(name)) {
         in_battle = false;
         quiet_until = 1;
-        recover_after_quiet = true;
         pitch = PITCH_BASE;
         ResetYaw();
         drive_override = 0;
-        drive_lost = false;
-        unsticky_streak = 0;
-        wrote_pitch_last = false;
-        hunt = HuntPhase::Idle;
-        hunt_queue.clear();
-        sticky_found.clear();
-        slot_snapshot_valid = false;
-        LOG_WARNING(Core, "Hoenn camera: DllField — quiet then AUTO-RECOVER (like Rescan)");
+        last_slot_live = false;
+        LOG_WARNING(Core, "Hoenn camera: DllField — quiet then reacquire");
     }
 }
 
@@ -248,20 +172,16 @@ void FreeCam::OnModuleUnloaded(std::string_view name) {
     if (name == "DllField") {
         in_battle = true;
         drive_override = 0;
-        drive_lost = false;
-        hunt = HuntPhase::Idle;
         ResetYaw();
         LOG_INFO(Core, "Hoenn camera: DllField unload — pause");
     } else if (name == "DllBattle") {
         in_battle = false;
         quiet_until = 1;
-        recover_after_quiet = true;
         pitch = PITCH_BASE;
         ResetYaw();
         drive_override = 0;
-        drive_lost = false;
-        slot_snapshot_valid = false;
-        LOG_INFO(Core, "Hoenn camera: battle exit — quiet then AUTO-RECOVER");
+        last_slot_live = false;
+        LOG_INFO(Core, "Hoenn camera: battle exit — quiet then reacquire");
     }
 }
 
@@ -274,13 +194,10 @@ void FreeCam::SetFreelookEnabled(bool e) {
     if (freelook) {
         pitch = PITCH_BASE;
         ResetYaw();
-        drive_lost = false;
-        unsticky_streak = 0;
-        wrote_pitch_last = false;
-        recover_after_quiet = true; // re-acquire as soon as we can tick
-        LOG_WARNING(Core, "Hoenn free-look ON — will auto-recover drive base (Rescan path)");
+        drive_override = 0;
+        last_slot_live = false;
+        LOG_WARNING(Core, "Hoenn free-look ON — live FOV layout only (RE dump fix)");
     } else {
-        hunt = HuntPhase::Idle;
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
 }
@@ -298,7 +215,7 @@ void FreeCam::SetZoomAssistEnabled(bool e) {
     btn_r.reset();
     if (zoom_assist) {
         user_fov = FOV_ASSIST;
-        LOG_WARNING(Core, "Hoenn zoom assist ON (slot FOV only)");
+        LOG_WARNING(Core, "Hoenn zoom assist ON");
     } else {
         LOG_INFO(Core, "Hoenn zoom assist OFF");
     }
@@ -321,319 +238,62 @@ void FreeCam::SetInvertY(bool v) {
     invert_y = v;
 }
 
-void FreeCam::DumpCamObject(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam,
-                           const char* tag) {
-    if (!HeapPtr(cam)) {
-        LOG_WARNING(Core, "Hoenn camDump[{}] invalid {:08X}", tag, cam);
-        return;
-    }
-    float f90 = BFloat(mem.Read32(process, cam + 0x90));
-    float f94 = BFloat(mem.Read32(process, cam + 0x94));
-    float f98 = BFloat(mem.Read32(process, cam + 0x98));
-    float f9c = BFloat(mem.Read32(process, cam + 0x9C));
-    float fb0 = BFloat(mem.Read32(process, cam + 0xB0));
-    LOG_WARNING(Core,
-                "Hoenn camDump[{}] cam={:08X} +90={:.3g} +94={:.3g} +98={:.3g} +9C={:.3g} "
-                "+B0={:.3g}",
-                tag, cam, f90, f94, f98, f9c, fb0);
-}
-
-void FreeCam::RequestRecover(Memory::MemorySystem& mem, Kernel::Process& process,
-                             const char* reason) {
-    const u64 now = 0; // cooldown uses CoreTiming in Tick; here just run
-    (void)now;
-    const u32 slot_cam = mem.Read32(process, CAMERA_SLOT);
-    LOG_WARNING(Core, "Hoenn AUTO-RECOVER ({}) — clear override, reseed slot={:08X}, sticky hunt",
-                reason, slot_cam);
-    // Same as what user does with Rescan: drop stale outdoor override
-    drive_override = 0;
-    drive_lost = false;
-    unsticky_streak = 0;
-    wrote_pitch_last = false;
-    probe_index = 0; // back to slot follow; hunt may set override
-    ResetYaw();
-    if (HeapPtr(slot_cam)) {
-        SeedAnglesFromCam(mem, process, slot_cam);
-        DumpCamObject(mem, process, slot_cam, "recover-slot");
-    }
-    slot_snapshot_valid = false;
-    BeginStickyHunt(mem, process, slot_cam, 0);
-}
-
-void FreeCam::OnTransition(Memory::MemorySystem& mem, Kernel::Process& process, u32 old_slot,
-                           u32 new_slot) {
-    LOG_WARNING(Core, "Hoenn TRANSITION slot cam {:08X} → {:08X}", old_slot, new_slot);
-    DumpCamObject(mem, process, old_slot, "old");
-    DumpCamObject(mem, process, new_slot, "new");
-    RequestRecover(mem, process, "slot-ptr-change");
-}
-
-bool FreeCam::DetectSlotContentSnap(Memory::MemorySystem& mem, Kernel::Process& process,
-                                    u32 slot_cam) {
-    if (!HeapPtr(slot_cam)) {
-        slot_snapshot_valid = false;
+bool FreeCam::IsLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const {
+    if (!HeapPtr(base) || base + OFF_FOV + 4 >= 0x0C000000) {
         return false;
     }
-    const float fov = BFloat(mem.Read32(process, slot_cam + OFF_FOV));
-    const float pitch_v = BFloat(mem.Read32(process, slot_cam + OFF_PITCH));
-    if (!slot_snapshot_valid) {
-        last_slot_fov = fov;
-        last_slot_pitch = pitch_v;
-        slot_snapshot_valid = true;
+    const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
+    const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
+    const float yaw_v = BFloat(mem.Read32(process, base + OFF_YAW));
+    if (!OkFov(fov) || !OkFieldPitch(pitch_v) || !OkFieldYaw(yaw_v)) {
         return false;
     }
-    bool snap = false;
-    if (OkFov(fov) && OkFov(last_slot_fov) && std::fabs(fov - last_slot_fov) >= FOV_SNAP) {
-        snap = true;
-    }
-    // FOV went live↔dead (house enter often)
-    if (OkFov(fov) != OkFov(last_slot_fov) && (OkFov(fov) || OkFov(last_slot_fov))) {
-        snap = true;
-    }
-    if (OkFieldPitch(pitch_v) && OkFieldPitch(last_slot_pitch) &&
-        std::fabs(pitch_v - last_slot_pitch) >= PITCH_SNAP) {
-        // only count large pitch snaps when stick not driving (game cut)
-        // checked by caller context — always note FOV; pitch alone is weak
-    }
-    last_slot_fov = fov;
-    last_slot_pitch = pitch_v;
-    return snap;
+    // RE: dead object still had pitch floats that looked "ok" briefly but FOV was junk.
+    // Require real FOV — that was the smoking gun in the dump.
+    return true;
 }
 
-void FreeCam::BeginStickyHunt(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
-                              u32 dead_cam) {
-    hunt_queue.clear();
-    hunt_qi = 0;
-    sticky_found.clear();
-    hunt = HuntPhase::Idle;
-    hunt_base = 0;
-    hunt_slot_cam = slot_cam;
+u32 FreeCam::FindLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
+                              u32 prefer_near) const {
+    u32 best = 0;
+    float best_score = 1e12f;
 
-    std::unordered_set<u32> seen;
-    auto enqueue = [&](u32 base) {
-        if (!HeapPtr(base) || base == dead_cam || seen.count(base)) {
+    auto consider = [&](u32 base) {
+        if (!IsLiveFieldCam(mem, process, base)) {
             return;
         }
-        float p = 0.f, y = 0.f, f = 0.f;
-        if (!LooksLikeCamObject(mem, process, base, p, y, f)) {
-            return;
+        const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
+        const float pitch_v = BFloat(mem.Read32(process, base + OFF_PITCH));
+        const u32 flag = mem.Read32(process, base + OFF_FLAG);
+        float s = std::fabs(fov - 225.f) * 0.05f + std::fabs(pitch_v - PITCH_BASE);
+        if (flag == LIVE_FLAG_HINT) {
+            s -= 50.f; // RE: 0x0F when freelook works
+        } else if (flag != 0) {
+            s -= 10.f;
         }
-        seen.insert(base);
-        hunt_queue.push_back(base);
+        const u32 anchor = HeapPtr(prefer_near) ? prefer_near : slot_cam;
+        if (HeapPtr(anchor)) {
+            const u32 dist = base > anchor ? base - anchor : anchor - base;
+            s += static_cast<float>(dist) / 8192.f;
+        }
+        if (base == slot_cam) {
+            s -= 100.f;
+        }
+        // Prefer 082D band (dogfood working cams)
+        if (base >= 0x082C0000 && base < 0x08320000) {
+            s -= 20.f;
+        }
+        if (s < best_score) {
+            best_score = s;
+            best = base;
+        }
     };
 
-    enqueue(slot_cam);
-    enqueue(last_good_cam);
+    consider(slot_cam);
+    consider(last_good_cam);
+    consider(prefer_near);
 
     auto scan_near = [&](u32 center) {
-        if (!HeapPtr(center)) {
-            return;
-        }
-        u32 lo = center > 0x200000 ? center - 0x200000 : 0x08000000;
-        u32 hi = center + 0x200000;
-        if (hi > 0x0C000000) {
-            hi = 0x0C000000;
-        }
-        for (u32 base = lo; base + OFF_FOV + 4 < hi && hunt_queue.size() < 48; base += 0x20) {
-            enqueue(base);
-        }
-    };
-    scan_near(slot_cam);
-    scan_near(last_good_cam);
-    scan_near(0x082D0000);
-
-    const u32 bss_lo = static_cast<u32>(CAMERA_SLOT) > BSS_SLOT_SCAN
-                           ? static_cast<u32>(CAMERA_SLOT) - BSS_SLOT_SCAN
-                           : static_cast<u32>(CAMERA_SLOT);
-    const u32 bss_hi = static_cast<u32>(CAMERA_SLOT) + BSS_SLOT_SCAN;
-    for (u32 a = bss_lo; a <= bss_hi; a += 4) {
-        enqueue(mem.Read32(process, a));
-    }
-
-    LOG_WARNING(Core, "Hoenn stickyHunt: START queue={} slot={:08X}", hunt_queue.size(), slot_cam);
-    if (!hunt_queue.empty()) {
-        hunt = HuntPhase::Testing;
-        hunt_qi = 0;
-        hunt_wait = 0;
-    }
-}
-
-void FreeCam::PickBestStickyOverride(Memory::MemorySystem& mem, Kernel::Process& process) {
-    if (sticky_found.empty()) {
-        // No sticky — drive official slot (freelook can still race the game)
-        drive_override = 0;
-        drive_lost = false;
-        LOG_WARNING(Core, "Hoenn stickyHunt: no sticky — drive SLOT only");
-        return;
-    }
-
-    u32 best = sticky_found[0];
-    float best_s = 1e9f;
-    for (u32 b : sticky_found) {
-        const float s = RankSticky(b, hunt_slot_cam, mem, process);
-        if (s < best_s) {
-            best_s = s;
-            best = b;
-        }
-    }
-
-    // If slot itself is sticky, always use slot (no override)
-    bool slot_sticky = false;
-    for (u32 b : sticky_found) {
-        if (b == hunt_slot_cam) {
-            slot_sticky = true;
-            break;
-        }
-    }
-    if (slot_sticky) {
-        drive_override = 0;
-        drive_lost = false;
-        SeedAnglesFromCam(mem, process, hunt_slot_cam);
-        LOG_WARNING(Core, "Hoenn stickyHunt: SLOT is sticky → drive #0 slot={:08X}", hunt_slot_cam);
-        return;
-    }
-
-    drive_override = best;
-    drive_lost = false;
-    unsticky_streak = 0;
-    SeedAnglesFromCam(mem, process, best);
-    LOG_WARNING(Core,
-                "Hoenn stickyHunt: RECOVER override={:08X} score={:.1f} (slot={:08X} sticky_n={})",
-                best, best_s, hunt_slot_cam, sticky_found.size());
-}
-
-void FreeCam::TickStickyHunt(Memory::MemorySystem& mem, Kernel::Process& process) {
-    if (hunt == HuntPhase::Idle) {
-        return;
-    }
-
-    if (hunt_base != 0 && hunt_wait > 0) {
-        hunt_wait--;
-        if (hunt_wait > 0) {
-            return;
-        }
-        const float rb = BFloat(mem.Read32(process, hunt_base + OFF_PITCH));
-        const bool sticky = std::fabs(rb - hunt_test_pitch) < STICKY_EPS;
-        WriteF(mem, process, hunt_base + OFF_PITCH, hunt_saved_pitch);
-        if (sticky) {
-            sticky_found.push_back(hunt_base);
-            LOG_INFO(Core, "Hoenn stickyHunt: sticky cam={:08X}", hunt_base);
-        }
-        hunt_base = 0;
-        hunt_qi++;
-    }
-
-    if (hunt_qi >= hunt_queue.size()) {
-        PickBestStickyOverride(mem, process);
-        for (auto& c : candidates) {
-            c.sticky = false;
-            for (u32 s : sticky_found) {
-                if (c.base == s) {
-                    c.sticky = true;
-                }
-            }
-        }
-        LOG_WARNING(Core, "Hoenn stickyHunt: DONE sticky={}/{} override={:08X}", sticky_found.size(),
-                    hunt_queue.size() + sticky_found.size() > 0 ? hunt_queue.size() : 0,
-                    drive_override);
-        hunt = HuntPhase::Idle;
-        hunt_queue.clear();
-        return;
-    }
-
-    hunt_base = hunt_queue[hunt_qi];
-    if (!HeapPtr(hunt_base)) {
-        hunt_qi++;
-        hunt_base = 0;
-        return;
-    }
-    hunt_saved_pitch = BFloat(mem.Read32(process, hunt_base + OFF_PITCH));
-    hunt_test_pitch = (std::fabs(hunt_saved_pitch - HUNT_TEST_PITCH) < 1.f) ? -8.f : HUNT_TEST_PITCH;
-    WriteF(mem, process, hunt_base + OFF_PITCH, hunt_test_pitch);
-    hunt_wait = 2;
-}
-
-int FreeCam::ScanCamCandidates(Core::System& system) {
-    // Menu Rescan — user-proven recovery path
-    std::unordered_set<u32> old_bases = prev_scan_bases;
-    if (old_bases.empty()) {
-        for (const auto& c : candidates) {
-            if (HeapPtr(c.base)) {
-                old_bases.insert(c.base);
-            }
-        }
-    }
-
-    candidates.clear();
-    if (!system.IsPoweredOn()) {
-        return 0;
-    }
-
-    auto process = Resolve(system, last_process_id);
-    if (!process) {
-        return 0;
-    }
-    auto& mem = system.Memory();
-    const u32 slot_cam = mem.Read32(*process, CAMERA_SLOT);
-    const u32 anchor = HeapPtr(last_good_cam) ? last_good_cam
-                       : HeapPtr(slot_cam)    ? slot_cam
-                                              : 0x08200000;
-
-    // Full recover (same as auto)
-    RequestRecover(mem, *process, "menu-rescan");
-
-    {
-        CamCandidate c0;
-        c0.base = slot_cam;
-        c0.is_slot = true;
-        c0.score = -1000.f;
-        if (HeapPtr(slot_cam)) {
-            c0.fov = BFloat(mem.Read32(*process, slot_cam + OFF_FOV));
-            c0.pitch = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
-            c0.yaw = BFloat(mem.Read32(*process, slot_cam + OFF_YAW));
-            c0.is_new = !old_bases.empty() && old_bases.count(slot_cam) == 0;
-        }
-        candidates.push_back(c0);
-    }
-
-    std::vector<CamCandidate> found;
-    std::unordered_set<u32> seen;
-    if (HeapPtr(slot_cam)) {
-        seen.insert(slot_cam);
-    }
-
-    auto try_add = [&](u32 base, bool from_bss, u32 bss_addr) {
-        if (!HeapPtr(base) || seen.count(base)) {
-            return;
-        }
-        float pitch_v = 0.f, yaw_v = 0.f, fov_v = 0.f;
-        if (!LooksLikeCamObject(mem, *process, base, pitch_v, yaw_v, fov_v)) {
-            return;
-        }
-        seen.insert(base);
-        CamCandidate c;
-        c.base = base;
-        c.pitch = pitch_v;
-        c.yaw = yaw_v;
-        c.fov = fov_v;
-        c.from_bss = from_bss;
-        c.bss_slot = bss_addr;
-        c.is_new = !old_bases.empty() && old_bases.count(base) == 0;
-        c.score = ScoreByPitch(pitch_v, yaw_v, base, anchor, c.is_new);
-        found.push_back(c);
-    };
-
-    const u32 bss_lo = static_cast<u32>(CAMERA_SLOT) > BSS_SLOT_SCAN
-                           ? static_cast<u32>(CAMERA_SLOT) - BSS_SLOT_SCAN
-                           : static_cast<u32>(CAMERA_SLOT);
-    const u32 bss_hi = static_cast<u32>(CAMERA_SLOT) + BSS_SLOT_SCAN;
-    for (u32 a = bss_lo; a <= bss_hi; a += 4) {
-        if (a != static_cast<u32>(CAMERA_SLOT)) {
-            try_add(mem.Read32(*process, a), true, a);
-        }
-    }
-
-    auto scan_window = [&](u32 center) {
         if (!HeapPtr(center)) {
             return;
         }
@@ -643,56 +303,61 @@ int FreeCam::ScanCamCandidates(Core::System& system) {
             hi = 0x0C000000;
         }
         for (u32 base = lo; base + OFF_FOV + 4 < hi; base += SCAN_STEP) {
-            try_add(base, false, 0);
+            consider(base);
         }
     };
-    scan_window(slot_cam);
-    if (HeapPtr(last_good_cam)) {
-        scan_window(last_good_cam);
+
+    scan_near(slot_cam);
+    if (HeapPtr(last_good_cam) && last_good_cam != slot_cam) {
+        scan_near(last_good_cam);
+    }
+    scan_near(0x082D0000);
+
+    // BSS alt pointers near CAMERA_SLOT
+    const u32 bss_lo = static_cast<u32>(CAMERA_SLOT) > 0x80 ? static_cast<u32>(CAMERA_SLOT) - 0x80
+                                                            : static_cast<u32>(CAMERA_SLOT);
+    const u32 bss_hi = static_cast<u32>(CAMERA_SLOT) + 0x80;
+    for (u32 a = bss_lo; a <= bss_hi; a += 4) {
+        consider(mem.Read32(process, a));
     }
 
-    std::sort(found.begin(), found.end(),
-              [](const CamCandidate& a, const CamCandidate& b) { return a.score < b.score; });
-    for (const auto& c : found) {
-        if (candidates.size() >= static_cast<size_t>(kMaxCamCandidates)) {
-            break;
-        }
-        candidates.push_back(c);
-    }
-
-    prev_scan_bases.clear();
-    for (const auto& c : candidates) {
-        if (HeapPtr(c.base)) {
-            prev_scan_bases.insert(c.base);
-        }
-    }
-
-    LOG_WARNING(Core, "Hoenn camProbe menu: n={} slot={:08X} (recover+hunt running)",
-                candidates.size(), slot_cam);
-    return static_cast<int>(candidates.size());
+    return best;
 }
 
-int FreeCam::GetCamCandidateCount() const {
-    return static_cast<int>(candidates.size());
-}
+void FreeCam::Reacquire(Memory::MemorySystem& mem, Kernel::Process& process, const char* reason) {
+    const u32 slot_cam = mem.Read32(process, CAMERA_SLOT);
+    drive_override = 0;
+    probe_index = 0;
+    ResetYaw();
 
-std::string FreeCam::GetCamCandidateLabel(int index) const {
-    if (index < 0 || index >= static_cast<int>(candidates.size())) {
-        return "?(empty)";
+    if (IsLiveFieldCam(mem, process, slot_cam)) {
+        SeedAnglesFromCam(mem, process, slot_cam);
+        last_good_cam = slot_cam;
+        last_slot_live = true;
+        LOG_WARNING(Core, "Hoenn reacquire[{}]: SLOT live cam={:08X} fov={:.0f} flag={:08X}", reason,
+                    slot_cam, BFloat(mem.Read32(process, slot_cam + OFF_FOV)),
+                    mem.Read32(process, slot_cam + OFF_FLAG));
+        return;
     }
-    const auto& c = candidates[static_cast<size_t>(index)];
-    char buf[176];
-    const bool active = (drive_override != 0 && c.base == drive_override) ||
-                        (drive_override == 0 && index == probe_index);
-    const char* mark = active ? " <<" : "";
-    if (c.is_slot) {
-        std::snprintf(buf, sizeof(buf), "#%d SLOT %08X p=%.1f%s%s", index, c.base, c.pitch,
-                      c.sticky ? " STICKY" : "", mark);
+
+    last_slot_live = false;
+    const u32 found = FindLiveFieldCam(mem, process, slot_cam, last_good_cam);
+    if (found && found != slot_cam) {
+        drive_override = found;
+        SeedAnglesFromCam(mem, process, found);
+        last_good_cam = found;
+        LOG_WARNING(Core,
+                    "Hoenn reacquire[{}]: slot DEAD {:08X} → live override={:08X} fov={:.0f} "
+                    "flag={:08X}",
+                    reason, slot_cam, found, BFloat(mem.Read32(process, found + OFF_FOV)),
+                    mem.Read32(process, found + OFF_FLAG));
+    } else if (found == slot_cam) {
+        SeedAnglesFromCam(mem, process, slot_cam);
+        LOG_WARNING(Core, "Hoenn reacquire[{}]: only slot matched (weak)", reason);
     } else {
-        std::snprintf(buf, sizeof(buf), "#%d %08X p=%.1f%s%s", index, c.base, c.pitch,
-                      c.sticky ? " STICKY" : "", mark);
+        LOG_WARNING(Core, "Hoenn reacquire[{}]: no live FOV cam (slot={:08X}) — wait map refresh",
+                    reason, slot_cam);
     }
-    return std::string(buf);
 }
 
 void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam) {
@@ -710,6 +375,122 @@ void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& proc
     last_cam = cam;
 }
 
+u32 FreeCam::ResolveCamBase(Memory::MemorySystem& mem, Kernel::Process& process) const {
+    if (drive_override && HeapPtr(drive_override)) {
+        return drive_override;
+    }
+    if (probe_index > 0 && probe_index < static_cast<int>(candidates.size())) {
+        const auto& c = candidates[static_cast<size_t>(probe_index)];
+        if (!c.is_slot && HeapPtr(c.base)) {
+            return c.base;
+        }
+    }
+    return mem.Read32(process, CAMERA_SLOT);
+}
+
+int FreeCam::ScanCamCandidates(Core::System& system) {
+    // Menu cam-probe open — same as user fix path: reacquire + list LIVE cams only
+    candidates.clear();
+    if (!system.IsPoweredOn()) {
+        return 0;
+    }
+    auto process = Resolve(system, last_process_id);
+    if (!process) {
+        return 0;
+    }
+    auto& mem = system.Memory();
+    const u32 slot_cam = mem.Read32(*process, CAMERA_SLOT);
+
+    Reacquire(mem, *process, "menu-cam-probe");
+
+    {
+        CamCandidate c0;
+        c0.base = slot_cam;
+        c0.is_slot = true;
+        c0.live = IsLiveFieldCam(mem, *process, slot_cam);
+        if (HeapPtr(slot_cam)) {
+            c0.fov = BFloat(mem.Read32(*process, slot_cam + OFF_FOV));
+            c0.pitch = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
+            c0.yaw = BFloat(mem.Read32(*process, slot_cam + OFF_YAW));
+            c0.flag80 = mem.Read32(*process, slot_cam + OFF_FLAG);
+        }
+        c0.score = c0.live ? -1000.f : 1000.f;
+        candidates.push_back(c0);
+    }
+
+    std::unordered_set<u32> seen;
+    if (HeapPtr(slot_cam)) {
+        seen.insert(slot_cam);
+    }
+
+    auto add_if_live = [&](u32 base) {
+        if (!HeapPtr(base) || seen.count(base) || !IsLiveFieldCam(mem, *process, base)) {
+            return;
+        }
+        seen.insert(base);
+        CamCandidate c;
+        c.base = base;
+        c.live = true;
+        c.fov = BFloat(mem.Read32(*process, base + OFF_FOV));
+        c.pitch = BFloat(mem.Read32(*process, base + OFF_PITCH));
+        c.yaw = BFloat(mem.Read32(*process, base + OFF_YAW));
+        c.flag80 = mem.Read32(*process, base + OFF_FLAG);
+        c.score = std::fabs(c.fov - 225.f) + std::fabs(c.pitch - PITCH_BASE);
+        if (c.flag80 == LIVE_FLAG_HINT) {
+            c.score -= 50.f;
+        }
+        candidates.push_back(c);
+    };
+
+    // Collect live FOV cams near slot
+    if (HeapPtr(slot_cam)) {
+        u32 lo = slot_cam > SCAN_RADIUS ? slot_cam - SCAN_RADIUS : 0x08000000;
+        u32 hi = slot_cam + SCAN_RADIUS;
+        if (hi > 0x0C000000) {
+            hi = 0x0C000000;
+        }
+        for (u32 base = lo; base + OFF_FOV + 4 < hi && candidates.size() < 32; base += SCAN_STEP) {
+            add_if_live(base);
+        }
+    }
+    add_if_live(drive_override);
+    add_if_live(last_good_cam);
+
+    std::sort(candidates.begin() + 1, candidates.end(),
+              [](const CamCandidate& a, const CamCandidate& b) { return a.score < b.score; });
+    if (candidates.size() > static_cast<size_t>(kMaxCamCandidates)) {
+        candidates.resize(static_cast<size_t>(kMaxCamCandidates));
+    }
+
+    LOG_WARNING(Core, "Hoenn camProbe: n={} slot={:08X} live={} override={:08X}", candidates.size(),
+                slot_cam, candidates[0].live ? 1 : 0, drive_override);
+    return static_cast<int>(candidates.size());
+}
+
+int FreeCam::GetCamCandidateCount() const {
+    return static_cast<int>(candidates.size());
+}
+
+std::string FreeCam::GetCamCandidateLabel(int index) const {
+    if (index < 0 || index >= static_cast<int>(candidates.size())) {
+        return "?(empty)";
+    }
+    const auto& c = candidates[static_cast<size_t>(index)];
+    char buf[160];
+    const bool active =
+        (drive_override != 0 && c.base == drive_override) ||
+        (drive_override == 0 && (c.is_slot || index == probe_index));
+    const char* mark = active ? " <<" : "";
+    if (c.is_slot) {
+        std::snprintf(buf, sizeof(buf), "#%d SLOT %08X %s fov=%.0f fl=%X%s", index, c.base,
+                      c.live ? "LIVE" : "DEAD", c.fov, c.flag80, mark);
+    } else {
+        std::snprintf(buf, sizeof(buf), "#%d %08X LIVE fov=%.0f p=%.1f fl=%X%s", index, c.base,
+                      c.fov, c.pitch, c.flag80, mark);
+    }
+    return std::string(buf);
+}
+
 void FreeCam::SetCamProbeIndex(int index) {
     if (index < 0) {
         index = 0;
@@ -719,22 +500,18 @@ void FreeCam::SetCamProbeIndex(int index) {
     }
     probe_index = index;
     drive_override = 0;
-    drive_lost = false;
-    unsticky_streak = 0;
-    wrote_pitch_last = false;
-    yaw_seeded = false;
-    last_cam = 0;
+    ResetYaw();
     if (probe_index > 0 && probe_index < static_cast<int>(candidates.size())) {
         const auto& c = candidates[static_cast<size_t>(probe_index)];
+        if (!c.is_slot) {
+            drive_override = c.base;
+        }
         pitch = OkFieldPitch(c.pitch) ? std::clamp(c.pitch, PITCH_MIN, PITCH_MAX) : PITCH_BASE;
         yaw = OkFieldYaw(c.yaw) ? c.yaw : 0.f;
         yaw_seeded = true;
         last_cam = c.base;
-        // Manual pick = force this base as override
-        if (!c.is_slot) {
-            drive_override = c.base;
-        }
-        LOG_WARNING(Core, "Hoenn camProbe: ACTIVE #{} cam={:08X}", probe_index, c.base);
+        LOG_WARNING(Core, "Hoenn camProbe: ACTIVE #{} cam={:08X} live={}", probe_index, c.base,
+                    c.live ? 1 : 0);
     } else {
         LOG_WARNING(Core, "Hoenn camProbe: ACTIVE #0 SLOT");
     }
@@ -745,25 +522,80 @@ int FreeCam::GetCamProbeIndex() const {
 }
 
 u32 FreeCam::GetActiveCamBase() const {
-    if (drive_override) {
-        return drive_override;
-    }
-    return last_cam;
+    return drive_override ? drive_override : last_cam;
 }
 
-u32 FreeCam::ResolveCamBase(Memory::MemorySystem& mem, Kernel::Process& process) const {
-    if (drive_override && HeapPtr(drive_override)) {
-        return drive_override;
+std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
+    const char* t = tag && tag[0] ? tag : "manual";
+    if (!system.IsPoweredOn()) {
+        return "not powered on";
     }
-    if (probe_index <= 0 || candidates.empty() ||
-        probe_index >= static_cast<int>(candidates.size())) {
-        return mem.Read32(process, CAMERA_SLOT);
+    auto process = Resolve(system, last_process_id);
+    if (!process) {
+        return "no process";
     }
-    const auto& c = candidates[static_cast<size_t>(probe_index)];
-    if (c.is_slot) {
-        return mem.Read32(process, CAMERA_SLOT);
+    auto& mem = system.Memory();
+    const u32 slot_cam = mem.Read32(*process, CAMERA_SLOT);
+    const bool live = IsLiveFieldCam(mem, *process, slot_cam);
+
+    LOG_WARNING(Core,
+                "========== Hoenn RE DUMP [{}] ==========\n"
+                "  slot*{:08X}={:08X} live={} ov={:08X} probe=#{}",
+                t, static_cast<u32>(CAMERA_SLOT), slot_cam, live ? 1 : 0, drive_override,
+                probe_index);
+
+    if (!HeapPtr(slot_cam)) {
+        return "slot invalid";
     }
-    return c.base;
+
+    u32 words[kDumpWords];
+    for (int i = 0; i < kDumpWords; ++i) {
+        words[i] = mem.Read32(*process, slot_cam + static_cast<u32>(i * 4));
+    }
+    for (u32 off = 0x80; off <= 0xB8; off += 4) {
+        const u32 raw = mem.Read32(*process, slot_cam + off);
+        LOG_WARNING(Core, "Hoenn RE DUMP +{:02X}: raw={:08X} f={:.6g}", off, raw, BFloat(raw));
+    }
+    for (int row = 0; row < kDumpWords; row += 4) {
+        LOG_WARNING(Core, "Hoenn RE DUMP obj+{:02X}: {:08X} {:08X} {:08X} {:08X}", row * 4,
+                    words[row], words[row + 1], words[row + 2], words[row + 3]);
+    }
+
+    const float saved_p = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
+    const float test_p = (std::fabs(saved_p + 17.5f) < 0.5f) ? -9.25f : -17.5f;
+    WriteF(mem, *process, slot_cam + OFF_PITCH, test_p);
+    const float rb_imm = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
+    WriteF(mem, *process, slot_cam + OFF_PITCH, saved_p);
+    const bool imm_sticky = std::fabs(rb_imm - test_p) < 0.05f;
+    LOG_WARNING(Core, "Hoenn RE DUMP stickiness +0x98: imm_sticky={} live_layout={}",
+                imm_sticky ? 1 : 0, live ? 1 : 0);
+
+    int n_diff = 0;
+    if (dump_prev_valid && dump_prev_base == slot_cam) {
+        for (int i = 0; i < kDumpWords; ++i) {
+            if (words[i] != dump_prev_words[i]) {
+                n_diff++;
+                const u32 off = static_cast<u32>(i * 4);
+                LOG_WARNING(Core, "Hoenn RE DIFF +{:02X}: {:08X} → {:08X}  (f {:.6g} → {:.6g})",
+                            off, dump_prev_words[i], words[i], BFloat(dump_prev_words[i]),
+                            BFloat(words[i]));
+            }
+        }
+        LOG_WARNING(Core, "Hoenn RE DIFF: {} word(s) changed", n_diff);
+    } else {
+        LOG_WARNING(Core, "Hoenn RE DIFF: first snapshot");
+    }
+
+    dump_prev_base = slot_cam;
+    std::memcpy(dump_prev_words, words, sizeof(words));
+    dump_prev_valid = true;
+    std::snprintf(dump_prev_tag, sizeof(dump_prev_tag), "%s", t);
+    LOG_WARNING(Core, "========== Hoenn RE DUMP end [{}] ==========", t);
+
+    char toast[96];
+    std::snprintf(toast, sizeof(toast), "RE %08X %s sticky=%d diffs=%d", slot_cam,
+                  live ? "LIVE" : "DEAD", imm_sticky ? 1 : 0, n_diff);
+    return std::string(toast);
 }
 
 void FreeCam::Tick(Core::System& system, u32 process_id) {
@@ -779,7 +611,6 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (quiet_until == 1) {
         quiet_until = system.CoreTiming().GetTicks() + QUIET_AFTER_FIELD;
     }
-
     if (in_battle) {
         return;
     }
@@ -793,49 +624,44 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     EnsureDevices();
 
     const u32 slot_cam = mem.Read32(*process, CAMERA_SLOT);
+    const bool slot_live = IsLiveFieldCam(mem, *process, slot_cam);
 
-    // Slot pointer change → recover (house floors when ptr updates)
+    // Slot pointer change
     if (HeapPtr(slot_cam) && last_slot_cam != 0 && slot_cam != last_slot_cam) {
-        OnTransition(mem, *process, last_slot_cam, slot_cam);
-        last_auto_recover_tick = now;
+        LOG_WARNING(Core, "Hoenn TRANSITION slot {:08X} → {:08X}", last_slot_cam, slot_cam);
+        Reacquire(mem, *process, "slot-ptr");
+        last_hunt_tick = now;
     }
     if (HeapPtr(slot_cam)) {
         last_slot_cam = slot_cam;
     }
 
-    // FOV/content snap at same pointer (enter house often keeps or swaps softly)
-    if (freelook && hunt == HuntPhase::Idle && HeapPtr(slot_cam) &&
-        now >= last_auto_recover_tick + RECOVER_COOLDOWN) {
-        if (DetectSlotContentSnap(mem, *process, slot_cam)) {
-            LOG_WARNING(Core, "Hoenn FOV/content SNAP at slot — AUTO-RECOVER (enter house class)");
-            RequestRecover(mem, *process, "slot-content-snap");
-            last_auto_recover_tick = now;
-        }
+    // Live↔dead flip at same pointer (1F↔2F class — RE dump smoking gun)
+    if (freelook && HeapPtr(slot_cam) && last_slot_live != slot_live) {
+        LOG_WARNING(Core, "Hoenn layout flip slot={:08X} live {} → {} — reacquire", slot_cam,
+                    last_slot_live ? 1 : 0, slot_live ? 1 : 0);
+        Reacquire(mem, *process, slot_live ? "became-live" : "became-dead");
+        last_hunt_tick = now;
     }
-
-    if (freelook && hunt != HuntPhase::Idle) {
-        TickStickyHunt(mem, *process);
-    }
+    last_slot_live = slot_live;
 
     if (now < quiet_until) {
         if ((diag++ % 40) == 0) {
             LOG_INFO(Core, "Hoenn camera: quiet…");
         }
+        // Still track layout during quiet; reacquire when quiet ends via flip/below
         return;
     }
 
-    // After quiet (field load / battle / enable): same as user Rescan
-    if (freelook && recover_after_quiet && hunt == HuntPhase::Idle) {
-        recover_after_quiet = false;
-        if (now >= last_auto_recover_tick + RECOVER_COOLDOWN) {
-            RequestRecover(mem, *process, "after-quiet");
-            last_auto_recover_tick = now;
+    // Zoom only on live FOV (slot preferred, else override if live)
+    if (zoom_assist) {
+        u32 zcam = 0;
+        if (slot_live) {
+            zcam = slot_cam;
+        } else if (drive_override && IsLiveFieldCam(mem, *process, drive_override)) {
+            zcam = drive_override;
         }
-    }
-
-    if (zoom_assist && HeapPtr(slot_cam)) {
-        const float slot_fov = BFloat(mem.Read32(*process, slot_cam + OFF_FOV));
-        if (OkFov(slot_fov)) {
+        if (zcam) {
             bool l = false, r = false;
             try {
                 if (btn_l) {
@@ -850,10 +676,10 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
             }
             if (l && !r) {
                 user_fov = std::min(FOV_MAX, user_fov + FOV_STEP);
-                WriteF(mem, *process, slot_cam + OFF_FOV, user_fov);
+                WriteF(mem, *process, zcam + OFF_FOV, user_fov);
             } else if (r && !l) {
                 user_fov = std::max(FOV_MIN, user_fov - FOV_STEP);
-                WriteF(mem, *process, slot_cam + OFF_FOV, user_fov);
+                WriteF(mem, *process, zcam + OFF_FOV, user_fov);
             }
         }
     }
@@ -862,53 +688,52 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         return;
     }
 
-    if (hunt != HuntPhase::Idle && hunt_base != 0) {
-        return; // pause freelook mid-test
+    // --- Core fix: always prefer live slot; drop stale override ---
+    if (slot_live) {
+        if (drive_override != 0) {
+            LOG_WARNING(Core, "Hoenn: slot LIVE again — drop override {:08X}", drive_override);
+            drive_override = 0;
+            SeedAnglesFromCam(mem, *process, slot_cam);
+        }
+    } else {
+        // Slot dead: keep override only if still live; else hunt
+        if (drive_override && !IsLiveFieldCam(mem, *process, drive_override)) {
+            LOG_WARNING(Core, "Hoenn: override {:08X} went DEAD — clear", drive_override);
+            drive_override = 0;
+        }
+        if (drive_override == 0 && now >= last_hunt_tick + HUNT_COOLDOWN) {
+            Reacquire(mem, *process, "slot-dead-hunt");
+            last_hunt_tick = now;
+        }
     }
 
     const u32 cam = ResolveCamBase(mem, *process);
     if (!HeapPtr(cam)) {
         if ((diag++ % 50) == 0) {
-            LOG_WARNING(Core, "Hoenn camera: no cam slot={:08X} ov={:08X}", slot_cam, drive_override);
+            LOG_WARNING(Core, "Hoenn camera: no cam");
         }
-        // Try recover if slot empty
-        if (hunt == HuntPhase::Idle && now >= last_auto_recover_tick + RECOVER_COOLDOWN) {
-            RequestRecover(mem, *process, "no-cam");
-            last_auto_recover_tick = now;
+        return;
+    }
+
+    // Refuse to write into dead layout (pitch sticky-but-useless on 2F)
+    if (!IsLiveFieldCam(mem, *process, cam)) {
+        if ((diag++ % 40) == 0) {
+            LOG_WARNING(Core,
+                        "Hoenn camera: skip writes cam={:08X} DEAD layout (fov={:.3g} flag={:08X}) "
+                        "— hunting…",
+                        cam, BFloat(mem.Read32(*process, cam + OFF_FOV)),
+                        mem.Read32(*process, cam + OFF_FLAG));
+        }
+        if (now >= last_hunt_tick + HUNT_COOLDOWN) {
+            Reacquire(mem, *process, "drive-dead");
+            last_hunt_tick = now;
         }
         return;
     }
 
     if (cam != last_cam) {
-        LOG_WARNING(Core, "Hoenn camera: drive {:08X} → {:08X} ov={:08X}", last_cam, cam,
-                    drive_override);
+        LOG_WARNING(Core, "Hoenn camera: drive {:08X} → {:08X} (live)", last_cam, cam);
         SeedAnglesFromCam(mem, *process, cam);
-        unsticky_streak = 0;
-        wrote_pitch_last = false;
-        drive_lost = false;
-    }
-
-    // Unsticky under stick → recover (not just pause)
-    if (wrote_pitch_last) {
-        const float rb = BFloat(mem.Read32(*process, cam + OFF_PITCH));
-        if (std::fabs(rb - last_written_pitch) > STICKY_EPS) {
-            unsticky_streak++;
-            if (unsticky_streak == UNSTICKY_BEFORE_HUNT) {
-                LOG_WARNING(Core, "Hoenn camera: LOST cam={:08X} — AUTO-RECOVER", cam);
-                if (drive_override == cam) {
-                    drive_override = 0;
-                }
-                if (now >= last_auto_recover_tick + RECOVER_COOLDOWN) {
-                    RequestRecover(mem, *process, "unsticky");
-                    last_auto_recover_tick = now;
-                }
-            }
-        } else {
-            unsticky_streak = 0;
-            drive_lost = false;
-            last_good_cam = cam;
-        }
-        wrote_pitch_last = false;
     }
 
     float sx = 0.f, sy = 0.f;
@@ -920,18 +745,13 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         c_stick.reset();
     }
 
-    const bool stick_y = std::fabs(sy) >= STICK_DEADZONE;
-    const bool stick_x = std::fabs(sx) >= STICK_DEADZONE;
-    if (stick_y) {
+    if (std::fabs(sy) >= STICK_DEADZONE) {
         const float y = invert_y ? sy : -sy;
         pitch += y * sensitivity * PITCH_STEP;
         pitch = std::clamp(pitch, PITCH_MIN, PITCH_MAX);
     }
     WriteF(mem, *process, cam + OFF_PITCH, pitch);
-    if (stick_y) {
-        last_written_pitch = pitch;
-        wrote_pitch_last = true;
-    }
+    last_good_cam = cam;
 
     if (!yaw_seeded) {
         yaw = BFloat(mem.Read32(*process, cam + OFF_YAW));
@@ -940,7 +760,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         }
         yaw_seeded = true;
     }
-    if (stick_x) {
+    if (std::fabs(sx) >= STICK_DEADZONE) {
         const float x = invert_x ? -sx : sx;
         yaw += x * sensitivity * YAW_STEP;
     }
@@ -949,8 +769,12 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     if ((diag++ % 60) == 0) {
-        LOG_INFO(Core, "Hoenn camera: ok cam={:08X} ov={:08X} slot={:08X} p={:.2f} y={:.3g}", cam,
-                 drive_override, slot_cam, pitch, yaw);
+        LOG_INFO(Core,
+                 "Hoenn camera: ok LIVE cam={:08X} slot={:08X} slot_live={} ov={:08X} "
+                 "fov={:.0f} fl={:X} p={:.2f} y={:.3g}",
+                 cam, slot_cam, slot_live ? 1 : 0, drive_override,
+                 BFloat(mem.Read32(*process, cam + OFF_FOV)), mem.Read32(*process, cam + OFF_FLAG),
+                 pitch, yaw);
     }
 }
 

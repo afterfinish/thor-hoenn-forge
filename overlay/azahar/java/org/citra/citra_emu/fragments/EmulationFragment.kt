@@ -557,6 +557,7 @@ class EmulationFragment :
                 },
             ),
             getString(R.string.hoenn_menu_cam_probe) + if (probeN > 0) " (#$probeN)" else " (#0 slot)",
+            getString(R.string.hoenn_menu_cam_re_dump),
             getString(R.string.hoenn_menu_save_state),
             getString(R.string.hoenn_menu_load_state),
             getString(R.string.hoenn_menu_resume),
@@ -568,12 +569,32 @@ class EmulationFragment :
                     0 -> toggleHoennFreelook()
                     1 -> toggleHoennZoomAssist()
                     2 -> showHoennCamProbeMenu()
-                    3 -> showHoennStateSlots(isSaving = true)
-                    4 -> showHoennStateSlots(isSaving = false)
+                    3 -> dumpHoennCamRE()
+                    4 -> showHoennStateSlots(isSaving = true)
+                    5 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
             .show()
+    }
+
+    /**
+     * RE: dump slot cam object to logcat; second dump at same base prints word diffs.
+     * Use after A/B/C: working 1F then dead after 2F (same 082D3458).
+     */
+    private fun dumpHoennCamRE() {
+        if (!isAdded) return
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val msg = org.citra.citra_emu.hoennforge.HoennFreecam.dumpCamRE("menu")
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
     }
 
     /**

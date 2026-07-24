@@ -103,6 +103,7 @@
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_cam_probe">Cam address probe…</string>
+    <string name="hoenn_menu_cam_re_dump">RE dump cam (logcat diff)</string>
     <string name="hoenn_menu_cam_probe_title">Cam address (sticky hunt)</string>
     <string name="hoenn_menu_cam_probe_rescan">Rescan + sticky hunt (run on 2F / broken 1F)</string>
     <string name="hoenn_menu_cam_probe_empty">No candidates — freelook on, wait on field, then rescan</string>

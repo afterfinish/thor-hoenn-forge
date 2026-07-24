@@ -87,6 +87,21 @@ object HoennFreecam {
         }
     }
 
+    /**
+     * Full RE dump of slot camera object + stickiness + diff vs last dump.
+     * Dogfood: dump on working 1F, go 2F (dead), dump again — same base 082D3458.
+     */
+    fun dumpCamRE(tag: String): String {
+        return try {
+            val msg = NativeLibrary.hoennDumpCamRE(tag)
+            Log.i(TAG, "cam RE dump: $msg")
+            msg
+        } catch (e: Exception) {
+            Log.e(TAG, "cam RE dump failed", e)
+            "dump failed"
+        }
+    }
+
     /** @deprecated use applyZoomAssist */
     fun apply(titleId: Long, enabled: Boolean): Boolean = applyZoomAssist(titleId, enabled)
 }

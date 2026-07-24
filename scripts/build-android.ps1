@@ -113,6 +113,7 @@ if (Test-Path $nlPath) {
     external fun hoennGetCamCandidateLabels(): Array<String>
     external fun hoennSetCamProbeIndex(index: Int)
     external fun hoennGetCamProbeIndex(): Int
+    external fun hoennDumpCamRE(tag: String): String
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt freelook/zoom/camProbe JNI"
@@ -139,6 +140,15 @@ if (Test-Path $nlPath) {
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt camProbe JNI"
+    }
+    if ($nl -notmatch "hoennDumpCamRE") {
+        $nl = Get-Content $nlPath -Raw
+        $nl = $nl -replace "(external fun hoennGetCamProbeIndex\(\): Int)", @"
+`$1
+    external fun hoennDumpCamRE(tag: String): String
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt hoennDumpCamRE JNI"
     }
 }
 # native.cpp freelook implementation
@@ -230,10 +240,43 @@ jint Java_org_citra_citra_1emu_NativeLibrary_hoennGetCamProbeIndex([[maybe_unuse
     return static_cast<jint>(Hoenn::FreeCam::GetInstance().GetCamProbeIndex());
 }
 
+jstring Java_org_citra_citra_1emu_NativeLibrary_hoennDumpCamRE(JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jstring tag) {
+    const char* t = env->GetStringUTFChars(tag, nullptr);
+    auto& system = Core::System::GetInstance();
+    const std::string msg = Hoenn::FreeCam::GetInstance().DumpREState(system, t ? t : "jni");
+    if (t) {
+        env->ReleaseStringUTFChars(tag, t);
+    }
+    return env->NewStringUTF(msg.c_str());
+}
+
 '@
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp camProbe JNI"
+    }
+    if ($nc -notmatch "hoennDumpCamRE") {
+        $nc = Get-Content $nativeCpp -Raw
+        $jni = @'
+
+jstring Java_org_citra_citra_1emu_NativeLibrary_hoennDumpCamRE(JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jstring tag) {
+    const char* t = env->GetStringUTFChars(tag, nullptr);
+    auto& system = Core::System::GetInstance();
+    const std::string msg = Hoenn::FreeCam::GetInstance().DumpREState(system, t ? t : "jni");
+    if (t) {
+        env->ReleaseStringUTFChars(tag, t);
+    }
+    return env->NewStringUTF(msg.c_str());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp hoennDumpCamRE JNI"
     }
     # L3 turbo: reset frame limiter when temporary limit is set (post-savestate lag)
     if ($nc -notmatch "setTemporaryFrameLimit[\s\S]*frame_limiter\.Reset") {

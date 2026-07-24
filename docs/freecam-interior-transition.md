@@ -14,6 +14,16 @@ Opening **START → Cam address probe** (which runs `ScanCamCandidates` / recove
 
 After visiting **2F**, the same menu path **fails** until leave house + re-enter + probe again.
 
+## A/B/C locked (2026-07-24)
+
+| Exp | Result |
+|-----|--------|
+| A — freelook OFF entire 1F→2F→1F, then ON | Still dead → **not write-poison** |
+| B — START only, no cam probe | Still dead → **not pause/resume** |
+| C — slot base working vs dead after 2F | **Same `082D3458`** |
+
+So: not a second camera address. Same object, different behavior after floor change.
+
 ## Failed approaches this session
 
 | Approach | Result |
