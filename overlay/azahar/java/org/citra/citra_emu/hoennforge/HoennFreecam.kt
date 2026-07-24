@@ -11,6 +11,10 @@ import org.citra.citra_emu.NativeLibrary
  * (see core/hoenn_freecam.cpp). START menu façade only.
  *
  * Free look: stick Y = pitch (+0x98), stick X = yaw (+0x9C, probe #14 locked).
+ *
+ * Cam-address probe: after map transitions the official slot may be dead.
+ * START menu → "Cam address probe" rescans heap and lists numbered candidates;
+ * pick one to drive. Never rewrites CAMERA_SLOT.
  */
 object HoennFreecam {
     private const val TAG = "HoennForgeCam"
@@ -47,6 +51,39 @@ object HoennFreecam {
         } catch (e: Exception) {
             Log.e(TAG, "freelook failed", e)
             false
+        }
+    }
+
+    /**
+     * Scan heap for camera-like objects. Returns START-menu labels
+     * (#0 SLOT, #1 cam=…, …). Empty if not running / scan failed.
+     */
+    fun scanCamProbeLabels(): Array<String> {
+        return try {
+            val n = NativeLibrary.hoennScanCamCandidates()
+            Log.i(TAG, "camProbe scan n=$n")
+            if (n <= 0) emptyArray() else NativeLibrary.hoennGetCamCandidateLabels()
+        } catch (e: Exception) {
+            Log.e(TAG, "camProbe scan failed", e)
+            emptyArray()
+        }
+    }
+
+    fun setCamProbeIndex(index: Int) {
+        try {
+            NativeLibrary.hoennSetCamProbeIndex(index)
+            Log.i(TAG, "camProbe active #$index")
+        } catch (e: Exception) {
+            Log.e(TAG, "camProbe set failed", e)
+        }
+    }
+
+    fun getCamProbeIndex(): Int {
+        return try {
+            NativeLibrary.hoennGetCamProbeIndex()
+        } catch (e: Exception) {
+            Log.e(TAG, "camProbe get failed", e)
+            0
         }
     }
 

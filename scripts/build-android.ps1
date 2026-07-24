@@ -107,9 +107,15 @@ if (Test-Path $nlPath) {
     /** Hoenn Forge: L/R continuous zoom assist. */
     external fun setHoennZoomAssist(enabled: Boolean)
     external fun isHoennZoomAssistEnabled(): Boolean
+
+    /** Hoenn Forge: cam-address RE probe (START menu numbered candidates). */
+    external fun hoennScanCamCandidates(): Int
+    external fun hoennGetCamCandidateLabels(): Array<String>
+    external fun hoennSetCamProbeIndex(index: Int)
+    external fun hoennGetCamProbeIndex(): Int
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
-        Write-Host "Patched NativeLibrary.kt freelook/zoom JNI"
+        Write-Host "Patched NativeLibrary.kt freelook/zoom/camProbe JNI"
     } elseif ($nl -notmatch "setHoennZoomAssist") {
         $nl = $nl -replace "(external fun isHoennFreelookEnabled\(\): Boolean)", @"
 `$1
@@ -119,6 +125,20 @@ if (Test-Path $nlPath) {
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt zoom JNI"
+    }
+    if ($nl -notmatch "hoennScanCamCandidates") {
+        $nl = Get-Content $nlPath -Raw
+        $nl = $nl -replace "(external fun isHoennZoomAssistEnabled\(\): Boolean)", @"
+`$1
+
+    /** Hoenn Forge: cam-address RE probe (START menu numbered candidates). */
+    external fun hoennScanCamCandidates(): Int
+    external fun hoennGetCamCandidateLabels(): Array<String>
+    external fun hoennSetCamProbeIndex(index: Int)
+    external fun hoennGetCamProbeIndex(): Int
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt camProbe JNI"
     }
 }
 # native.cpp freelook implementation
@@ -175,6 +195,45 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp zoom JNI"
+    }
+    if ($nc -notmatch "hoennScanCamCandidates") {
+        $nc = Get-Content $nativeCpp -Raw
+        $jni = @'
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennScanCamCandidates([[maybe_unused]] JNIEnv* env,
+                                                                   [[maybe_unused]] jobject obj) {
+    auto& system = Core::System::GetInstance();
+    return static_cast<jint>(Hoenn::FreeCam::GetInstance().ScanCamCandidates(system));
+}
+
+jobjectArray Java_org_citra_citra_1emu_NativeLibrary_hoennGetCamCandidateLabels(JNIEnv* env,
+                                                                               [[maybe_unused]] jobject obj) {
+    auto& cam = Hoenn::FreeCam::GetInstance();
+    const int n = cam.GetCamCandidateCount();
+    jclass str_cls = env->FindClass("java/lang/String");
+    jobjectArray arr = env->NewObjectArray(n, str_cls, nullptr);
+    for (int i = 0; i < n; ++i) {
+        const std::string label = cam.GetCamCandidateLabel(i);
+        env->SetObjectArrayElement(arr, i, env->NewStringUTF(label.c_str()));
+    }
+    return arr;
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_hoennSetCamProbeIndex([[maybe_unused]] JNIEnv* env,
+                                                                  [[maybe_unused]] jobject obj,
+                                                                  jint index) {
+    Hoenn::FreeCam::GetInstance().SetCamProbeIndex(static_cast<int>(index));
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennGetCamProbeIndex([[maybe_unused]] JNIEnv* env,
+                                                                  [[maybe_unused]] jobject obj) {
+    return static_cast<jint>(Hoenn::FreeCam::GetInstance().GetCamProbeIndex());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp camProbe JNI"
     }
     # L3 turbo: reset frame limiter when temporary limit is set (post-savestate lag)
     if ($nc -notmatch "setTemporaryFrameLimit[\s\S]*frame_limiter\.Reset") {

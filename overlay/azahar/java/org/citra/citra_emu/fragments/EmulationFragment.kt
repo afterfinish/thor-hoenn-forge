@@ -536,6 +536,11 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val freelookOn = prefs.freelookEnabled
         val zoomOn = prefs.cameraZoomAssistEnabled
+        val probeN = try {
+            org.citra.citra_emu.hoennforge.HoennFreecam.getCamProbeIndex()
+        } catch (_: Exception) {
+            0
+        }
         val items = arrayOf(
             getString(
                 if (freelookOn) {
@@ -551,6 +556,7 @@ class EmulationFragment :
                     R.string.hoenn_menu_zoom_off
                 },
             ),
+            getString(R.string.hoenn_menu_cam_probe) + if (probeN > 0) " (#$probeN)" else " (#0 slot)",
             getString(R.string.hoenn_menu_save_state),
             getString(R.string.hoenn_menu_load_state),
             getString(R.string.hoenn_menu_resume),
@@ -561,11 +567,69 @@ class EmulationFragment :
                 when (which) {
                     0 -> toggleHoennFreelook()
                     1 -> toggleHoennZoomAssist()
-                    2 -> showHoennStateSlots(isSaving = true)
-                    3 -> showHoennStateSlots(isSaving = false)
+                    2 -> showHoennCamProbeMenu()
+                    3 -> showHoennStateSlots(isSaving = true)
+                    4 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
+            .show()
+    }
+
+    /**
+     * RE: numbered camera-object candidates (START menu, not L/R — those are zoom).
+     * Rescan after floor/map change; pick #N and test right stick; report which works.
+     */
+    private fun showHoennCamProbeMenu() {
+        if (!isAdded || _binding == null) return
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+
+        val labels = org.citra.citra_emu.hoennforge.HoennFreecam.scanCamProbeLabels()
+        val rows = ArrayList<String>(labels.size + 1)
+        rows.add(getString(R.string.hoenn_menu_cam_probe_rescan))
+        if (labels.isEmpty()) {
+            rows.add(getString(R.string.hoenn_menu_cam_probe_empty))
+        } else {
+            rows.addAll(labels)
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.hoenn_menu_cam_probe_title)
+            .setItems(rows.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> {
+                        // Rescan and re-open with fresh list
+                        val n = org.citra.citra_emu.hoennforge.HoennFreecam.scanCamProbeLabels().size
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.hoenn_menu_cam_probe_rescanned, n),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        showHoennCamProbeMenu()
+                    }
+                    labels.isEmpty() -> { /* empty placeholder */ }
+                    else -> {
+                        val index = which - 1 // 0-based candidate index
+                        if (index in labels.indices) {
+                            org.citra.citra_emu.hoennforge.HoennFreecam.setCamProbeIndex(index)
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.hoenn_menu_cam_probe_picked, index),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.hoenn_menu_back, null)
             .show()
     }
 

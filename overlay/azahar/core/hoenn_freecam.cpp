@@ -4,16 +4,18 @@
 // Yaw:   stick X → cam+0x9C (probe #14 locked).
 // Zoom:  L or R → cam+0xB0.
 //
-// Freecam and L3 turbo are independent — never pause freecam while turbo is on
-// (both work together after a map refresh; post-savestate turbo lag is a known open bug).
+// Cam-address RE (START menu numbered probes):
+//   Map transitions (house floors, post-battle) may leave *CAMERA_SLOT on a
+//   dead object. Scan nearby heap for camera-like layouts; user picks #N;
+//   we drive that base only. NEVER rewrite CAMERA_SLOT (F5 hard crash).
+//   NEVER multi-write all candidates (F4 black screen).
 //
-// Never rewrite CAMERA_SLOT (hard-crashed). No InvalidateCacheRange on data float writes.
-// Map transitions (house floors, post-battle): recover via live pitch/yaw layout when FOV
-// is 0/invalid — interiors often zero FOV briefly or use a different FOV scale.
+// Freecam ⊥ L3 turbo. No InvalidateCacheRange on data float writes.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -48,6 +50,10 @@ constexpr int ANDROID_STICK_C = 718;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 
+// Scan window around official slot pointer (new cams allocate nearby)
+constexpr u32 SCAN_RADIUS = 0x400000;
+constexpr u32 SCAN_STEP = 0x20;
+
 u32 FBits(float f) {
     u32 b = 0;
     std::memcpy(&b, &f, 4);
@@ -72,7 +78,7 @@ bool OkFloat(float f) {
 }
 
 /**
- * Pitch/yaw look like angles on a field camera (FOV may be dead in interiors / transitions).
+ * Pitch/yaw look like angles on a field camera (FOV may be dead in interiors).
  * All-zero is treated as wiped/dead memory — not a live camera.
  */
 bool OkAngleLayout(float pitch_v, float yaw_v) {
@@ -82,8 +88,13 @@ bool OkAngleLayout(float pitch_v, float yaw_v) {
     if (std::fabs(pitch_v) >= 89.f || std::fabs(yaw_v) >= 1.0e4f) {
         return false;
     }
-    // Wiped object is usually all zeros; require at least one non-trivial angle.
     return std::fabs(pitch_v) > 1.0e-3f || std::fabs(yaw_v) > 1.0e-3f;
+}
+
+/** Pitch alone in a field-cam-ish range (for scanning). */
+bool OkPitchRange(float pitch_v) {
+    return OkFloat(pitch_v) && pitch_v > -45.f && pitch_v < 15.f &&
+           std::fabs(pitch_v) > 1.0e-3f;
 }
 
 std::shared_ptr<Kernel::Process> Resolve(Core::System& sys, u32 pid) {
@@ -107,6 +118,22 @@ void WriteF(Memory::MemorySystem& mem, Kernel::Process& process, u32 addr, float
     mem.Write32(process, addr, FBits(v));
 }
 
+float ScoreCandidate(float fov, float pitch_v, u32 base, u32 slot_cam) {
+    // Lower is better
+    float s = 0.f;
+    if (OkFov(fov)) {
+        s += std::fabs(fov - 270.f) * 0.02f;
+    } else {
+        s += 50.f; // FOV dead — still allow (interiors) but deprioritize
+    }
+    s += std::fabs(pitch_v - PITCH_BASE) * 0.5f;
+    if (HeapPtr(slot_cam)) {
+        const u32 dist = base > slot_cam ? base - slot_cam : slot_cam - base;
+        s += static_cast<float>(dist) / static_cast<float>(0x10000);
+    }
+    return s;
+}
+
 } // namespace
 
 FreeCam& FreeCam::GetInstance() {
@@ -124,6 +151,7 @@ void FreeCam::OnCoreReconnect() {
     quiet_until = 1;
     in_battle = false;
     zero_fov_streak = 0;
+    // Keep probe_index so user can re-test after savestate; reseed yaw
     ResetYaw();
     LOG_INFO(Core, "Hoenn camera: core reconnect (savestate) — quiet then reseed");
 }
@@ -190,7 +218,8 @@ void FreeCam::SetFreelookEnabled(bool e) {
     if (freelook) {
         pitch = PITCH_BASE;
         ResetYaw();
-        LOG_WARNING(Core, "Hoenn free-look ON — pitch=Y (+0x98); yaw=X (+0x9C)");
+        LOG_WARNING(Core, "Hoenn free-look ON — pitch=Y (+0x98); yaw=X (+0x9C); cam probe #{}",
+                    probe_index);
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -232,6 +261,185 @@ void FreeCam::SetInvertY(bool v) {
     invert_y = v;
 }
 
+int FreeCam::ScanCamCandidates(Core::System& system) {
+    candidates.clear();
+    if (!system.IsPoweredOn()) {
+        LOG_WARNING(Core, "Hoenn camProbe: not powered on");
+        return 0;
+    }
+
+    auto process = Resolve(system, last_process_id);
+    if (!process) {
+        LOG_WARNING(Core, "Hoenn camProbe: no process");
+        return 0;
+    }
+    auto& mem = system.Memory();
+    const u32 slot_cam = mem.Read32(*process, CAMERA_SLOT);
+
+    // #0 always = official slot (auto follow)
+    {
+        CamCandidate c0;
+        c0.base = slot_cam;
+        c0.is_slot = true;
+        c0.score = -1.f; // sort first
+        if (HeapPtr(slot_cam)) {
+            c0.fov = BFloat(mem.Read32(*process, slot_cam + OFF_FOV));
+            c0.pitch = BFloat(mem.Read32(*process, slot_cam + OFF_PITCH));
+            c0.yaw = BFloat(mem.Read32(*process, slot_cam + OFF_YAW));
+        }
+        candidates.push_back(c0);
+    }
+
+    u32 lo = 0x08000000;
+    u32 hi = 0x0A000000;
+    if (HeapPtr(slot_cam)) {
+        lo = slot_cam > SCAN_RADIUS ? slot_cam - SCAN_RADIUS : 0x08000000;
+        hi = slot_cam + SCAN_RADIUS;
+        if (hi > 0x0C000000) {
+            hi = 0x0C000000;
+        }
+    }
+
+    std::vector<CamCandidate> found;
+    u32 checked = 0;
+    for (u32 base = lo; base + OFF_FOV + 4 < hi; base += SCAN_STEP) {
+        checked++;
+        if (base == slot_cam) {
+            continue;
+        }
+        const float fov = BFloat(mem.Read32(*process, base + OFF_FOV));
+        const float pitch_v = BFloat(mem.Read32(*process, base + OFF_PITCH));
+        const float yaw_v = BFloat(mem.Read32(*process, base + OFF_YAW));
+
+        const bool fov_ok = OkFov(fov);
+        const bool angles_ok = OkAngleLayout(pitch_v, yaw_v);
+        const bool pitch_ok = OkPitchRange(pitch_v);
+        // Need at least FOV+pitch or solid angle pair (interiors often FOV=0)
+        if (!(fov_ok && pitch_ok) && !angles_ok) {
+            continue;
+        }
+        // Reject absurd FOV garbage when FOV is the only signal
+        if (fov_ok && !pitch_ok && !angles_ok) {
+            continue;
+        }
+
+        CamCandidate c;
+        c.base = base;
+        c.fov = fov;
+        c.pitch = pitch_v;
+        c.yaw = yaw_v;
+        c.is_slot = false;
+        c.score = ScoreCandidate(fov, pitch_v, base, slot_cam);
+        found.push_back(c);
+    }
+
+    std::sort(found.begin(), found.end(),
+              [](const CamCandidate& a, const CamCandidate& b) { return a.score < b.score; });
+
+    // Dedup: keep best, max kMaxCamCandidates-1 heap hits
+    const size_t max_heap = static_cast<size_t>(kMaxCamCandidates - 1);
+    for (const auto& c : found) {
+        if (candidates.size() >= max_heap + 1) {
+            break;
+        }
+        bool dup = false;
+        for (const auto& e : candidates) {
+            if (e.base == c.base) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup) {
+            candidates.push_back(c);
+        }
+    }
+
+    // Clamp active probe if list shrank
+    if (probe_index >= static_cast<int>(candidates.size())) {
+        probe_index = 0;
+    }
+
+    LOG_WARNING(Core,
+                "Hoenn camProbe: scan done n={} (slot={:08X}) checked={} window={:08X}-{:08X} "
+                "active=#{}",
+                candidates.size(), slot_cam, checked, lo, hi, probe_index);
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        const auto& c = candidates[i];
+        LOG_WARNING(Core, "Hoenn camProbe: #{} cam={:08X} fov={:.1f} pitch={:.2f} yaw={:.3g} {}",
+                    i, c.base, c.fov, c.pitch, c.yaw, c.is_slot ? "SLOT" : "heap");
+    }
+    return static_cast<int>(candidates.size());
+}
+
+int FreeCam::GetCamCandidateCount() const {
+    return static_cast<int>(candidates.size());
+}
+
+std::string FreeCam::GetCamCandidateLabel(int index) const {
+    if (index < 0 || index >= static_cast<int>(candidates.size())) {
+        return "?(empty)";
+    }
+    const auto& c = candidates[static_cast<size_t>(index)];
+    char buf[128];
+    if (c.is_slot) {
+        if (HeapPtr(c.base)) {
+            std::snprintf(buf, sizeof(buf),
+                          "#%d SLOT → %08X  fov=%.0f p=%.1f%s", index, c.base, c.fov, c.pitch,
+                          index == probe_index ? "  ◀" : "");
+        } else {
+            std::snprintf(buf, sizeof(buf), "#%d SLOT (invalid %08X)%s", index, c.base,
+                          index == probe_index ? "  ◀" : "");
+        }
+    } else {
+        std::snprintf(buf, sizeof(buf), "#%d cam=%08X  fov=%.0f p=%.1f%s", index, c.base, c.fov,
+                      c.pitch, index == probe_index ? "  ◀" : "");
+    }
+    return std::string(buf);
+}
+
+void FreeCam::SetCamProbeIndex(int index) {
+    if (index < 0) {
+        index = 0;
+    }
+    if (!candidates.empty() && index >= static_cast<int>(candidates.size())) {
+        index = static_cast<int>(candidates.size()) - 1;
+    }
+    probe_index = index;
+    ResetYaw();
+    if (probe_index == 0) {
+        LOG_WARNING(Core, "Hoenn camProbe: ACTIVE #0 SLOT (auto follow *0x{:08X})",
+                    static_cast<u32>(CAMERA_SLOT));
+    } else if (probe_index < static_cast<int>(candidates.size())) {
+        const auto& c = candidates[static_cast<size_t>(probe_index)];
+        LOG_WARNING(Core, "Hoenn camProbe: ACTIVE #{} cam={:08X} fov={:.1f} pitch={:.2f}",
+                    probe_index, c.base, c.fov, c.pitch);
+    }
+}
+
+int FreeCam::GetCamProbeIndex() const {
+    return probe_index;
+}
+
+u32 FreeCam::GetActiveCamBase() const {
+    if (probe_index > 0 && probe_index < static_cast<int>(candidates.size())) {
+        return candidates[static_cast<size_t>(probe_index)].base;
+    }
+    return last_cam;
+}
+
+u32 FreeCam::ResolveCamBase(Memory::MemorySystem& mem, Kernel::Process& process) const {
+    // #0 or no scan: follow official slot (never write it)
+    if (probe_index <= 0 || candidates.empty() ||
+        probe_index >= static_cast<int>(candidates.size())) {
+        return mem.Read32(process, CAMERA_SLOT);
+    }
+    const auto& c = candidates[static_cast<size_t>(probe_index)];
+    if (c.is_slot) {
+        return mem.Read32(process, CAMERA_SLOT);
+    }
+    return c.base;
+}
+
 void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (!freelook && !zoom_assist) {
         return;
@@ -239,6 +447,8 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (!system.IsPoweredOn()) {
         return;
     }
+
+    last_process_id = process_id;
 
     if (quiet_until == 1) {
         quiet_until = system.CoreTiming().GetTicks() + QUIET_AFTER_FIELD;
@@ -263,23 +473,26 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     auto& mem = system.Memory();
     EnsureDevices();
 
-    const u32 cam = mem.Read32(*process, CAMERA_SLOT);
+    const u32 cam = ResolveCamBase(mem, *process);
     if (!HeapPtr(cam)) {
         if ((diag++ % 50) == 0) {
-            LOG_WARNING(Core, "Hoenn camera: no cam at slot ({:08X})", cam);
+            LOG_WARNING(Core, "Hoenn camera: no cam base ({:08X}) probe=#{}", cam, probe_index);
         }
         return;
     }
 
     if (cam != last_cam) {
-        LOG_WARNING(Core, "Hoenn camera: cam {:08X} → {:08X} — reseed yaw (map/object change)",
-                    last_cam, cam);
+        LOG_WARNING(Core, "Hoenn camera: cam {:08X} → {:08X} probe=#{} — reseed yaw", last_cam, cam,
+                    probe_index);
         yaw_seeded = false;
         last_cam = cam;
         // Brief quiet so the game finishes constructing the new camera object
-        quiet_until = now + QUIET_AFTER_FIELD / 4; // ~50ms of emu time scale
-        zero_fov_streak = 0;
-        return;
+        // (only when following slot auto; manual probe is intentional switch)
+        if (probe_index <= 0) {
+            quiet_until = now + QUIET_AFTER_FIELD / 4;
+            zero_fov_streak = 0;
+            return;
+        }
     }
 
     const float cur_fov = BFloat(mem.Read32(*process, cam + OFF_FOV));
@@ -289,28 +502,25 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     const bool angles_live = OkAngleLayout(peek_pitch, peek_yaw);
 
     // Full dead object: neither FOV nor angle layout looks like a field camera.
-    // Do NOT rewrite CAMERA_SLOT (crash history). Wait for game to publish a live cam.
+    // Do NOT rewrite CAMERA_SLOT. Wait or try another probe #.
     if (!fov_live && !angles_live) {
         zero_fov_streak++;
         yaw_seeded = false;
         if ((diag++ % 40) == 0) {
             LOG_WARNING(Core,
-                        "Hoenn camera: dead cam={:08X} fov={:.2f} pitch={:.2f} yaw={:.2f} — "
-                        "wait for live object (map transition / post-battle)",
-                        cam, cur_fov, peek_pitch, peek_yaw);
+                        "Hoenn camera: dead cam={:08X} probe=#{} fov={:.2f} pitch={:.2f} yaw={:.2f} "
+                        "— try START → Cam probe",
+                        cam, probe_index, cur_fov, peek_pitch, peek_yaw);
         }
         return;
     }
 
     if (!fov_live) {
-        // Transition / interior: FOV zero or out of range, but pitch/yaw still valid.
-        // Drive freelook only; skip FOV writes so we don't blast a dead field.
         zero_fov_streak++;
         if ((diag++ % 60) == 0) {
             LOG_INFO(Core,
-                     "Hoenn camera: FOV inactive cam={:08X} fov={:.2f} — pitch/yaw drive only "
-                     "(house floor / transition recovery)",
-                     cam, cur_fov);
+                     "Hoenn camera: FOV inactive cam={:08X} probe=#{} fov={:.2f} — pitch/yaw only",
+                     cam, probe_index, cur_fov);
         }
     } else {
         zero_fov_streak = 0;
@@ -366,7 +576,8 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
             yaw = 0.f;
         }
         yaw_seeded = true;
-        LOG_WARNING(Core, "Hoenn yaw SEED +0x9C = {:.4g} cam={:08X}", yaw, cam);
+        LOG_WARNING(Core, "Hoenn yaw SEED +0x9C = {:.4g} cam={:08X} probe=#{}", yaw, cam,
+                    probe_index);
     }
     if (std::fabs(sx) >= STICK_DEADZONE) {
         const float x = invert_x ? -sx : sx;
@@ -378,9 +589,9 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
 
     if ((diag++ % 60) == 0) {
         LOG_INFO(Core,
-                 "Hoenn camera: ok cam={:08X} fov={:.0f} pitch={:.2f} yaw={:.3g} (+0x9C) "
+                 "Hoenn camera: ok cam={:08X} probe=#{} fov={:.0f} pitch={:.2f} yaw={:.3g} "
                  "sx={:+.2f} sy={:+.2f}",
-                 cam, BFloat(mem.Read32(*process, cam + OFF_FOV)), pitch, yaw, sx, sy);
+                 cam, probe_index, BFloat(mem.Read32(*process, cam + OFF_FOV)), pitch, yaw, sx, sy);
     }
 }
 
