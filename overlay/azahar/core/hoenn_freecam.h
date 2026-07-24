@@ -87,8 +87,9 @@ private:
     bool freelook = false;
     bool zoom_assist = false;
     float sensitivity = 3.0f;
-    bool invert_x = true;
-    bool invert_y = false;
+    // Dogfood 2026-07-24: previous defaults felt exactly inverted on Thor.
+    bool invert_x = false;
+    bool invert_y = true;
 
     float user_fov = 480.f;
     float pitch = -12.74f;
