@@ -26,15 +26,15 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * LIVE = flag+0x80==0x0F + FOV 150–400 (RE dumps). Multi-write pitch/yaw only
- * to GOLD live cams (max few). SILVER (no-flag FOV) removed — caused camera
- * chaos by writing into random heap floats (log: 12 SILVER all p=-23.83).
- * Never rewrite CAMERA_SLOT. Never multi FOV.
+ * GOLD = flag+0x80==0x0F + FOV 150–400. Also ECHO = FOV band + pitch-ish +
+ * flag!=0x0F near slot (max 2) — v4 path when GOLD accepts pitch but view dead.
+ * Never rewrite CAMERA_SLOT. Never multi FOV. Never force mode thrash.
  */
 class FreeCam {
 public:
     static constexpr int kMaxCamCandidates = 16;
     static constexpr int kMaxLiveTargets = 6;
+    static constexpr int kMaxEchoTargets = 2;
 
     static FreeCam& GetInstance();
 
@@ -107,6 +107,8 @@ private:
 
     std::array<u32, kMaxLiveTargets> live_targets{};
     int live_count = 0;
+    std::array<u32, kMaxEchoTargets> echo_targets{};
+    int echo_count = 0;
     u32 primary_cam = 0;
 
     int probe_index = 0;

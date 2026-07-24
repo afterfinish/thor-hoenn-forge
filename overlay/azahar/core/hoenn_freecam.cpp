@@ -2,11 +2,15 @@
 //
 // Pitch +0x98 / yaw +0x9C / FOV +0xB0 (L/R on primary GOLD only).
 //
-// SILVER multi-write (FOV-only, no flag) caused camera chaos on 2F — wrote
-// pitch into ~12 random heap floats (log: all SILVER p=-23.83). Reverted to
-// GOLD only: flag+0x80==0x0F + FOV 150–400. Multi-write pitch/yaw to at most
-// a few GOLD siblings near the slot. RE dump still logs WIDE scan (read-only).
-// Never rewrite CAMERA_SLOT. Never multi FOV.
+// v3 mode-unlock failed: 4-dump RE showed town/2F-bad already had mode=0x00020001
+// and sticky pitch on GOLD (p==rb, ow=0) with zero visual. Renderer is not
+// driven by GOLD euler alone when dead.
+//
+// v4: also write pitch/yaw to a tiny set of near-slot FOV "echo" objects
+// (FOV 150–400, pitch layout ok, flag != 0x0F). WIDE scans show flag=0
+// FOV≈225 siblings that desync from GOLD pitch when freelook dies
+// (e.g. 08285648). Cap at 2 echoes. Never multi FOV. Never rewrite slot.
+// Stop force-writing mode (useless for visual; pollutes RE).
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -30,7 +34,7 @@ namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_FLAG = 0x80;
 // Primary freelook fields (community + RE)
-constexpr u32 OFF_MODE = 0x8C; // RE 4-dump: 0x00020001 freelook works; 0x000D0001 town locked
+constexpr u32 OFF_MODE = 0x8C;
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
@@ -38,8 +42,7 @@ constexpr u32 OFF_FOV = 0xB0;
 constexpr u32 OFF_PITCH_ALT = 0x54;
 constexpr u32 OFF_YAW_ALT = 0x58;
 constexpr u32 LIVE_FLAG = 0x0F;
-constexpr u32 MODE_FREELOOK = 0x00020001; // house 1F/2F working dumps
-constexpr u32 MODE_TOWN_LOCK = 0x000D0001; // town GOLD but freelook dead
+constexpr u32 MODE_FREELOOK = 0x00020001;
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
@@ -58,7 +61,8 @@ constexpr int ANDROID_STICK_C = 718;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 constexpr u64 COLLECT_INTERVAL = 40'000'000;
-constexpr u32 SCAN_RADIUS = 0x180000; // keep GOLD siblings only, not half the heap
+constexpr u32 SCAN_RADIUS = 0x180000;
+constexpr u32 ECHO_RADIUS = 0x100000; // tighter than gold scan — avoid chaos
 constexpr u32 SCAN_STEP = 0x10;
 
 u32 FBits(float f) {
@@ -198,7 +202,7 @@ void FreeCam::SetFreelookEnabled(bool e) {
         live_count = 0;
         primary_cam = 0;
         last_collect_tick = 0;
-        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=mode-unlock-v3 GOLD+mode+dual");
+        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=echo-v4 GOLD+echo dual (no mode thrash)");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -252,6 +256,7 @@ bool FreeCam::IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u3
 void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process,
                                  u32 slot_cam) {
     live_count = 0;
+    echo_count = 0;
     primary_cam = 0;
     std::unordered_set<u32> seen;
 
@@ -311,7 +316,7 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
         live_targets[static_cast<size_t>(live_count++)] = h.base;
     }
 
-    // Prefer GOLD slot with freelook mode 0x00020001, then any GOLD slot, then best hit
+    // Prefer GOLD slot, then FREE-mode gold, then best hit
     primary_cam = 0;
     if (IsGoldLive(mem, process, slot_cam)) {
         primary_cam = slot_cam;
@@ -329,6 +334,81 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
     }
     if (primary_cam) {
         last_good_cam = primary_cam;
+    }
+
+    // ECHO cams: FOV band + pitch layout, flag != LIVE (gold already covered).
+    // 4-dump: flag=0 FOV≈225 near house band desyncs from GOLD when freelook dies.
+    // Strict caps — full silver multi-write caused chaos.
+    struct EchoHit {
+        u32 base;
+        float score;
+    };
+    std::vector<EchoHit> echoes;
+    std::unordered_set<u32> echo_seen;
+    const float pri_fov =
+        primary_cam ? BFloat(mem.Read32(process, primary_cam + OFF_FOV)) : 225.f;
+    const u32 echo_center = HeapPtr(slot_cam) ? slot_cam : (primary_cam ? primary_cam : last_good_cam);
+
+    auto consider_echo = [&](u32 base) {
+        if (!HeapPtr(base) || base + OFF_FOV + 4 >= 0x0C000000 || echo_seen.count(base) ||
+            seen.count(base)) {
+            return;
+        }
+        const u32 flag = mem.Read32(process, base + OFF_FLAG);
+        if (flag == LIVE_FLAG) {
+            return; // gold path already owns these
+        }
+        // Prefer plain zero flag (common echo) — skip wild pointer-looking flags
+        if (flag != 0 && flag > 0xFF) {
+            return;
+        }
+        const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
+        if (!OkGoldFov(fov)) {
+            return;
+        }
+        const float p = BFloat(mem.Read32(process, base + OFF_PITCH));
+        if (!OkPitchLayout(p) && std::fabs(p) > 0.01f) {
+            // allow near-zero pitch (neutral) even if outside strict layout
+            if (!OkFloat(p) || p < -50.f || p > 40.f) {
+                return;
+            }
+        }
+        echo_seen.insert(base);
+        float s = std::fabs(fov - 225.f) + std::fabs(fov - pri_fov) * 0.25f;
+        if (HeapPtr(echo_center)) {
+            const u32 dist = base > echo_center ? base - echo_center : echo_center - base;
+            s += static_cast<float>(dist) / 2048.f;
+        }
+        if (flag == 0) {
+            s -= 5.f; // prefer flag=0 echoes from WIDE scans
+        }
+        echoes.push_back({base, s});
+    };
+
+    auto scan_echo = [&](u32 center) {
+        if (!HeapPtr(center)) {
+            return;
+        }
+        const u32 lo = center > ECHO_RADIUS ? center - ECHO_RADIUS : 0x08000000;
+        const u32 hi = std::min(center + ECHO_RADIUS, 0x0BFFFFFFu);
+        for (u32 base = lo; base + OFF_FOV + 4 < hi; base += SCAN_STEP) {
+            consider_echo(base);
+        }
+    };
+    scan_echo(echo_center);
+    if (primary_cam && primary_cam != echo_center) {
+        scan_echo(primary_cam);
+    }
+    // Known desync echo band from 4-dump WIDE (08285648 family)
+    scan_echo(0x08285000);
+
+    std::sort(echoes.begin(), echoes.end(),
+              [](const EchoHit& a, const EchoHit& b) { return a.score < b.score; });
+    for (const auto& e : echoes) {
+        if (echo_count >= kMaxEchoTargets) {
+            break;
+        }
+        echo_targets[static_cast<size_t>(echo_count++)] = e.base;
     }
 }
 
@@ -390,31 +470,34 @@ void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& proc
 }
 
 void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process) {
+    auto write_angles = [&](u32 cam, bool dual) {
+        if (!HeapPtr(cam) || cam + OFF_FOV + 4 >= 0x0C000000) {
+            return;
+        }
+        WriteF(mem, process, cam + OFF_PITCH, pitch);
+        if (OkFloat(yaw)) {
+            WriteF(mem, process, cam + OFF_YAW, yaw);
+        }
+        if (dual) {
+            WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
+            if (OkFloat(yaw)) {
+                WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
+            }
+        }
+    };
+
     for (int i = 0; i < live_count; ++i) {
         const u32 cam = live_targets[static_cast<size_t>(i)];
         if (!IsGoldLive(mem, process, cam)) {
             continue;
         }
-        // 4-dump RE: town GOLD uses mode 0x000D0001 (freelook dead); house uses
-        // 0x00020001 (freelook works). Force freelook-capable mode while driving.
-        // Always re-assert freelook mode (game may rewrite 0x000D0001 every frame in town)
-        const u32 mode_before = mem.Read32(process, cam + OFF_MODE);
-        mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
-        const u32 mode_after = mem.Read32(process, cam + OFF_MODE);
-        if (mode_before != MODE_FREELOOK && (diag % 20) == 0) {
-            LOG_WARNING(Core, "Hoenn mode unlock cam={:08X} before={:08X} after={:08X}", cam,
-                        mode_before, mode_after);
-        }
-        // Primary block
-        WriteF(mem, process, cam + OFF_PITCH, pitch);
-        if (OkFloat(yaw)) {
-            WriteF(mem, process, cam + OFF_YAW, yaw);
-        }
-        // Mirror block (working dumps: +0x54/+0x58 matched +0x98/+0x9C)
-        WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
-        if (OkFloat(yaw)) {
-            WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
-        }
+        // Do NOT force mode — v3 proved mode=FREE + sticky pitch can still be dead.
+        write_angles(cam, true);
+    }
+
+    // Echo path: pitch/yaw only (no mode, no FOV, no dual — dual offset may not exist)
+    for (int i = 0; i < echo_count; ++i) {
+        write_angles(echo_targets[static_cast<size_t>(i)], false);
     }
 }
 
@@ -519,49 +602,74 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
     CollectLiveTargets(mem, *process, slot_cam);
 
     LOG_WARNING(Core,
-                "========== Hoenn RE DUMP [{}] slot={:08X} gold_n={} pri={:08X} ==========", t,
-                slot_cam, live_count, primary_cam);
+                "========== Hoenn RE DUMP [{}] slot={:08X} gold_n={} echo_n={} pri={:08X} ==========",
+                t, slot_cam, live_count, echo_count, primary_cam);
     for (int i = 0; i < live_count; ++i) {
         const u32 b = live_targets[static_cast<size_t>(i)];
         const u32 mode = mem.Read32(*process, b + OFF_MODE);
-        LOG_WARNING(Core, "Hoenn RE GOLD[{}] {:08X} fov={:.0f} fl={:X} mode={:08X} p={:.2f} {}", i,
-                    b, BFloat(mem.Read32(*process, b + OFF_FOV)),
+        LOG_WARNING(Core, "Hoenn RE GOLD[{}] {:08X} fov={:.0f} fl={:X} mode={:08X} p={:.2f} y={:.2f} {}",
+                    i, b, BFloat(mem.Read32(*process, b + OFF_FOV)),
                     mem.Read32(*process, b + OFF_FLAG), mode,
                     BFloat(mem.Read32(*process, b + OFF_PITCH)),
+                    BFloat(mem.Read32(*process, b + OFF_YAW)),
                     mode == MODE_FREELOOK ? "FREE" : "locked?");
+    }
+    for (int i = 0; i < echo_count; ++i) {
+        const u32 b = echo_targets[static_cast<size_t>(i)];
+        LOG_WARNING(Core, "Hoenn RE ECHO[{}] {:08X} fov={:.0f} fl={:X} p={:.2f} y={:.2f}", i, b,
+                    BFloat(mem.Read32(*process, b + OFF_FOV)), mem.Read32(*process, b + OFF_FLAG),
+                    BFloat(mem.Read32(*process, b + OFF_PITCH)),
+                    BFloat(mem.Read32(*process, b + OFF_YAW)));
     }
     LogWideScan(mem, *process, slot_cam);
 
-    if (!HeapPtr(slot_cam)) {
-        return "slot invalid";
+    // Dump PRIMARY object (not only slot) — dead-slot cases need this for RE
+    auto dump_obj = [&](u32 base, const char* label) {
+        if (!HeapPtr(base)) {
+            LOG_WARNING(Core, "Hoenn RE OBJ {} invalid", label);
+            return;
+        }
+        LOG_WARNING(Core, "Hoenn RE OBJ {} base={:08X}", label, base);
+        for (u32 off = 0x40; off <= 0xB8; off += 4) {
+            const u32 raw = mem.Read32(*process, base + off);
+            LOG_WARNING(Core, "Hoenn RE {} +{:02X}: raw={:08X} f={:.6g}", label, off, raw,
+                        BFloat(raw));
+        }
+    };
+    dump_obj(primary_cam ? primary_cam : slot_cam, "PRI");
+    if (HeapPtr(slot_cam) && slot_cam != primary_cam) {
+        dump_obj(slot_cam, "SLOT");
     }
-    for (u32 off = 0x80; off <= 0xB8; off += 4) {
-        const u32 raw = mem.Read32(*process, slot_cam + off);
-        LOG_WARNING(Core, "Hoenn RE DUMP +{:02X}: raw={:08X} f={:.6g}", off, raw, BFloat(raw));
+    for (int i = 0; i < echo_count; ++i) {
+        char lab[16];
+        std::snprintf(lab, sizeof(lab), "ECHO%d", i);
+        dump_obj(echo_targets[static_cast<size_t>(i)], lab);
     }
 
     u32 words[kDumpWords];
-    for (int i = 0; i < kDumpWords; ++i) {
-        words[i] = mem.Read32(*process, slot_cam + static_cast<u32>(i * 4));
-    }
-    int n_diff = 0;
-    if (dump_prev_valid && dump_prev_base == slot_cam) {
+    const u32 diff_base = primary_cam ? primary_cam : slot_cam;
+    if (HeapPtr(diff_base)) {
         for (int i = 0; i < kDumpWords; ++i) {
-            if (words[i] != dump_prev_words[i]) {
-                n_diff++;
-            }
+            words[i] = mem.Read32(*process, diff_base + static_cast<u32>(i * 4));
         }
-        LOG_WARNING(Core, "Hoenn RE DIFF: {} words", n_diff);
+        int n_diff = 0;
+        if (dump_prev_valid && dump_prev_base == diff_base) {
+            for (int i = 0; i < kDumpWords; ++i) {
+                if (words[i] != dump_prev_words[i]) {
+                    n_diff++;
+                }
+            }
+            LOG_WARNING(Core, "Hoenn RE DIFF pri: {} words", n_diff);
+        }
+        dump_prev_base = diff_base;
+        std::memcpy(dump_prev_words, words, sizeof(words));
+        dump_prev_valid = true;
     }
-    dump_prev_base = slot_cam;
-    std::memcpy(dump_prev_words, words, sizeof(words));
-    dump_prev_valid = true;
     std::snprintf(dump_prev_tag, sizeof(dump_prev_tag), "%s", t);
 
-    char toast[96];
-    const u32 sm = HeapPtr(slot_cam) ? mem.Read32(*process, slot_cam + OFF_MODE) : 0;
-    std::snprintf(toast, sizeof(toast), "RE g=%d pri=%08X slot=%s m=%X", live_count, primary_cam,
-                  IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead", sm);
+    char toast[112];
+    std::snprintf(toast, sizeof(toast), "RE g=%d e=%d pri=%08X slot=%s", live_count, echo_count,
+                  primary_cam, IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead");
     return std::string(toast);
 }
 
@@ -609,13 +717,20 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         CollectLiveTargets(mem, *process, slot_cam);
         last_collect_tick = now;
         if (live_count != prev_n || primary_cam != prev_pri) {
-            LOG_WARNING(Core, "Hoenn gold multi: n={} pri={:08X} slot={:08X}", live_count,
-                        primary_cam, slot_cam);
+            LOG_WARNING(Core, "Hoenn gold multi: n={} echo={} pri={:08X} slot={:08X}", live_count,
+                        echo_count, primary_cam, slot_cam);
             for (int i = 0; i < live_count; ++i) {
                 const u32 b = live_targets[static_cast<size_t>(i)];
                 LOG_INFO(Core, "Hoenn gold[{}] {:08X} fov={:.0f} fl={:X}", i, b,
                          BFloat(mem.Read32(*process, b + OFF_FOV)),
                          mem.Read32(*process, b + OFF_FLAG));
+            }
+            for (int i = 0; i < echo_count; ++i) {
+                const u32 b = echo_targets[static_cast<size_t>(i)];
+                LOG_INFO(Core, "Hoenn echo[{}] {:08X} fov={:.0f} fl={:X} p={:.2f}", i, b,
+                         BFloat(mem.Read32(*process, b + OFF_FOV)),
+                         mem.Read32(*process, b + OFF_FLAG),
+                         BFloat(mem.Read32(*process, b + OFF_PITCH)));
             }
             if (primary_cam && primary_cam != prev_pri) {
                 SeedAnglesFromCam(mem, *process, primary_cam);
@@ -649,9 +764,9 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         return;
     }
 
-    if (live_count == 0) {
+    if (live_count == 0 && echo_count == 0) {
         if ((diag++ % 40) == 0) {
-            LOG_WARNING(Core, "Hoenn: no GOLD cams (slot={:08X}) — wait", slot_cam);
+            LOG_WARNING(Core, "Hoenn: no GOLD/echo cams (slot={:08X}) — wait", slot_cam);
         }
         last_collect_tick = 0;
         check_stickiness = false;
@@ -710,10 +825,16 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     if ((diag++ % 60) == 0) {
         const float rb =
             primary_cam ? BFloat(mem.Read32(*process, primary_cam + OFF_PITCH)) : 0.f;
+        const float echo_p =
+            echo_count > 0
+                ? BFloat(mem.Read32(*process, echo_targets[0] + OFF_PITCH))
+                : 0.f;
         const u32 mode = primary_cam ? mem.Read32(*process, primary_cam + OFF_MODE) : 0;
         LOG_INFO(Core,
-                 "Hoenn ok v3 gold_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} mode={:08X} ow={}",
-                 live_count, primary_cam, slot_cam, pitch, rb, mode, overwrite_streak);
+                 "Hoenn ok v4 gold_n={} echo_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} "
+                 "echo0_p={:.1f} mode={:08X} ow={}",
+                 live_count, echo_count, primary_cam, slot_cam, pitch, rb, echo_p, mode,
+                 overwrite_streak);
     }
 }
 
