@@ -23,18 +23,20 @@ class MemorySystem;
 namespace Hoenn {
 
 /**
- * Pitch +0x98 / yaw +0x9C. Zoom FOV on live slot only.
+ * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * RE dump 2026-07-24 (same base 082D3458):
- *   LIVE 1F / fixed: +0x80=0x0F, +0xB0 FOV~225, pitch drives view
- *   DEAD 2F:         +0x80=0,    +0xB0 garbage, pitch sticky but unused
- * Fix: drive only "live field cam" layout (FOV+pitch); if slot dead, hunt
- * nearby live FOV object; if slot becomes live again, drop override.
+ * RE + logcat 2026-07-24:
+ *   LIVE freelook:  flag+0x80 == 0x0F, FOV ~180–350 (often 225)
+ *   DEAD after 2F:  flag 0, FOV garbage — pitch may still be "sticky"
+ * Bug: requiring pitch-in-range for "live" false-killed real cam
+ *   (log: skip writes cam=082D3458 DEAD fov=225 flag=0x0F) then hunted
+ *   fake FOV floats (798/110/…) → stick felt like zoom-to-nothing.
+ * Fix: live = flag 0x0F + sane FOV only; never hunt without flag 0x0F.
  * Never rewrite CAMERA_SLOT.
  */
 class FreeCam {
 public:
-    static constexpr int kMaxCamCandidates = 20;
+    static constexpr int kMaxCamCandidates = 16;
 
     static FreeCam& GetInstance();
 
@@ -61,7 +63,6 @@ public:
     void SetCamProbeIndex(int index);
     int GetCamProbeIndex() const;
     u32 GetActiveCamBase() const;
-
     std::string DumpREState(Core::System& system, const char* tag);
 
     void Tick(Core::System& system, u32 process_id);
@@ -101,10 +102,10 @@ private:
     u32 last_process_id = 0;
     u32 last_good_cam = 0;
     u32 last_slot_cam = 0;
-    bool last_slot_live = false;
+    u32 dead_streak = 0;
+    u32 live_streak = 0;
     u64 last_hunt_tick = 0;
 
-    // 0 = follow slot when live; else force this heap base (FOV-live hunt)
     u32 drive_override = 0;
     int probe_index = 0;
     std::vector<CamCandidate> candidates;
@@ -122,13 +123,11 @@ private:
     void EnsureDevices();
     void ResetYaw();
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
-    u32 ResolveCamBase(Memory::MemorySystem& mem, Kernel::Process& process) const;
+    u32 ResolveDriveBase(Memory::MemorySystem& mem, Kernel::Process& process) const;
 
-    /** RE: live freelook layout (FOV real + pitch range + flag often 0x0F). */
+    /** Gold standard from RE: flag 0x0F + field FOV band. No pitch gate. */
     bool IsLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    u32 FindLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam,
-                         u32 prefer_near) const;
-    /** Re-acquire: prefer live slot, else hunt. Same effect as cam-probe open. */
+    u32 FindLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam) const;
     void Reacquire(Memory::MemorySystem& mem, Kernel::Process& process, const char* reason);
 };
 
