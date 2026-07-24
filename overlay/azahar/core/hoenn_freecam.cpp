@@ -2,15 +2,21 @@
 //
 // Pitch +0x98 / yaw +0x9C / FOV +0xB0 (L/R on primary GOLD only).
 //
-// v3 mode-unlock failed: 4-dump RE showed town/2F-bad already had mode=0x00020001
-// and sticky pitch on GOLD (p==rb, ow=0) with zero visual. Renderer is not
-// driven by GOLD euler alone when dead.
+// FAILED (do not repeat):
+//   v3 force mode @+0x8C only — town still dead; RE later showed mode also at +0x48
+//   v4 FOV=200 "echoes" — false positives (list nodes); distance scoring preferred
+//     junk over real FOV-matched shadow 08285648
+//   silver multi-write (~12 FOV hits) — camera chaos
+//   CAMERA_SLOT rewrite — crash
 //
-// v4: also write pitch/yaw to a tiny set of near-slot FOV "echo" objects
-// (FOV 150–400, pitch layout ok, flag != 0x0F). WIDE scans show flag=0
-// FOV≈225 siblings that desync from GOLD pitch when freelook dies
-// (e.g. 08285648). Cap at 2 echoes. Never multi FOV. Never rewrite slot.
-// Stop force-writing mode (useless for visual; pollutes RE).
+// echo-v4 dumps (2026-07-24): when freelook WORKS, flag=0 FOV≈primary shadow
+// (08285648) tracks pitch; when DEAD, shadow pitch goes STALE while GOLD sticky.
+// Town locked mode is 0x000D0001 at BOTH +0x48 and +0x8C; working FREE at both.
+// Dual block: +0x48..+0x74 mirrors +0x8C..+0xB8 (mode/pitch/yaw/FOV).
+//
+// v5: FOV-matched shadows only (|fov-pri|<=2, flag=0, camera-ish layout);
+// dual-mode unlock (+48 and +8C); dual FOV write (+6C and +B0) for zoom.
+// Never multi FOV blast. Never rewrite slot.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -38,11 +44,14 @@ constexpr u32 OFF_MODE = 0x8C;
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
-// Mirror block seen in working RE dumps (obj+50..+58 == +94..+9C floats)
+// Dual / mirror block (echo-v4 PRI dumps: +40..+74 == +80..+B8 shape)
+constexpr u32 OFF_MODE_ALT = 0x48;
 constexpr u32 OFF_PITCH_ALT = 0x54;
 constexpr u32 OFF_YAW_ALT = 0x58;
+constexpr u32 OFF_FOV_ALT = 0x6C;
 constexpr u32 LIVE_FLAG = 0x0F;
 constexpr u32 MODE_FREELOOK = 0x00020001;
+constexpr u32 MODE_TOWN_LOCK = 0x000D0001;
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
@@ -62,8 +71,10 @@ constexpr int ANDROID_STICK_C = 718;
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 constexpr u64 COLLECT_INTERVAL = 40'000'000;
 constexpr u32 SCAN_RADIUS = 0x180000;
-constexpr u32 ECHO_RADIUS = 0x100000; // tighter than gold scan — avoid chaos
+constexpr u32 ECHO_RADIUS = 0x180000; // need reach 08285648-class (~0x4E000 from slot)
 constexpr u32 SCAN_STEP = 0x10;
+// Shadow must match primary FOV closely (rejects FOV=200 junk nodes)
+constexpr float ECHO_FOV_MATCH = 2.0f;
 
 u32 FBits(float f) {
     u32 b = 0;
@@ -202,7 +213,7 @@ void FreeCam::SetFreelookEnabled(bool e) {
         live_count = 0;
         primary_cam = 0;
         last_collect_tick = 0;
-        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=echo-v4 GOLD+echo dual (no mode thrash)");
+        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=shadow-v5 FOV-match+dual-mode");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -336,9 +347,9 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
         last_good_cam = primary_cam;
     }
 
-    // ECHO cams: FOV band + pitch layout, flag != LIVE (gold already covered).
-    // 4-dump: flag=0 FOV≈225 near house band desyncs from GOLD when freelook dies.
-    // Strict caps — full silver multi-write caused chaos.
+    // SHADOW cams: flag=0 + FOV within ECHO_FOV_MATCH of primary (not FOV=200 junk).
+    // echo-v4 RE: 08285648 fov=225.2 tracks pitch when freelook works; goes STALE when
+    // dead while GOLD still sticky. Cap 2. Layout gate rejects list-node false hits.
     struct EchoHit {
         u32 base;
         float score;
@@ -347,7 +358,31 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
     std::unordered_set<u32> echo_seen;
     const float pri_fov =
         primary_cam ? BFloat(mem.Read32(process, primary_cam + OFF_FOV)) : 225.f;
-    const u32 echo_center = HeapPtr(slot_cam) ? slot_cam : (primary_cam ? primary_cam : last_good_cam);
+    const u32 echo_center =
+        HeapPtr(slot_cam) ? slot_cam : (primary_cam ? primary_cam : last_good_cam);
+
+    auto is_camera_ish_shadow = [&](u32 base, float fov) -> bool {
+        // Reject FOV=200 fixed-band junk (echo-v4 false positives: +A4=-100, +B8=120)
+        if (std::fabs(fov - 200.f) < 0.5f && std::fabs(pri_fov - 200.f) > 5.f) {
+            return false;
+        }
+        const float a4 = BFloat(mem.Read32(process, base + 0xA4));
+        const float b8 = BFloat(mem.Read32(process, base + 0xB8));
+        const float fov_alt = BFloat(mem.Read32(process, base + OFF_FOV_ALT));
+        // Gold layout constants: +A4≈32, +B8≈5.1, +6C≈FOV — accept if any match
+        if (OkFloat(a4) && std::fabs(a4 - 32.f) < 1.f) {
+            return true;
+        }
+        if (OkFloat(b8) && std::fabs(b8 - 5.1f) < 0.5f) {
+            return true;
+        }
+        if (OkFloat(fov_alt) && std::fabs(fov_alt - fov) < 5.f) {
+            return true;
+        }
+        // Soft accept: pitch layout + FOV match only (shadows may omit dual)
+        const float p = BFloat(mem.Read32(process, base + OFF_PITCH));
+        return OkPitchLayout(p) || std::fabs(p) < 0.01f;
+    };
 
     auto consider_echo = [&](u32 base) {
         if (!HeapPtr(base) || base + OFF_FOV + 4 >= 0x0C000000 || echo_seen.count(base) ||
@@ -355,32 +390,22 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
             return;
         }
         const u32 flag = mem.Read32(process, base + OFF_FLAG);
-        if (flag == LIVE_FLAG) {
-            return; // gold path already owns these
-        }
-        // Prefer plain zero flag (common echo) — skip wild pointer-looking flags
-        if (flag != 0 && flag > 0xFF) {
-            return;
+        if (flag != 0) {
+            return; // only proven flag=0 shadows from WIDE; other flags = prior chaos
         }
         const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
-        if (!OkGoldFov(fov)) {
+        if (!OkGoldFov(fov) || std::fabs(fov - pri_fov) > ECHO_FOV_MATCH) {
+            return; // must match primary FOV — kills FOV=200 distance winners
+        }
+        if (!is_camera_ish_shadow(base, fov)) {
             return;
         }
-        const float p = BFloat(mem.Read32(process, base + OFF_PITCH));
-        if (!OkPitchLayout(p) && std::fabs(p) > 0.01f) {
-            // allow near-zero pitch (neutral) even if outside strict layout
-            if (!OkFloat(p) || p < -50.f || p > 40.f) {
-                return;
-            }
-        }
         echo_seen.insert(base);
-        float s = std::fabs(fov - 225.f) + std::fabs(fov - pri_fov) * 0.25f;
+        // Score: FOV match first, tiny distance tie-break (not dominant)
+        float s = std::fabs(fov - pri_fov) * 100.f;
         if (HeapPtr(echo_center)) {
             const u32 dist = base > echo_center ? base - echo_center : echo_center - base;
-            s += static_cast<float>(dist) / 2048.f;
-        }
-        if (flag == 0) {
-            s -= 5.f; // prefer flag=0 echoes from WIDE scans
+            s += static_cast<float>(dist) / 65536.f;
         }
         echoes.push_back({base, s});
     };
@@ -399,8 +424,9 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
     if (primary_cam && primary_cam != echo_center) {
         scan_echo(primary_cam);
     }
-    // Known desync echo band from 4-dump WIDE (08285648 family)
+    // Known FOV-matched shadow band (08285648 family from 4-dump WIDE)
     scan_echo(0x08285000);
+    scan_echo(0x08284000);
 
     std::sort(echoes.begin(), echoes.end(),
               [](const EchoHit& a, const EchoHit& b) { return a.score < b.score; });
@@ -470,7 +496,7 @@ void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& proc
 }
 
 void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process) {
-    auto write_angles = [&](u32 cam, bool dual) {
+    auto write_angles = [&](u32 cam, bool dual_block) {
         if (!HeapPtr(cam) || cam + OFF_FOV + 4 >= 0x0C000000) {
             return;
         }
@@ -478,10 +504,30 @@ void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process&
         if (OkFloat(yaw)) {
             WriteF(mem, process, cam + OFF_YAW, yaw);
         }
-        if (dual) {
+        if (dual_block) {
             WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
             if (OkFloat(yaw)) {
                 WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
+            }
+        }
+    };
+
+    auto unlock_mode_dual = [&](u32 cam) {
+        // Town RE: mode 0x000D0001 at BOTH +0x48 and +0x8C. v3 only wrote +0x8C.
+        const u32 m8 = mem.Read32(process, cam + OFF_MODE);
+        const u32 m48 = mem.Read32(process, cam + OFF_MODE_ALT);
+        if (m8 == MODE_FREELOOK && m48 == MODE_FREELOOK) {
+            return;
+        }
+        // Only touch known lock / mismatched dual — never thrash unknown modes blindly
+        if (m8 == MODE_TOWN_LOCK || m48 == MODE_TOWN_LOCK || m8 != m48 ||
+            m8 != MODE_FREELOOK || m48 != MODE_FREELOOK) {
+            mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
+            mem.Write32(process, cam + OFF_MODE_ALT, MODE_FREELOOK);
+            if ((diag % 30) == 0) {
+                LOG_WARNING(Core,
+                            "Hoenn dual-mode unlock cam={:08X} was +8C={:08X} +48={:08X}", cam, m8,
+                            m48);
             }
         }
     };
@@ -491,13 +537,16 @@ void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process&
         if (!IsGoldLive(mem, process, cam)) {
             continue;
         }
-        // Do NOT force mode — v3 proved mode=FREE + sticky pitch can still be dead.
+        unlock_mode_dual(cam);
         write_angles(cam, true);
     }
 
-    // Echo path: pitch/yaw only (no mode, no FOV, no dual — dual offset may not exist)
+    // FOV-matched shadows: pitch/yaw + dual if layout looks gold-like
     for (int i = 0; i < echo_count; ++i) {
-        write_angles(echo_targets[static_cast<size_t>(i)], false);
+        const u32 cam = echo_targets[static_cast<size_t>(i)];
+        const float a4 = BFloat(mem.Read32(process, cam + 0xA4));
+        const bool dual = OkFloat(a4) && std::fabs(a4 - 32.f) < 1.f;
+        write_angles(cam, dual);
     }
 }
 
@@ -668,7 +717,7 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
     std::snprintf(dump_prev_tag, sizeof(dump_prev_tag), "%s", t);
 
     char toast[112];
-    std::snprintf(toast, sizeof(toast), "RE g=%d e=%d pri=%08X slot=%s", live_count, echo_count,
+    std::snprintf(toast, sizeof(toast), "RE g=%d sh=%d pri=%08X slot=%s", live_count, echo_count,
                   primary_cam, IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead");
     return std::string(toast);
 }
@@ -754,9 +803,11 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (l && !r) {
             user_fov = std::min(FOV_ZOOM_MAX, user_fov + FOV_STEP);
             WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
+            WriteF(mem, *process, primary_cam + OFF_FOV_ALT, user_fov); // dual FOV
         } else if (r && !l) {
             user_fov = std::max(FOV_ZOOM_MIN, user_fov - FOV_STEP);
             WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
+            WriteF(mem, *process, primary_cam + OFF_FOV_ALT, user_fov);
         }
     }
 
@@ -831,8 +882,8 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
                 : 0.f;
         const u32 mode = primary_cam ? mem.Read32(*process, primary_cam + OFF_MODE) : 0;
         LOG_INFO(Core,
-                 "Hoenn ok v4 gold_n={} echo_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} "
-                 "echo0_p={:.1f} mode={:08X} ow={}",
+                 "Hoenn ok v5 gold_n={} sh_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} "
+                 "sh0_p={:.1f} mode={:08X} ow={}",
                  live_count, echo_count, primary_cam, slot_cam, pitch, rb, echo_p, mode,
                  overwrite_streak);
     }

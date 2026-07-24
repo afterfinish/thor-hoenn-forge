@@ -26,9 +26,8 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * GOLD = flag+0x80==0x0F + FOV 150–400. Also ECHO = FOV band + pitch-ish +
- * flag!=0x0F near slot (max 2) — v4 path when GOLD accepts pitch but view dead.
- * Never rewrite CAMERA_SLOT. Never multi FOV. Never force mode thrash.
+ * GOLD = flag+0x80==0x0F + FOV 150–400. SHADOW = flag=0 + FOV≈primary (max 2).
+ * Dual mode +0x48/+0x8C; dual FOV +0x6C/+0xB0. Never slot rewrite / multi FOV.
  */
 class FreeCam {
 public:
