@@ -30,6 +30,7 @@ namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_FLAG = 0x80;
 // Primary freelook fields (community + RE)
+constexpr u32 OFF_MODE = 0x8C; // RE 4-dump: 0x00020001 freelook works; 0x000D0001 town locked
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
@@ -37,6 +38,8 @@ constexpr u32 OFF_FOV = 0xB0;
 constexpr u32 OFF_PITCH_ALT = 0x54;
 constexpr u32 OFF_YAW_ALT = 0x58;
 constexpr u32 LIVE_FLAG = 0x0F;
+constexpr u32 MODE_FREELOOK = 0x00020001; // house 1F/2F working dumps
+constexpr u32 MODE_TOWN_LOCK = 0x000D0001; // town GOLD but freelook dead
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
@@ -308,10 +311,21 @@ void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& pro
         live_targets[static_cast<size_t>(live_count++)] = h.base;
     }
 
+    // Prefer GOLD slot with freelook mode 0x00020001, then any GOLD slot, then best hit
+    primary_cam = 0;
     if (IsGoldLive(mem, process, slot_cam)) {
         primary_cam = slot_cam;
-    } else if (live_count > 0) {
-        primary_cam = live_targets[0];
+    } else {
+        for (int i = 0; i < live_count; ++i) {
+            const u32 b = live_targets[static_cast<size_t>(i)];
+            if (mem.Read32(process, b + OFF_MODE) == MODE_FREELOOK) {
+                primary_cam = b;
+                break;
+            }
+        }
+        if (primary_cam == 0 && live_count > 0) {
+            primary_cam = live_targets[0];
+        }
     }
     if (primary_cam) {
         last_good_cam = primary_cam;
@@ -380,6 +394,16 @@ void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process&
         const u32 cam = live_targets[static_cast<size_t>(i)];
         if (!IsGoldLive(mem, process, cam)) {
             continue;
+        }
+        // 4-dump RE: town GOLD uses mode 0x000D0001 (freelook dead); house uses
+        // 0x00020001 (freelook works). Force freelook-capable mode while driving.
+        const u32 mode = mem.Read32(process, cam + OFF_MODE);
+        if (mode != MODE_FREELOOK) {
+            mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
+            if ((diag % 45) == 0) {
+                LOG_WARNING(Core, "Hoenn mode unlock cam={:08X} {:08X} → {:08X}", cam, mode,
+                            MODE_FREELOOK);
+            }
         }
         // Primary block
         WriteF(mem, process, cam + OFF_PITCH, pitch);
@@ -499,9 +523,12 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
                 slot_cam, live_count, primary_cam);
     for (int i = 0; i < live_count; ++i) {
         const u32 b = live_targets[static_cast<size_t>(i)];
-        LOG_WARNING(Core, "Hoenn RE GOLD[{}] {:08X} fov={:.0f} fl={:X} p={:.2f}", i, b,
-                    BFloat(mem.Read32(*process, b + OFF_FOV)), mem.Read32(*process, b + OFF_FLAG),
-                    BFloat(mem.Read32(*process, b + OFF_PITCH)));
+        const u32 mode = mem.Read32(*process, b + OFF_MODE);
+        LOG_WARNING(Core, "Hoenn RE GOLD[{}] {:08X} fov={:.0f} fl={:X} mode={:08X} p={:.2f} {}", i,
+                    b, BFloat(mem.Read32(*process, b + OFF_FOV)),
+                    mem.Read32(*process, b + OFF_FLAG), mode,
+                    BFloat(mem.Read32(*process, b + OFF_PITCH)),
+                    mode == MODE_FREELOOK ? "FREE" : "locked?");
     }
     LogWideScan(mem, *process, slot_cam);
 
@@ -532,8 +559,9 @@ std::string FreeCam::DumpREState(Core::System& system, const char* tag) {
     std::snprintf(dump_prev_tag, sizeof(dump_prev_tag), "%s", t);
 
     char toast[96];
-    std::snprintf(toast, sizeof(toast), "RE gold=%d pri=%08X slot=%s", live_count, primary_cam,
-                  IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead");
+    const u32 sm = HeapPtr(slot_cam) ? mem.Read32(*process, slot_cam + OFF_MODE) : 0;
+    std::snprintf(toast, sizeof(toast), "RE g=%d pri=%08X slot=%s m=%X", live_count, primary_cam,
+                  IsGoldLive(mem, *process, slot_cam) ? "GOLD" : "dead", sm);
     return std::string(toast);
 }
 
