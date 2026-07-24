@@ -26,17 +26,17 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * LIVE freelook object (RE dump): flag+0x80 == 0x0F, FOV ~150–400.
- *
- * Zone / floor changes often keep *CAMERA_SLOT on a DEAD object while another
- * sibling (e.g. 082D3920 / 082D4898) is the active render cam — both may be
- * gold-LIVE at different times. Fix: collect ALL gold-LIVE cams near the slot
- * and write pitch/yaw to every one (not FOV). Never rewrite CAMERA_SLOT.
+ * Gold LIVE (RE): flag+0x80==0x0F + FOV 150–400 — works most overworld/house.
+ * Zone dogfood: freelook dies while multi still has gold LIVE siblings
+ * (08188228, 082D3920) that accept pitch writes but are NOT the render cam.
+ * Working moments: slot itself gold LIVE (082D3458 / 082D4898).
+ * Bad zone: slot DEAD; need SILVER candidates (FOV band + pitch layout, any flag).
+ * Multi-write pitch/yaw to gold+silver. Never multi FOV. Never CAMERA_SLOT rewrite.
  */
 class FreeCam {
 public:
-    static constexpr int kMaxCamCandidates = 16;
-    static constexpr int kMaxLiveTargets = 8;
+    static constexpr int kMaxCamCandidates = 20;
+    static constexpr int kMaxLiveTargets = 12;
 
     static FreeCam& GetInstance();
 
@@ -80,7 +80,8 @@ private:
         float yaw = 0.f;
         u32 flag80 = 0;
         bool is_slot = false;
-        bool live = false;
+        bool gold = false;
+        bool silver = false;
         float score = 0.f;
     };
 
@@ -103,10 +104,9 @@ private:
     u32 last_good_cam = 0;
     u64 last_collect_tick = 0;
 
-    // All gold-LIVE cams we multi-write (pitch/yaw only)
     std::array<u32, kMaxLiveTargets> live_targets{};
     int live_count = 0;
-    u32 primary_cam = 0; // seed angles from this (prefer live slot)
+    u32 primary_cam = 0;
 
     int probe_index = 0;
     std::vector<CamCandidate> candidates;
@@ -125,10 +125,12 @@ private:
     void ResetYaw();
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
 
-    bool IsLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    /** Refresh live_targets[] — every gold LIVE near slot (+ BSS). */
+    bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
+    bool IsSilverLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
+    bool IsDriveTarget(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
     void WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process);
+    void LogWideScan(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam) const;
 };
 
 } // namespace Hoenn
