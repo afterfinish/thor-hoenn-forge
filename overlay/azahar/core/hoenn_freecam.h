@@ -1,6 +1,7 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 #pragma once
 
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -25,18 +26,17 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * RE + logcat 2026-07-24:
- *   LIVE freelook:  flag+0x80 == 0x0F, FOV ~180–350 (often 225)
- *   DEAD after 2F:  flag 0, FOV garbage — pitch may still be "sticky"
- * Bug: requiring pitch-in-range for "live" false-killed real cam
- *   (log: skip writes cam=082D3458 DEAD fov=225 flag=0x0F) then hunted
- *   fake FOV floats (798/110/…) → stick felt like zoom-to-nothing.
- * Fix: live = flag 0x0F + sane FOV only; never hunt without flag 0x0F.
- * Never rewrite CAMERA_SLOT.
+ * LIVE freelook object (RE dump): flag+0x80 == 0x0F, FOV ~150–400.
+ *
+ * Zone / floor changes often keep *CAMERA_SLOT on a DEAD object while another
+ * sibling (e.g. 082D3920 / 082D4898) is the active render cam — both may be
+ * gold-LIVE at different times. Fix: collect ALL gold-LIVE cams near the slot
+ * and write pitch/yaw to every one (not FOV). Never rewrite CAMERA_SLOT.
  */
 class FreeCam {
 public:
     static constexpr int kMaxCamCandidates = 16;
+    static constexpr int kMaxLiveTargets = 8;
 
     static FreeCam& GetInstance();
 
@@ -87,7 +87,6 @@ private:
     bool freelook = false;
     bool zoom_assist = false;
     float sensitivity = 3.0f;
-    // Dogfood 2026-07-24: previous defaults felt exactly inverted on Thor.
     bool invert_x = false;
     bool invert_y = true;
 
@@ -99,15 +98,16 @@ private:
     bool in_battle = false;
     u64 quiet_until = 0;
     u32 diag = 0;
-    u32 last_cam = 0;
     u32 last_process_id = 0;
-    u32 last_good_cam = 0;
     u32 last_slot_cam = 0;
-    u32 dead_streak = 0;
-    u32 live_streak = 0;
-    u64 last_hunt_tick = 0;
+    u32 last_good_cam = 0;
+    u64 last_collect_tick = 0;
 
-    u32 drive_override = 0;
+    // All gold-LIVE cams we multi-write (pitch/yaw only)
+    std::array<u32, kMaxLiveTargets> live_targets{};
+    int live_count = 0;
+    u32 primary_cam = 0; // seed angles from this (prefer live slot)
+
     int probe_index = 0;
     std::vector<CamCandidate> candidates;
 
@@ -124,12 +124,11 @@ private:
     void EnsureDevices();
     void ResetYaw();
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
-    u32 ResolveDriveBase(Memory::MemorySystem& mem, Kernel::Process& process) const;
 
-    /** Gold standard from RE: flag 0x0F + field FOV band. No pitch gate. */
     bool IsLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
-    u32 FindLiveFieldCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam) const;
-    void Reacquire(Memory::MemorySystem& mem, Kernel::Process& process, const char* reason);
+    /** Refresh live_targets[] — every gold LIVE near slot (+ BSS). */
+    void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
+    void WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process);
 };
 
 } // namespace Hoenn
