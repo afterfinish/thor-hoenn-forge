@@ -1,22 +1,18 @@
 // Copyright Hoenn Forge — ORAS free look + zoom assist
 //
 // Pitch +0x98 / yaw +0x9C / FOV +0xB0 (L/R on primary GOLD only).
+// Dual pitch/yaw mirrors +0x54/+0x58 (match working PRI layout).
 //
-// FAILED (do not repeat):
-//   v3 force mode @+0x8C only — town still dead; RE later showed mode also at +0x48
-//   v4 FOV=200 "echoes" — false positives (list nodes); distance scoring preferred
-//     junk over real FOV-matched shadow 08285648
-//   silver multi-write (~12 FOV hits) — camera chaos
-//   CAMERA_SLOT rewrite — crash
+// FAILED / regressed (do not repeat):
+//   v3 mode @+0x8C only — no visual fix
+//   v4 FOV=200 echoes — list junk
+//   v5 dual-mode unlock — forced FREE on stereo golds (mode=0) → house/2F poison;
+//     1F dead until leave/reenter; 2F freelook gone
+//   v5 shadow writes — not proven render-owned; risk poison
+//   silver multi · CAMERA_SLOT rewrite
 //
-// echo-v4 dumps (2026-07-24): when freelook WORKS, flag=0 FOV≈primary shadow
-// (08285648) tracks pitch; when DEAD, shadow pitch goes STALE while GOLD sticky.
-// Town locked mode is 0x000D0001 at BOTH +0x48 and +0x8C; working FREE at both.
-// Dual block: +0x48..+0x74 mirrors +0x8C..+0xB8 (mode/pitch/yaw/FOV).
-//
-// v5: FOV-matched shadows only (|fov-pri|<=2, flag=0, camera-ish layout);
-// dual-mode unlock (+48 and +8C); dual FOV write (+6C and +B0) for zoom.
-// Never multi FOV blast. Never rewrite slot.
+// v6 gold-stable: GOLD only (flag 0x0F + FOV band). No mode writes. No shadow
+// writes. RE still logs SHADOW? candidates read-only.
 #include "core/hoenn_freecam.h"
 
 #include <algorithm>
@@ -44,14 +40,12 @@ constexpr u32 OFF_MODE = 0x8C;
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
-// Dual / mirror block (echo-v4 PRI dumps: +40..+74 == +80..+B8 shape)
-constexpr u32 OFF_MODE_ALT = 0x48;
+// Dual / mirror block (PRI dumps: +40..+74 == +80..+B8 shape)
 constexpr u32 OFF_PITCH_ALT = 0x54;
 constexpr u32 OFF_YAW_ALT = 0x58;
-constexpr u32 OFF_FOV_ALT = 0x6C;
+constexpr u32 OFF_FOV_ALT = 0x6C; // RE only (layout gate + dump)
 constexpr u32 LIVE_FLAG = 0x0F;
 constexpr u32 MODE_FREELOOK = 0x00020001;
-constexpr u32 MODE_TOWN_LOCK = 0x000D0001;
 
 constexpr float PITCH_BASE = -12.74f;
 constexpr float PITCH_MIN = -25.f;
@@ -213,7 +207,7 @@ void FreeCam::SetFreelookEnabled(bool e) {
         live_count = 0;
         primary_cam = 0;
         last_collect_tick = 0;
-        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=shadow-v5 FOV-match+dual-mode");
+        LOG_WARNING(Core, "Hoenn free-look ON — BUILD=gold-stable-v6 GOLD only (no mode/shadow write)");
     } else {
         LOG_INFO(Core, "Hoenn free-look OFF");
     }
@@ -528,57 +522,19 @@ void FreeCam::SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& proc
 }
 
 void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process& process) {
-    auto write_angles = [&](u32 cam, bool dual_block) {
-        if (!HeapPtr(cam) || cam + OFF_FOV + 4 >= 0x0C000000) {
-            return;
-        }
-        WriteF(mem, process, cam + OFF_PITCH, pitch);
-        if (OkFloat(yaw)) {
-            WriteF(mem, process, cam + OFF_YAW, yaw);
-        }
-        if (dual_block) {
-            WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
-            if (OkFloat(yaw)) {
-                WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
-            }
-        }
-    };
-
-    auto unlock_mode_dual = [&](u32 cam) {
-        // Town RE: mode 0x000D0001 at BOTH +0x48 and +0x8C. v3 only wrote +0x8C.
-        const u32 m8 = mem.Read32(process, cam + OFF_MODE);
-        const u32 m48 = mem.Read32(process, cam + OFF_MODE_ALT);
-        if (m8 == MODE_FREELOOK && m48 == MODE_FREELOOK) {
-            return;
-        }
-        // Only touch known lock / mismatched dual — never thrash unknown modes blindly
-        if (m8 == MODE_TOWN_LOCK || m48 == MODE_TOWN_LOCK || m8 != m48 ||
-            m8 != MODE_FREELOOK || m48 != MODE_FREELOOK) {
-            mem.Write32(process, cam + OFF_MODE, MODE_FREELOOK);
-            mem.Write32(process, cam + OFF_MODE_ALT, MODE_FREELOOK);
-            if ((diag % 30) == 0) {
-                LOG_WARNING(Core,
-                            "Hoenn dual-mode unlock cam={:08X} was +8C={:08X} +48={:08X}", cam, m8,
-                            m48);
-            }
-        }
-    };
-
+    // GOLD only. Never write mode (v5 dual-mode unlock poisoned interiors by
+    // forcing FREE onto stereo golds with mode=0). Never write shadows.
     for (int i = 0; i < live_count; ++i) {
         const u32 cam = live_targets[static_cast<size_t>(i)];
         if (!IsGoldLive(mem, process, cam)) {
             continue;
         }
-        unlock_mode_dual(cam);
-        write_angles(cam, true);
-    }
-
-    // FOV-matched shadows: pitch/yaw + dual if layout looks gold-like
-    for (int i = 0; i < echo_count; ++i) {
-        const u32 cam = echo_targets[static_cast<size_t>(i)];
-        const float a4 = BFloat(mem.Read32(process, cam + 0xA4));
-        const bool dual = OkFloat(a4) && std::fabs(a4 - 32.f) < 1.f;
-        write_angles(cam, dual);
+        WriteF(mem, process, cam + OFF_PITCH, pitch);
+        WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
+        if (OkFloat(yaw)) {
+            WriteF(mem, process, cam + OFF_YAW, yaw);
+            WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
+        }
     }
 }
 
@@ -835,11 +791,9 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (l && !r) {
             user_fov = std::min(FOV_ZOOM_MAX, user_fov + FOV_STEP);
             WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
-            WriteF(mem, *process, primary_cam + OFF_FOV_ALT, user_fov); // dual FOV
         } else if (r && !l) {
             user_fov = std::max(FOV_ZOOM_MIN, user_fov - FOV_STEP);
             WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
-            WriteF(mem, *process, primary_cam + OFF_FOV_ALT, user_fov);
         }
     }
 
@@ -908,16 +862,12 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     if ((diag++ % 60) == 0) {
         const float rb =
             primary_cam ? BFloat(mem.Read32(*process, primary_cam + OFF_PITCH)) : 0.f;
-        const float echo_p =
-            echo_count > 0
-                ? BFloat(mem.Read32(*process, echo_targets[0] + OFF_PITCH))
-                : 0.f;
         const u32 mode = primary_cam ? mem.Read32(*process, primary_cam + OFF_MODE) : 0;
         LOG_INFO(Core,
-                 "Hoenn ok v5 gold_n={} sh_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} "
-                 "sh0_p={:.1f} mode={:08X} ow={}",
-                 live_count, echo_count, primary_cam, slot_cam, pitch, rb, echo_p, mode,
-                 overwrite_streak);
+                 "Hoenn ok v6 gold_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} mode={:08X} "
+                 "ow={} (shadows RE-only n={})",
+                 live_count, primary_cam, slot_cam, pitch, rb, mode, overwrite_streak,
+                 echo_count);
     }
 }
 

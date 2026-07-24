@@ -26,8 +26,8 @@ namespace Hoenn {
 /**
  * Pitch +0x98 / yaw +0x9C / FOV +0xB0.
  *
- * GOLD = flag+0x80==0x0F + FOV 150–400. SHADOW = flag=0 + FOV≈primary (max 2).
- * Dual mode +0x48/+0x8C; dual FOV +0x6C/+0xB0. Never slot rewrite / multi FOV.
+ * GOLD only (flag+0x80==0x0F + FOV 150–400). Dual pitch/yaw +0x54/+0x58.
+ * Shadows collected for RE dump only — never written (v5 poison). No mode write.
  */
 class FreeCam {
 public:
