@@ -100,6 +100,10 @@ private:
     u32 last_slot_cam = 0;
     u32 last_good_cam = 0;
     u64 last_collect_tick = 0;
+    float last_written_pitch = 0.f;
+    u32 last_write_cam = 0;
+    bool check_stickiness = false;
+    u32 overwrite_streak = 0;
 
     std::array<u32, kMaxLiveTargets> live_targets{};
     int live_count = 0;

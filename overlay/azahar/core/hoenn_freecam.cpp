@@ -29,9 +29,13 @@ namespace Hoenn {
 namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_FLAG = 0x80;
+// Primary freelook fields (community + RE)
 constexpr u32 OFF_PITCH = 0x98;
 constexpr u32 OFF_YAW = 0x9C;
 constexpr u32 OFF_FOV = 0xB0;
+// Mirror block seen in working RE dumps (obj+50..+58 == +94..+9C floats)
+constexpr u32 OFF_PITCH_ALT = 0x54;
+constexpr u32 OFF_YAW_ALT = 0x58;
 constexpr u32 LIVE_FLAG = 0x0F;
 
 constexpr float PITCH_BASE = -12.74f;
@@ -377,9 +381,15 @@ void FreeCam::WriteFreelookToAllLive(Memory::MemorySystem& mem, Kernel::Process&
         if (!IsGoldLive(mem, process, cam)) {
             continue;
         }
+        // Primary block
         WriteF(mem, process, cam + OFF_PITCH, pitch);
         if (OkFloat(yaw)) {
             WriteF(mem, process, cam + OFF_YAW, yaw);
+        }
+        // Mirror block (working dumps: +0x54/+0x58 matched +0x98/+0x9C)
+        WriteF(mem, process, cam + OFF_PITCH_ALT, pitch);
+        if (OkFloat(yaw)) {
+            WriteF(mem, process, cam + OFF_YAW_ALT, yaw);
         }
     }
 }
@@ -616,8 +626,26 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
             LOG_WARNING(Core, "Hoenn: no GOLD cams (slot={:08X}) — wait", slot_cam);
         }
         last_collect_tick = 0;
+        check_stickiness = false;
         return;
     }
+
+    // Stickiness: did game overwrite our last pitch on primary? (locked cam class)
+    if (check_stickiness && last_write_cam && IsGoldLive(mem, *process, last_write_cam)) {
+        const float rb = BFloat(mem.Read32(*process, last_write_cam + OFF_PITCH));
+        if (std::fabs(rb - last_written_pitch) > 1.5f) {
+            overwrite_streak++;
+            if (overwrite_streak == 3 || (overwrite_streak % 30) == 0) {
+                LOG_WARNING(Core,
+                            "Hoenn STICKY-FAIL cam={:08X} wrote p={:.2f} rb={:.2f} (game overwrites "
+                            "— locked/scripted camera)",
+                            last_write_cam, last_written_pitch, rb);
+            }
+        } else {
+            overwrite_streak = 0;
+        }
+    }
+    check_stickiness = false;
 
     float sx = 0.f, sy = 0.f;
     try {
@@ -645,9 +673,17 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
 
     WriteFreelookToAllLive(mem, *process);
 
+    if (primary_cam && IsGoldLive(mem, *process, primary_cam)) {
+        last_written_pitch = pitch;
+        last_write_cam = primary_cam;
+        check_stickiness = true;
+    }
+
     if ((diag++ % 60) == 0) {
-        LOG_INFO(Core, "Hoenn ok gold_n={} pri={:08X} slot={:08X} p={:.1f}", live_count, primary_cam,
-                 slot_cam, pitch);
+        const float rb =
+            primary_cam ? BFloat(mem.Read32(*process, primary_cam + OFF_PITCH)) : 0.f;
+        LOG_INFO(Core, "Hoenn ok gold_n={} pri={:08X} slot={:08X} p={:.1f} rb={:.1f} ow={}",
+                 live_count, primary_cam, slot_cam, pitch, rb, overwrite_streak);
     }
 }
 
