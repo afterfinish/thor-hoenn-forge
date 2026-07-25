@@ -107,6 +107,10 @@
     <string name="hoenn_menu_freelook_exp_active">Active: %1$s</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_pokedex">Pokédex (scan top screen)</string>
+    <string name="hoenn_menu_follower_on">Follower probe: On (rough)</string>
+    <string name="hoenn_menu_follower_off">Follower probe: Off</string>
+    <string name="hoenn_menu_follower_enabled_toast">Follower probe ON — walk with left stick outdoors. Watch NPCs/objects lag behind you. Crash/softlock possible; turn off if bad.</string>
+    <string name="hoenn_menu_follower_disabled_toast">Follower probe off</string>
     <string name="hoenn_pokedex_scanning">Scanning top screen…</string>
     <string name="hoenn_pokedex_capture_fail">Could not capture top screen. Try again mid-battle or on a summary screen.</string>
     <string name="hoenn_pokedex_no_match">No Pokémon names found on the top screen.</string>

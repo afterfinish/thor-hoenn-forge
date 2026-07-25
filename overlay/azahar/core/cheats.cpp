@@ -13,6 +13,7 @@
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hoenn_freecam.h"
+#include "core/hoenn_follower.h"
 #include "core/hle/kernel/process.h"
 
 namespace Cheats {
@@ -44,8 +45,9 @@ void CheatEngine::Connect(u32 process_id_) {
         "CheatCore::run_event",
         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
     system.CoreTiming().ScheduleEvent(run_interval_ticks, event);
-    // Let freecam reseed after memory rewind
+    // Let freecam / follower reseed after memory rewind
     Hoenn::FreeCam::GetInstance().OnCoreReconnect();
+    Hoenn::FollowerProbe::GetInstance().OnCoreReconnect();
 }
 
 std::span<const std::shared_ptr<CheatBase>> CheatEngine::GetCheats() const {
@@ -145,16 +147,24 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
     }
 
     auto& cam = Hoenn::FreeCam::GetInstance();
+    auto& fol = Hoenn::FollowerProbe::GetInstance();
     // Freecam always ticks when tools on — independent of L3 turbo
     if (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()) {
         cam.Tick(system, process_id);
     }
+    // Rough follower experiment (path-lag thrash — not product-quality)
+    if (fol.IsEnabled()) {
+        fol.Tick(system, process_id);
+    }
 
     // NEVER schedule 0 or underflow — that was burning freecam settle/recovery in <100ms
-    // HighRateStack experiment shortens freecam interval via GetScheduleInterval().
-    const u64 base = (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled())
-                         ? cam.GetScheduleInterval()
-                         : run_interval_ticks;
+    // FastGold experiment shortens freecam interval via GetScheduleInterval().
+    const bool tools_fast =
+        cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled() || fol.IsEnabled();
+    const u64 base = tools_fast ? (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()
+                                       ? cam.GetScheduleInterval()
+                                       : freecam_interval_ticks)
+                                : run_interval_ticks;
     u64 next = base;
     if (cycles_late > 0 && static_cast<u64>(cycles_late) < base) {
         next = base - static_cast<u64>(cycles_late);

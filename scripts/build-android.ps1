@@ -28,10 +28,12 @@ if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
     Copy-Item $ssSrc $ssDst -Force
     Write-Host "Applied savestate.cpp LoadState null-check"
 }
-# Hoenn free-look core + frame limiter reset (turbo after savestate)
+# Hoenn free-look + follower probe core + frame limiter reset (turbo after savestate)
 foreach ($pair in @(
     @("core\hoenn_freecam.cpp", "src\core\hoenn_freecam.cpp"),
     @("core\hoenn_freecam.h", "src\core\hoenn_freecam.h"),
+    @("core\hoenn_follower.cpp", "src\core\hoenn_follower.cpp"),
+    @("core\hoenn_follower.h", "src\core\hoenn_follower.h"),
     @("core\cheats.cpp", "src\core\cheats\cheats.cpp"),
     @("core\perf_stats.h", "src\core\perf_stats.h"),
     @("core\perf_stats.cpp", "src\core\perf_stats.cpp")
@@ -62,27 +64,47 @@ if (Test-Path $coreCpp) {
         Write-Host "core.cpp FrameLimiter::Reset already present"
     }
 }
-# Hook LDR CRO load/unload so freecam suspends in battle and re-applies on field return
+# Hook LDR CRO load/unload so freecam/follower suspends in battle and re-applies on field return
 $ldrRo = Join-Path $Azahar "src\core\hle\service\ldr_ro\ldr_ro.cpp"
 if (Test-Path $ldrRo) {
     $ldr = Get-Content $ldrRo -Raw
+    $ldrDirty = $false
     if ($ldr -notmatch "hoenn_freecam\.h") {
         $ldr = $ldr -replace '(#include "core/hle/service/ldr_ro/ldr_ro\.h")', "`$1`r`n#include `"core/hoenn_freecam.h`""
+        $ldrDirty = $true
+    }
+    if ($ldr -notmatch "hoenn_follower\.h") {
+        $ldr = $ldr -replace '(#include "core/hoenn_freecam\.h")', "`$1`r`n#include `"core/hoenn_follower.h`""
+        $ldrDirty = $true
     }
     if ($ldr -notmatch "OnModuleLoaded") {
         $ldr = $ldr -replace `
             '(LOG_INFO\(Service_LDR, "CRO \\"\{\}\\" loaded at 0x\{:08X\}, fixed_end=0x\{:08X\}", cro\.ModuleName\(\),\s*\r?\n\s*cro_address, cro_address \+ fix_size\);)', `
-            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleLoaded(cro.ModuleName());"
+            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleLoaded(cro.ModuleName(), cro_address);`r`n    Hoenn::FollowerProbe::GetInstance().OnModuleLoaded(cro.ModuleName(), cro_address);"
         $ldr = $ldr -replace `
             '(LOG_INFO\(Service_LDR, "Unloading CRO \\"\{\}\\"", cro\.ModuleName\(\)\);)', `
-            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleUnloaded(cro.ModuleName());"
-        [System.IO.File]::WriteAllText($ldrRo, $ldr)
-        Write-Host "Patched ldr_ro.cpp freecam battle/field hooks"
+            "`$1`r`n    Hoenn::FreeCam::GetInstance().OnModuleUnloaded(cro.ModuleName());`r`n    Hoenn::FollowerProbe::GetInstance().OnModuleUnloaded(cro.ModuleName());"
+        $ldrDirty = $true
+        Write-Host "Patched ldr_ro.cpp freecam/follower battle/field hooks"
     } else {
-        Write-Host "ldr_ro.cpp freecam hooks already present"
+        if ($ldr -notmatch "FollowerProbe") {
+            $ldr = $ldr -replace `
+                '(Hoenn::FreeCam::GetInstance\(\)\.OnModuleLoaded\([^;]+;)', `
+                "`$1`r`n    Hoenn::FollowerProbe::GetInstance().OnModuleLoaded(cro.ModuleName(), cro_address);"
+            $ldr = $ldr -replace `
+                '(Hoenn::FreeCam::GetInstance\(\)\.OnModuleUnloaded\([^;]+;)', `
+                "`$1`r`n    Hoenn::FollowerProbe::GetInstance().OnModuleUnloaded(cro.ModuleName());"
+            $ldrDirty = $true
+            Write-Host "Patched ldr_ro.cpp follower hooks onto existing freecam"
+        } else {
+            Write-Host "ldr_ro.cpp freecam/follower hooks already present"
+        }
+    }
+    if ($ldrDirty) {
+        [System.IO.File]::WriteAllText($ldrRo, $ldr)
     }
 }
-# Ensure citra_core CMakeLists lists hoenn_freecam (emulator tree is gitignored)
+# Ensure citra_core CMakeLists lists hoenn_freecam + hoenn_follower (emulator tree is gitignored)
 $coreCmake = Join-Path $Azahar "src\core\CMakeLists.txt"
 if (Test-Path $coreCmake) {
     $cm = Get-Content $coreCmake -Raw
@@ -90,6 +112,12 @@ if (Test-Path $coreCmake) {
         $cm = $cm -replace "(cheats/gateway_cheat\.h\r?\n)", "`$1    hoenn_freecam.cpp`n    hoenn_freecam.h`n"
         [System.IO.File]::WriteAllText($coreCmake, $cm)
         Write-Host "Patched core CMakeLists for hoenn_freecam"
+        $cm = Get-Content $coreCmake -Raw
+    }
+    if ($cm -notmatch "hoenn_follower\.cpp") {
+        $cm = $cm -replace "(hoenn_freecam\.h\r?\n)", "`$1    hoenn_follower.cpp`n    hoenn_follower.h`n"
+        [System.IO.File]::WriteAllText($coreCmake, $cm)
+        Write-Host "Patched core CMakeLists for hoenn_follower"
     }
 }
 # NativeLibrary freelook JNI declarations
@@ -164,6 +192,19 @@ if (Test-Path $nlPath) {
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt hoennCaptureTopScreen JNI"
+    }
+    if ($nl -notmatch "setHoennFollowerProbe") {
+        $nl = Get-Content $nlPath -Raw
+        $nl = $nl -replace "(external fun hoennCaptureTopScreen\(resScale: Int\): IntArray\?)", @"
+`$1
+
+    /** Hoenn Forge: rough overworld follower probe (path-lag experiment). */
+    external fun setHoennFollowerProbe(enabled: Boolean)
+    external fun isHoennFollowerProbeEnabled(): Boolean
+    external fun hoennFollowerStatus(): String
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt follower probe JNI"
     }
 }
 # native.cpp freelook implementation
@@ -405,6 +446,39 @@ jintArray Java_org_citra_citra_1emu_NativeLibrary_hoennCaptureTopScreen(
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp hoennCaptureTopScreen JNI"
+    }
+    if ($nc -notmatch "hoenn_follower\.h") {
+        $nc = Get-Content $nativeCpp -Raw
+        $nc = $nc -replace '(#include "core/hoenn_freecam\.h")', "`$1`n#include `"core/hoenn_follower.h`""
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp hoenn_follower include"
+        $nc = Get-Content $nativeCpp -Raw
+    }
+    if ($nc -notmatch "setHoennFollowerProbe") {
+        $nc = Get-Content $nativeCpp -Raw
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennFollowerProbe([[maybe_unused]] JNIEnv* env,
+                                                                  [[maybe_unused]] jobject obj,
+                                                                  jboolean enabled) {
+    Hoenn::FollowerProbe::GetInstance().SetEnabled(static_cast<bool>(enabled));
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennFollowerProbeEnabled(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jboolean>(Hoenn::FollowerProbe::GetInstance().IsEnabled());
+}
+
+jstring Java_org_citra_citra_1emu_NativeLibrary_hoennFollowerStatus(JNIEnv* env,
+                                                                   [[maybe_unused]] jobject obj) {
+    const std::string s = Hoenn::FollowerProbe::GetInstance().StatusLine();
+    return env->NewStringUTF(s.c_str());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp follower probe JNI"
     }
 }
 $Main = Join-Path $Android "app\src\main"

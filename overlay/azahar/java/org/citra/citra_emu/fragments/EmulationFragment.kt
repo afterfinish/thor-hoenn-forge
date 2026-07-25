@@ -536,6 +536,7 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val freelookOn = prefs.freelookEnabled
         val zoomOn = prefs.cameraZoomAssistEnabled
+        val followerOn = prefs.followerProbeEnabled
         val expLabel = try {
             org.citra.citra_emu.hoennforge.HoennFreecam.getExperimentLabel(prefs.freelookExperiment)
         } catch (_: Exception) {
@@ -545,6 +546,15 @@ class EmulationFragment :
             org.citra.citra_emu.hoennforge.HoennFreecam.getCamProbeIndex()
         } catch (_: Exception) {
             0
+        }
+        val folStatus = if (followerOn) {
+            try {
+                "\n" + org.citra.citra_emu.hoennforge.HoennFollower.statusLine()
+            } catch (_: Exception) {
+                ""
+            }
+        } else {
+            ""
         }
         val items = arrayOf(
             getString(
@@ -562,6 +572,13 @@ class EmulationFragment :
                     R.string.hoenn_menu_zoom_off
                 },
             ),
+            getString(
+                if (followerOn) {
+                    R.string.hoenn_menu_follower_on
+                } else {
+                    R.string.hoenn_menu_follower_off
+                },
+            ) + folStatus,
             getString(R.string.hoenn_menu_pokedex),
             getString(R.string.hoenn_menu_cam_probe) + if (probeN > 0) " (#$probeN)" else " (#0 slot)",
             getString(R.string.hoenn_menu_cam_re_dump),
@@ -576,11 +593,12 @@ class EmulationFragment :
                     0 -> toggleHoennFreelook()
                     1 -> showHoennFreelookExperimentMenu()
                     2 -> toggleHoennZoomAssist()
-                    3 -> openHoennPokedex()
-                    4 -> showHoennCamProbeMenu()
-                    5 -> dumpHoennCamRE()
-                    6 -> showHoennStateSlots(isSaving = true)
-                    7 -> showHoennStateSlots(isSaving = false)
+                    3 -> toggleHoennFollowerProbe()
+                    4 -> openHoennPokedex()
+                    5 -> showHoennCamProbeMenu()
+                    6 -> dumpHoennCamRE()
+                    7 -> showHoennStateSlots(isSaving = true)
+                    8 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
@@ -799,6 +817,51 @@ class EmulationFragment :
         ).show()
     }
 
+    /** Rough path-lag follower experiment — walk outdoors and watch for trail. */
+    private fun toggleHoennFollowerProbe() {
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        if (!org.citra.citra_emu.hoennforge.HoennFollower.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_camera_unsupported,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val next = !prefs.followerProbeEnabled
+        val ok = org.citra.citra_emu.hoennforge.HoennFollower.apply(titleId, next)
+        if (!ok) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_zoom_failed,
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        prefs.followerProbeEnabled = next
+        val extra = if (next) {
+            try {
+                "\n" + org.citra.citra_emu.hoennforge.HoennFollower.statusLine()
+            } catch (_: Exception) {
+                ""
+            }
+        } else {
+            ""
+        }
+        Toast.makeText(
+            requireContext(),
+            getString(
+                if (next) {
+                    R.string.hoenn_menu_follower_enabled_toast
+                } else {
+                    R.string.hoenn_menu_follower_disabled_toast
+                },
+            ) + extra,
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
     /** Re-apply camera tools after boot if the user left them on. */
     private fun applyHoennFreecamIfNeeded() {
         if (!::game.isInitialized || !NativeLibrary.isRunning()) return
@@ -816,6 +879,9 @@ class EmulationFragment :
         if (prefs.freelookEnabled) {
             org.citra.citra_emu.hoennforge.HoennFreecam.setExperimentMode(prefs.freelookExperiment)
             org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(game.titleId, true)
+        }
+        if (prefs.followerProbeEnabled) {
+            org.citra.citra_emu.hoennforge.HoennFollower.apply(game.titleId, true)
         }
     }
 

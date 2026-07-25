@@ -66,6 +66,11 @@ class HoennPrefs(context: Context) {
         get() = prefs.getInt(KEY_FREELOOK_EXP, 0)
         set(value) = prefs.edit { putInt(KEY_FREELOOK_EXP, value) }
 
+    /** Rough overworld follower probe (START menu). Not product-quality. */
+    var followerProbeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FOLLOWER, false)
+        set(value) = prefs.edit { putBoolean(KEY_FOLLOWER, value) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -110,6 +115,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
         private const val KEY_FREELOOK = "freelook_enabled"
         private const val KEY_FREELOOK_EXP = "freelook_experiment"
+        private const val KEY_FOLLOWER = "follower_probe_enabled"
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }
