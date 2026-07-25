@@ -1,12 +1,7 @@
 // Copyright Hoenn Forge — experimental overworld follower probe
 //
-// Rough test only. Does NOT implement HG/SS-quality following.
-// Strategy:
-//  1) Confirm DllField + GetPlayerFollower* API name table is mapped.
-//  2) Discover a world-pos triple that moves with circle pad (= player-ish).
-//  3) Discover a second triple nearby (NPC / leftover model).
-//  4) Write lagged player positions into that second object each tick.
-// If anything trails you, the field model pipeline is writable enough to build on.
+// Rough test only. Must stay cheap: never full-process scan in one tick
+// (that froze the game on first enable).
 
 #include "core/hoenn_follower.h"
 
@@ -18,7 +13,6 @@
 #include "common/logging/log.h"
 #include "common/settings.h"
 #include "core/core.h"
-#include "core/core_timing.h"
 #include "core/hle/kernel/process.h"
 #include "core/memory.h"
 
@@ -26,9 +20,14 @@ namespace Hoenn {
 
 namespace {
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
-// File offset of GetPlayerFollowerGridX string in DllField.cro
 constexpr u32 DLL_FOLLOWER_STR_OFF = 0x10B4BA;
 constexpr float PAD_DZ = 0.18f;
+
+// Hard budgets per tick — keep emu responsive
+constexpr int kApiBytesPerTick = 0x2000;     // 8 KiB string hunt
+constexpr int kFollowerBasesPerTick = 48;    // small chunk of heap
+constexpr u32 kFollowerStep = 0x80;
+constexpr u32 kFollowerWindow = 0x8000;      // ±32 KiB around player only
 
 bool HeapPtr(u32 p) {
     return p >= 0x08000000 && p < 0x0C000000;
@@ -83,13 +82,16 @@ void FollowerProbe::EnsurePad() {
 
 void FollowerProbe::OnCoreReconnect() {
     dllfield_base = 0;
-    api_logged = false;
+    api_done = false;
     api_name_addr = 0;
+    api_scan_cursor = 0;
     have_player = false;
     player_obj = 0;
     follow_obj = 0;
     hist_n = 0;
     hist_i = 0;
+    scan_cursor = 0;
+    fail_cooldown = 0;
     LOG_INFO(Core, "Hoenn follower: core reconnect");
 }
 
@@ -103,7 +105,6 @@ void FollowerProbe::OnModuleLoaded(std::string_view name, u32 load_address) {
         if (load_address != 0) {
             dllfield_base = load_address;
         }
-        api_logged = false;
         LOG_WARNING(Core, "Hoenn follower: DllField @{:08X}", dllfield_base);
     }
 }
@@ -111,8 +112,8 @@ void FollowerProbe::OnModuleLoaded(std::string_view name, u32 load_address) {
 void FollowerProbe::OnModuleUnloaded(std::string_view name) {
     if (name == "DllField") {
         dllfield_base = 0;
-        api_logged = false;
         have_player = false;
+        follow_obj = 0;
     } else if (name == "DllBattle") {
         in_battle = false;
     }
@@ -126,8 +127,11 @@ void FollowerProbe::SetEnabled(bool e) {
     have_player = false;
     player_obj = follow_obj = 0;
     hist_n = hist_i = 0;
-    api_logged = false;
-    LOG_WARNING(Core, "Hoenn follower probe {}", enabled ? "ON (rough experiment)" : "OFF");
+    scan_cursor = 0;
+    fail_cooldown = 0;
+    // Do NOT reset api_done — keep any prior string hit; never re-blast full scan
+    LOG_WARNING(Core, "Hoenn follower probe {} (budgeted, no full-scan)",
+                enabled ? "ON" : "OFF");
 }
 
 bool FollowerProbe::IsEnabled() const {
@@ -141,55 +145,15 @@ std::string FollowerProbe::StatusLine() const {
     return std::string(buf);
 }
 
-void FollowerProbe::RecoverDllField(Memory::MemorySystem& mem, Kernel::Process& process) {
-    if (dllfield_base != 0 && api_name_addr != 0) {
-        return;
-    }
-    // Find "GetPlayerFollowerGridX" in process image → base = addr - file_off
-    constexpr u32 kLo = 0x00100000;
-    constexpr u32 kHi = 0x00A00000;
-    const char* needle = "GetPlayerFollowerGridX";
-    const u32 nlen = 22;
-    for (u32 a = kLo; a + nlen < kHi; a += 4) {
-        bool match = true;
-        for (u32 i = 0; i < nlen; ++i) {
-            if (static_cast<char>(mem.Read8(process, a + i)) != needle[i]) {
-                match = false;
-                break;
-            }
-        }
-        if (!match) {
-            continue;
-        }
-        api_name_addr = a;
-        if (a >= DLL_FOLLOWER_STR_OFF) {
-            dllfield_base = a - DLL_FOLLOWER_STR_OFF;
-        }
-        LOG_WARNING(Core,
-                    "Hoenn follower: found API name @{:08X} dll_base={:08X} "
-                    "(GetPlayerFollowerGridX)",
-                    a, dllfield_base);
-        // Peek nearby name table for logging
-        LOG_WARNING(Core, "Hoenn follower: API table present — BehindWalk / MdlAdd / "
-                          "AddCommMultiTrainerObjOnGrid also in DllField");
-        return;
-    }
-    if ((diag % 200) == 0) {
-        LOG_WARNING(Core, "Hoenn follower: GetPlayerFollowerGridX string not found yet");
-    }
-}
-
 bool FollowerProbe::LooksPos(float x, float y, float z) const {
     if (!OkF(x) || !OkF(y) || !OkF(z)) {
         return false;
     }
     const float ax = std::fabs(x), ay = std::fabs(y), az = std::fabs(z);
     const float m = std::max({ax, ay, az});
-    // World-ish coords (ORAS field is large)
     if (m < 5.f || m > 5.0e5f) {
         return false;
     }
-    // Reject camera dual constants
     if (std::fabs(ay - 1.f) < 0.01f && m < 5.f) {
         return false;
     }
@@ -230,171 +194,170 @@ void FollowerProbe::PushHist(float x, float y, float z) {
     }
 }
 
-void FollowerProbe::DiscoverPlayerAndFollower(Memory::MemorySystem& mem, Kernel::Process& process,
-                                              float pad_x, float pad_y) {
-    const bool pad_active = std::fabs(pad_x) >= PAD_DZ || std::fabs(pad_y) >= PAD_DZ;
-    const u32 slot = mem.Read32(process, CAMERA_SLOT);
-    if (!HeapPtr(slot)) {
-        return;
-    }
-
-    // Centers: camera slot object + known house/town gold bands
-    const u32 centers[] = {slot, 0x082D3000, 0x082D4000, 0x08188000, last_px != 0 ? 0u : 0u};
-    (void)centers;
-
-    struct Hit {
-        u32 base;
-        u32 off;
-        float x, y, z;
-        float move;
-    };
-    Hit best_player{};
-    Hit best_other{};
-    bool have_bp = false, have_bo = false;
-
-    auto consider = [&](u32 base, u32 off) {
-        float x, y, z;
-        if (!ReadPos(mem, process, base, off, x, y, z)) {
-            return;
-        }
-        // Skip dual freelook band on camera objects
-        if (off >= 0x40 && off <= 0xB8) {
-            return;
-        }
-        float move = 0.f;
-        if (have_player && base == player_obj && off == player_pos_off) {
-            move = std::fabs(x - last_px) + std::fabs(z - last_pz);
-        }
-        // Prefer objects that move when pad is active
-        if (pad_active && have_player && base == player_obj && off == player_pos_off) {
-            // update path below
-        }
-        if (!have_player) {
-            // First pass: pick anything that moves with pad later
-            if (!have_bp) {
-                best_player = {base, off, x, y, z, 0.f};
-                have_bp = true;
-            }
-        }
-        // Follower candidate: different base, similar Y, not same pos
-        if (have_player && base != player_obj) {
-            const float dist = std::fabs(x - last_px) + std::fabs(z - last_pz);
-            if (dist > 2.f && dist < 8000.f) {
-                if (!have_bo || dist < best_other.move) {
-                    best_other = {base, off, x, y, z, dist};
-                    have_bo = true;
-                }
-            }
-        }
-    };
-
-    // Bootstrap player: scan near slot for first good world pos outside dual
-    if (!have_player) {
-        for (u32 base = slot > 0x8000 ? slot - 0x8000 : 0x08000000;
-             base < slot + 0x10000 && base + 0x200 < 0x0C000000; base += 0x20) {
-            for (u32 off = 0; off + 12 <= 0x1C0; off += 4) {
-                if (off >= 0x40 && off <= 0xB8) {
-                    continue;
-                }
-                float x, y, z;
-                if (ReadPos(mem, process, base, off, x, y, z)) {
-                    player_obj = base;
-                    player_pos_off = off;
-                    last_px = x;
-                    last_py = y;
-                    last_pz = z;
-                    have_player = true;
-                    LOG_WARNING(Core,
-                                "Hoenn follower: player-ish pos @{:08X}+{:03X} "
-                                "({:.1f},{:.1f},{:.1f})",
-                                base, off, x, y, z);
+// Optional API-name log only. 8 KiB/tick, never blocks.
+void FollowerProbe::MaybeScanApiName(Memory::MemorySystem& mem, Kernel::Process& process) {
+    if (api_done || dllfield_base == 0) {
+        // If we already have dll base from CRO load, try fixed file offset once
+        if (!api_done && dllfield_base != 0 && api_name_addr == 0) {
+            const u32 a = dllfield_base + DLL_FOLLOWER_STR_OFF;
+            const char* needle = "GetPlayerFollowerGridX";
+            bool match = true;
+            for (u32 i = 0; i < 22; ++i) {
+                if (static_cast<char>(mem.Read8(process, a + i)) != needle[i]) {
+                    match = false;
                     break;
                 }
             }
-            if (have_player) {
+            if (match) {
+                api_name_addr = a;
+                LOG_WARNING(Core, "Hoenn follower: API name @{:08X} (via dll base)", a);
+            }
+            api_done = true; // one shot only
+        }
+        return;
+    }
+    // No dll base: tiny budgeted scan in code region (optional)
+    constexpr u32 kLo = 0x00100000;
+    constexpr u32 kHi = 0x00400000; // 3 MiB max, chunked
+    if (api_scan_cursor < kLo) {
+        api_scan_cursor = kLo;
+    }
+    if (api_scan_cursor >= kHi) {
+        api_done = true;
+        return;
+    }
+    const char* needle = "GetPlayerFollowerGridX";
+    const u32 end = std::min(api_scan_cursor + static_cast<u32>(kApiBytesPerTick), kHi);
+    for (u32 a = api_scan_cursor; a + 22 < end; a += 4) {
+        if (static_cast<char>(mem.Read8(process, a)) != 'G') {
+            continue;
+        }
+        bool match = true;
+        for (u32 i = 1; i < 22; ++i) {
+            if (static_cast<char>(mem.Read8(process, a + i)) != needle[i]) {
+                match = false;
                 break;
             }
         }
-        // Also try known gold band for non-cam objects
-        if (!have_player) {
-            for (u32 base = 0x082D0000; base < 0x082E0000; base += 0x40) {
-                for (u32 off = 0; off + 12 <= 0x100; off += 4) {
-                    if (off >= 0x40 && off <= 0xB8) {
-                        continue;
-                    }
-                    float x, y, z;
-                    if (ReadPos(mem, process, base, off, x, y, z)) {
-                        player_obj = base;
-                        player_pos_off = off;
-                        last_px = x;
-                        last_py = y;
-                        last_pz = z;
-                        have_player = true;
-                        LOG_WARNING(Core,
-                                    "Hoenn follower: player-ish (band) @{:08X}+{:03X} "
-                                    "({:.1f},{:.1f},{:.1f})",
-                                    base, off, x, y, z);
-                        break;
-                    }
-                }
-                if (have_player) {
-                    break;
-                }
+        if (match) {
+            api_name_addr = a;
+            if (a >= DLL_FOLLOWER_STR_OFF) {
+                dllfield_base = a - DLL_FOLLOWER_STR_OFF;
             }
+            LOG_WARNING(Core, "Hoenn follower: API name @{:08X} dll={:08X}", a, dllfield_base);
+            api_done = true;
+            return;
         }
     }
+    api_scan_cursor = end;
+    if (api_scan_cursor >= kHi) {
+        api_done = true;
+    }
+}
 
-    if (!have_player) {
+// Cheap player bootstrap: only around camera slot + tiny gold band
+void FollowerProbe::TryBootstrapPlayer(Memory::MemorySystem& mem, Kernel::Process& process,
+                                       u32 cam_slot) {
+    auto try_base = [&](u32 base) -> bool {
+        if (!HeapPtr(base)) {
+            return false;
+        }
+        // Common world-pos offsets only (not full 0x1C0 grid)
+        static constexpr u32 kOffs[] = {0x00, 0x0C, 0x10, 0x20, 0x30, 0xC0, 0xD0, 0xE0, 0xF0,
+                                        0x100, 0x110, 0x120};
+        for (u32 off : kOffs) {
+            float x, y, z;
+            if (ReadPos(mem, process, base, off, x, y, z)) {
+                player_obj = base;
+                player_pos_off = off;
+                last_px = x;
+                last_py = y;
+                last_pz = z;
+                have_player = true;
+                LOG_WARNING(Core,
+                            "Hoenn follower: player-ish @{:08X}+{:03X} ({:.1f},{:.1f},{:.1f})",
+                            base, off, x, y, z);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Cam object itself + neighbors (very small)
+    if (try_base(cam_slot)) {
+        return;
+    }
+    for (int d = -0x200; d <= 0x200; d += 0x40) {
+        if (d == 0) {
+            continue;
+        }
+        if (try_base(cam_slot + static_cast<u32>(d))) {
+            return;
+        }
+    }
+    // Tiny known gold band sample (not full 64 KiB)
+    for (u32 base = 0x082D3000; base < 0x082D5000; base += 0x80) {
+        if (try_base(base)) {
+            return;
+        }
+    }
+}
+
+// Budgeted follower search: a few bases per tick around player
+void FollowerProbe::TryFindFollowerBudgeted(Memory::MemorySystem& mem, Kernel::Process& process) {
+    if (!have_player || follow_obj != 0) {
+        return;
+    }
+    if (fail_cooldown > 0) {
+        fail_cooldown--;
         return;
     }
 
-    // Update player pos; if pad moving and pos changes, push history
-    float px, py, pz;
-    if (ReadPos(mem, process, player_obj, player_pos_off, px, py, pz)) {
-        const float d = std::fabs(px - last_px) + std::fabs(pz - last_pz);
-        if (d > 0.5f || pad_active) {
-            PushHist(px, py, pz);
-        }
-        last_px = px;
-        last_py = py;
-        last_pz = pz;
+    const u32 lo = player_obj > kFollowerWindow ? player_obj - kFollowerWindow : 0x08000000;
+    const u32 hi = std::min(player_obj + kFollowerWindow, 0x0BFFFFFFu);
+    if (scan_cursor < lo || scan_cursor >= hi) {
+        scan_cursor = lo;
     }
 
-    // Find follower candidate near player if missing
-    if (follow_obj == 0 || !HeapPtr(follow_obj)) {
-        follow_obj = 0;
-        float best_dist = 1.0e9f;
-        const u32 lo = player_obj > 0x20000 ? player_obj - 0x20000 : 0x08000000;
-        const u32 hi = std::min(player_obj + 0x20000, 0x0BFFFFFFu);
-        for (u32 base = lo; base + 0x1C0 < hi; base += 0x40) {
-            if (base == player_obj) {
+    static constexpr u32 kOffs[] = {0x00, 0x0C, 0x10, 0x20, 0x30, 0xC0, 0xE0, 0x100, 0x120};
+    float best_dist = 1.0e9f;
+    u32 best_base = 0;
+    u32 best_off = 0;
+
+    for (int n = 0; n < kFollowerBasesPerTick; ++n) {
+        const u32 base = scan_cursor;
+        scan_cursor += kFollowerStep;
+        if (scan_cursor >= hi) {
+            scan_cursor = lo;
+            // Full window pass done with no hit — cool down so we don't spin
+            fail_cooldown = 30; // ~0.5s at 60Hz schedule
+            break;
+        }
+        if (base == player_obj || !HeapPtr(base)) {
+            continue;
+        }
+        for (u32 off : kOffs) {
+            float x, y, z;
+            if (!ReadPos(mem, process, base, off, x, y, z)) {
                 continue;
             }
-            for (u32 off = 0; off + 12 <= 0x1C0; off += 4) {
-                if (off >= 0x40 && off <= 0xB8) {
-                    continue;
-                }
-                float x, y, z;
-                if (!ReadPos(mem, process, base, off, x, y, z)) {
-                    continue;
-                }
-                const float dist = std::fabs(x - last_px) + std::fabs(z - last_pz);
-                // Prefer something a few meters behind-ish, not on top of player
-                if (dist < 15.f || dist > 5000.f) {
-                    continue;
-                }
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    follow_obj = base;
-                    follow_pos_off = off;
-                }
+            const float dist = std::fabs(x - last_px) + std::fabs(z - last_pz);
+            if (dist < 20.f || dist > 3000.f) {
+                continue;
+            }
+            if (dist < best_dist) {
+                best_dist = dist;
+                best_base = base;
+                best_off = off;
             }
         }
-        if (follow_obj) {
-            LOG_WARNING(Core,
-                        "Hoenn follower: trail candidate @{:08X}+{:03X} dist≈{:.0f} from player",
-                        follow_obj, follow_pos_off, best_dist);
-        }
+    }
+
+    if (best_base != 0) {
+        follow_obj = best_base;
+        follow_pos_off = best_off;
+        LOG_WARNING(Core, "Hoenn follower: trail candidate @{:08X}+{:03X} dist≈{:.0f}", follow_obj,
+                    follow_pos_off, best_dist);
     }
 }
 
@@ -412,7 +375,11 @@ void FollowerProbe::Tick(Core::System& system, u32 process_id) {
     }
     auto& mem = system.Memory();
     EnsurePad();
-    RecoverDllField(mem, *process);
+
+    // Optional, budgeted — never freezes
+    if ((tick_n % 4) == 0) {
+        MaybeScanApiName(mem, *process);
+    }
 
     float pad_x = 0.f, pad_y = 0.f;
     try {
@@ -422,12 +389,47 @@ void FollowerProbe::Tick(Core::System& system, u32 process_id) {
     } catch (...) {
         circle_pad.reset();
     }
+    const bool pad_active = std::fabs(pad_x) >= PAD_DZ || std::fabs(pad_y) >= PAD_DZ;
 
-    DiscoverPlayerAndFollower(mem, *process, pad_x, pad_y);
+    const u32 slot = mem.Read32(*process, CAMERA_SLOT);
+    if (!HeapPtr(slot)) {
+        return;
+    }
 
-    // Trail: write lagged position into follow candidate
+    if (!have_player) {
+        // Once per few ticks only
+        if ((tick_n % 8) == 0) {
+            TryBootstrapPlayer(mem, *process, slot);
+        }
+        tick_n++;
+        return;
+    }
+
+    // Cheap path update
+    float px, py, pz;
+    if (ReadPos(mem, *process, player_obj, player_pos_off, px, py, pz)) {
+        const float d = std::fabs(px - last_px) + std::fabs(pz - last_pz);
+        if (d > 0.5f || pad_active) {
+            PushHist(px, py, pz);
+        }
+        last_px = px;
+        last_py = py;
+        last_pz = pz;
+    } else {
+        // Lost player lock — re-bootstrap later
+        have_player = false;
+        player_obj = 0;
+        follow_obj = 0;
+        tick_n++;
+        return;
+    }
+
+    if (follow_obj == 0) {
+        TryFindFollowerBudgeted(mem, *process);
+    }
+
+    // Trail write only — cheap
     if (follow_obj && hist_n >= 4) {
-        // lag ~3 samples behind
         int idx = hist_i - 4;
         while (idx < 0) {
             idx += kHist;
@@ -436,16 +438,14 @@ void FollowerProbe::Tick(Core::System& system, u32 process_id) {
         const float ty = hy[static_cast<size_t>(idx)];
         const float tz = hz[static_cast<size_t>(idx)];
         WritePos(mem, *process, follow_obj, follow_pos_off, tx, ty, tz);
-        // Also try a few common duplicate offsets (some models mirror pos)
-        WritePos(mem, *process, follow_obj, follow_pos_off + 0x10, tx, ty, tz);
     }
 
-    if ((diag++ % 90) == 0) {
+    if ((tick_n++ % 120) == 0) {
         LOG_INFO(Core,
                  "Hoenn follower tick pl={:08X}+{:03X} fo={:08X}+{:03X} hist={} "
-                 "pos=({:.0f},{:.0f},{:.0f}) dll={:08X} api={}",
+                 "pos=({:.0f},{:.0f},{:.0f})",
                  player_obj, player_pos_off, follow_obj, follow_pos_off, hist_n, last_px, last_py,
-                 last_pz, dllfield_base, api_name_addr ? 1 : 0);
+                 last_pz);
     }
 }
 

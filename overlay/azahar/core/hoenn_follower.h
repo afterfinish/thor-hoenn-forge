@@ -2,11 +2,11 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <string>
 #include <string_view>
 #include "common/common_types.h"
 #include "core/frontend/input.h"
-#include <memory>
 
 namespace Core {
 class System;
@@ -25,9 +25,7 @@ namespace Hoenn {
 /**
  * Rough follower experiment — not product-quality.
  *
- * Uses DllField evidence: GetPlayerFollowerGridX/Z/Acmd, ActionCmdBehindWalk,
- * AddCommMultiTrainerObjOnGrid. Goal: make *something* trail the player so we
- * can see what the field system does. Collision/softlocks ignored for now.
+ * Path-lag thrash only. Discovery is budgeted so the emu cannot freeze.
  */
 class FollowerProbe {
 public:
@@ -50,15 +48,14 @@ private:
     bool in_battle = false;
     u32 dllfield_base = 0;
     u32 last_process_id = 0;
-    u32 diag = 0;
+    u32 tick_n = 0;
 
-    // Path history (world-ish floats)
-    static constexpr int kHist = 12;
+    // Path history
+    static constexpr int kHist = 16;
     std::array<float, kHist> hx{}, hy{}, hz{};
     int hist_n = 0;
     int hist_i = 0;
 
-    // Tracked objects
     u32 player_obj = 0;
     u32 player_pos_off = 0;
     u32 follow_obj = 0;
@@ -66,16 +63,19 @@ private:
     float last_px = 0.f, last_py = 0.f, last_pz = 0.f;
     bool have_player = false;
 
-    // API probe
-    bool api_logged = false;
+    // Budgeted discovery state (never full-process scan in one tick)
+    u32 scan_cursor = 0;
+    u32 api_scan_cursor = 0;
+    bool api_done = false;
     u32 api_name_addr = 0;
+    int fail_cooldown = 0;
 
     std::unique_ptr<Input::AnalogDevice> circle_pad;
 
     void EnsurePad();
-    void RecoverDllField(Memory::MemorySystem& mem, Kernel::Process& process);
-    void DiscoverPlayerAndFollower(Memory::MemorySystem& mem, Kernel::Process& process,
-                                   float pad_x, float pad_y);
+    void MaybeScanApiName(Memory::MemorySystem& mem, Kernel::Process& process);
+    void TryBootstrapPlayer(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam_slot);
+    void TryFindFollowerBudgeted(Memory::MemorySystem& mem, Kernel::Process& process);
     void PushHist(float x, float y, float z);
     bool ReadPos(Memory::MemorySystem& mem, Kernel::Process& process, u32 base, u32 off, float& x,
                  float& y, float& z) const;
