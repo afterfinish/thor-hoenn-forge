@@ -13,15 +13,12 @@
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hoenn_freecam.h"
-#include "core/hoenn_follower.h"
 #include "core/hle/kernel/process.h"
 
 namespace Cheats {
 
 // Luma3DS uses this interval for applying cheats
 constexpr u64 run_interval_ticks = 50'000'000;
-// Freecam ~15Hz when tools on (enough for L/R + stick; lower CPU than 30–60Hz)
-constexpr u64 freecam_interval_ticks = 16'000'000;
 
 CheatEngine::CheatEngine(Core::System& system_) : system{system_}, event{nullptr} {}
 
@@ -35,8 +32,7 @@ CheatEngine::~CheatEngine() {
 void CheatEngine::Connect(u32 process_id_) {
     this->process_id = process_id_;
     // Savestate LoadState deserializes timing (may already have this event) then calls Connect.
-    // Without RemoveEvent, freecam/cheats double-schedule and burn CPU — turbo stays ~100% until
-    // a map transition. Always tear down the previous schedule first.
+    // Without RemoveEvent, freecam/cheats double-schedule and burn CPU.
     if (event) {
         system.CoreTiming().RemoveEvent(event);
         system.CoreTiming().UnscheduleEvent(event, 0);
@@ -45,9 +41,7 @@ void CheatEngine::Connect(u32 process_id_) {
         "CheatCore::run_event",
         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
     system.CoreTiming().ScheduleEvent(run_interval_ticks, event);
-    // Let freecam / follower reseed after memory rewind
     Hoenn::FreeCam::GetInstance().OnCoreReconnect();
-    Hoenn::FollowerProbe::GetInstance().OnCoreReconnect();
 }
 
 std::span<const std::shared_ptr<CheatBase>> CheatEngine::GetCheats() const {
@@ -147,29 +141,17 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
     }
 
     auto& cam = Hoenn::FreeCam::GetInstance();
-    auto& fol = Hoenn::FollowerProbe::GetInstance();
-    // Freecam always ticks when tools on — independent of L3 turbo
     if (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()) {
         cam.Tick(system, process_id);
     }
-    // Rough follower experiment (path-lag thrash — not product-quality)
-    if (fol.IsEnabled()) {
-        fol.Tick(system, process_id);
-    }
 
-    // NEVER schedule 0 or underflow — that was burning freecam settle/recovery in <100ms
-    // FastGold experiment shortens freecam interval via GetScheduleInterval().
-    const bool tools_fast =
-        cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled() || fol.IsEnabled();
-    const u64 base = tools_fast ? (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled()
-                                       ? cam.GetScheduleInterval()
-                                       : freecam_interval_ticks)
-                                : run_interval_ticks;
+    const u64 base = (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled())
+                         ? cam.GetScheduleInterval()
+                         : run_interval_ticks;
     u64 next = base;
     if (cycles_late > 0 && static_cast<u64>(cycles_late) < base) {
         next = base - static_cast<u64>(cycles_late);
     }
-    // Floor so we can't spin the event loop
     constexpr u64 min_gap = 1'000'000;
     next = std::max(next, min_gap);
     system.CoreTiming().ScheduleEvent(next, event);

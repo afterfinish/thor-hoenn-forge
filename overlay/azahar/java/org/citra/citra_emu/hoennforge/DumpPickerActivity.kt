@@ -52,6 +52,8 @@ class DumpPickerActivity : HoennActivity() {
         textStatus = findViewById(R.id.textStatus)
         progress = findViewById(R.id.progress)
         buttonContinue = findViewById(R.id.buttonContinue)
+        // Material/AppCompat theming can drop layout text on some skins — set explicitly
+        buttonContinue.setText(R.string.hoenn_dump_continue)
         buttonContinue.isEnabled = false
         val buttonPick = findViewById<Button>(R.id.buttonPick)
         buttonPick.setOnClickListener {
@@ -109,10 +111,12 @@ class DumpPickerActivity : HoennActivity() {
                         OrasTitles.formatTitleId(result.titleId),
                         String.format("%.2f", gb),
                     )
+                    buttonContinue.setText(R.string.hoenn_dump_continue)
                     buttonContinue.isEnabled = true
                 }
                 is DumpValidator.Result.Failure -> {
                     textStatus.text = result.message
+                    buttonContinue.setText(R.string.hoenn_dump_continue)
                     buttonContinue.isEnabled = false
                 }
             }

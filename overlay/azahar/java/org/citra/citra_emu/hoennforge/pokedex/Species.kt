@@ -29,7 +29,13 @@ data class Species(
     val learnset: List<LearnMove>,
 ) {
     val typesLabel: String
-        get() = if (type2.isNullOrBlank()) type1 else "$type1 / $type2"
+        get() {
+            // JSON / Gson sometimes yields literal "null"; single-type mons must not show "Normal/null"
+            val t2 = type2?.trim()?.takeIf {
+                it.isNotEmpty() && !it.equals("null", ignoreCase = true)
+            }
+            return if (t2 == null) type1 else "$type1 / $t2"
+        }
 
     val bst: Int
         get() = hp + atk + def + spa + spd + spe

@@ -56,20 +56,10 @@ class HoennPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_CAM_ZOOM, false)
         set(value) = prefs.edit { putBoolean(KEY_CAM_ZOOM, value) }
 
-    /** Right-stick free-look (START menu). Native freecam driver. */
+    /** Right-stick free-look (START menu). Native freecam driver (houses). */
     var freelookEnabled: Boolean
         get() = prefs.getBoolean(KEY_FREELOOK, false)
         set(value) = prefs.edit { putBoolean(KEY_FREELOOK, value) }
-
-    /** Freelook experiment mode index (native FreeCam::Experiment). */
-    var freelookExperiment: Int
-        get() = prefs.getInt(KEY_FREELOOK_EXP, 0)
-        set(value) = prefs.edit { putInt(KEY_FREELOOK_EXP, value) }
-
-    /** Rough overworld follower probe (START menu). Not product-quality. */
-    var followerProbeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FOLLOWER, false)
-        set(value) = prefs.edit { putBoolean(KEY_FOLLOWER, value) }
 
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
@@ -114,8 +104,6 @@ class HoennPrefs(context: Context) {
         private const val KEY_RANDOMIZER = "randomizer_json"
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
         private const val KEY_FREELOOK = "freelook_enabled"
-        private const val KEY_FREELOOK_EXP = "freelook_experiment"
-        private const val KEY_FOLLOWER = "follower_probe_enabled"
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }

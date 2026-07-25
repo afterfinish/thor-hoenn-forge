@@ -14,6 +14,7 @@
     <string name="hoenn_dump_title">Point at your game dump</string>
     <string name="hoenn_dump_help">Omega Ruby or Alpha Sapphire, as a .3ds or .cci file. It\'s only read — never modified.</string>
     <string name="hoenn_dump_pick">Browse files</string>
+    <string name="hoenn_dump_continue">Continue</string>
     <string name="hoenn_dump_find">Find your dump</string>
     <string name="hoenn_dump_no_ship">No games ship with this app.</string>
     <string name="hoenn_dump_where">Where would my dump be?</string>
@@ -94,27 +95,15 @@
     <string name="hoenn_menu_slot_empty">That slot is empty</string>
     <string name="hoenn_menu_zoom_on">Camera zoom assist: On</string>
     <string name="hoenn_menu_zoom_off">Camera zoom assist: Off</string>
-    <string name="hoenn_menu_zoom_enabled_toast">Zoom assist on — hold L to zoom out, hold R to zoom in (continuous). Milder FOV than before. Enter/exit a building if nothing changes.</string>
+    <string name="hoenn_menu_zoom_enabled_toast">Zoom assist on — hold L to zoom out, hold R to zoom in. Try enter/exit a building if nothing changes.</string>
     <string name="hoenn_menu_zoom_disabled_toast">Camera zoom assist off</string>
     <string name="hoenn_menu_zoom_failed">Could not enable camera tool</string>
     <string name="hoenn_menu_freelook_on">Free look (right stick): On</string>
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
-    <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick Y = pitch, X = yaw. Works best outdoors. Mauville/gyms may ignore it.</string>
+    <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick pitch/yaw. Works in houses and many interiors. Town outdoors not supported in v1.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
-    <string name="hoenn_menu_freelook_exp">Cam experiment...</string>
-    <string name="hoenn_menu_freelook_exp_title">Freelook experiment mode</string>
-    <string name="hoenn_menu_freelook_exp_toast">Experiment: %1$s - freelook ON to test. Report which # works in town/house.</string>
-    <string name="hoenn_menu_freelook_exp_active">Active: %1$s</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_pokedex">Pokédex (scan top screen)</string>
-    <string name="hoenn_menu_follower_on">Follower (party lead): On</string>
-    <string name="hoenn_menu_follower_off">Follower (party lead): Off</string>
-    <string name="hoenn_menu_follower_enabled_toast">Follower ON — party lead sprite on bottom screen trails the stick. Not a 3D field model yet. Walk outdoors.</string>
-    <string name="hoenn_menu_follower_disabled_toast">Follower off</string>
-    <string name="hoenn_follower_ghost_title">Party lead · sprite ghost</string>
-    <string name="hoenn_follower_ghost_lead">%1$s  (#%2$d)</string>
-    <string name="hoenn_follower_ghost_party">Party: %1$s</string>
-    <string name="hoenn_follower_ghost_note">Bottom-screen ghost only. In-engine mon model = later (MdlAdd / BehindWalk).</string>
     <string name="hoenn_pokedex_scanning">Scanning top screen…</string>
     <string name="hoenn_pokedex_capture_fail">Could not capture top screen. Try again mid-battle or on a summary screen.</string>
     <string name="hoenn_pokedex_no_match">No Pokémon names found on the top screen.</string>
@@ -126,13 +115,7 @@
     <string name="hoenn_pokedex_next">Next</string>
     <string name="hoenn_pokedex_on_bottom">Pokédex on bottom screen</string>
     <string name="hoenn_pokedex_top_fallback">Bottom screen busy — Pokédex on top (temporary)</string>
-    <string name="hoenn_menu_cam_probe">Cam address probe…</string>
-    <string name="hoenn_menu_cam_re_dump">RE dump cam (logcat diff)</string>
-    <string name="hoenn_menu_cam_probe_title">Cam address (sticky hunt)</string>
-    <string name="hoenn_menu_cam_probe_rescan">Rescan + sticky hunt (run on 2F / broken 1F)</string>
-    <string name="hoenn_menu_cam_probe_empty">No candidates — freelook on, wait on field, then rescan</string>
-    <string name="hoenn_menu_cam_probe_picked">Probe #%1$d — if cam dies after floors, hunt auto-pauses writes (no poison). Prefer STICKY.</string>
-    <string name="hoenn_menu_cam_probe_rescanned">Rescanned %1$d — sticky hunt running; wait ~2s then try stick</string>
+
     <!-- Play mode -->
     <string name="hoenn_play_mode_title">How do you want to play?</string>
     <string name="hoenn_play_mode_body">Vanilla keeps the original game. Randomized builds a unique run from your dump.</string>

@@ -59,13 +59,19 @@ class PokedexRepository private constructor(
                         learnset.add(LearnMove(m.getInt("level"), m.getString("name")))
                     }
                 }
-                val type2 = o.optString("type2", "")
+                val type2Raw = when {
+                    !o.has("type2") || o.isNull("type2") -> ""
+                    else -> o.optString("type2", "")
+                }
+                val type2 = type2Raw.trim().takeIf {
+                    it.isNotEmpty() && !it.equals("null", ignoreCase = true)
+                }
                 list.add(
                     Species(
                         id = o.getInt("id"),
                         name = o.getString("name"),
                         type1 = o.getString("type1"),
-                        type2 = type2.ifBlank { null },
+                        type2 = type2,
                         hp = o.optInt("hp"),
                         atk = o.optInt("atk"),
                         def = o.optInt("def"),
