@@ -207,6 +207,9 @@ private:
     /// After Reset(), next DoFrameLimiting only re-baselines (no sleep) so turbo is instant
     bool baseline_pending = false;
 
+    /// Last GetFrameLimit() we paced against; change (turbo on/off) forces re-baseline
+    double last_frame_limit = -1.0;
+
     /// Whether to use frame advancing (i.e. frame by frame)
     std::atomic_bool frame_advancing_enabled;
 

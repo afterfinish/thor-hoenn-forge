@@ -233,9 +233,23 @@ void FrameLimiter::DoFrameLimiting(microseconds current_system_time_us) {
     }
 
     auto now = Clock::now();
-    double sleep_scale = Settings::GetFrameLimit() / 100.0;
+    const double frame_limit = Settings::GetFrameLimit();
+    double sleep_scale = frame_limit / 100.0;
 
-    if (Settings::GetFrameLimit() == 0) {
+    // Turbo / limit toggle: re-baseline even if Reset() was missed on another thread
+    if (frame_limit != last_frame_limit) {
+        last_frame_limit = frame_limit;
+        baseline_pending = true;
+    }
+
+    if (frame_limit == 0) {
+        // Unthrottled — still clear lag so returning to a limit is clean
+        if (baseline_pending) {
+            previous_system_time_us = current_system_time_us;
+            previous_walltime = now;
+            frame_limiting_delta_err = microseconds::zero();
+            baseline_pending = false;
+        }
         return;
     }
 

@@ -532,26 +532,12 @@ class EmulationFragment :
     private var hoennQuickMenuDialog: Dialog? = null
 
     /**
-     * True when we paused emulation for the START menu flow (including save/load child).
-     * Cleared only when gameplay should resume.
-     */
-    private var hoennMenuOwnsPause: Boolean = false
-
-    private fun resumeIfMenuPaused() {
-        if (!hoennMenuOwnsPause) return
-        hoennMenuOwnsPause = false
-        if (isAdded && ::emulationState.isInitialized && emulationState.isPaused) {
-            try {
-                emulationState.unpause()
-            } catch (_: Exception) {
-                // Emulation may already be tearing down.
-            }
-        }
-    }
-
-    /**
      * Hoenn Forge: START menu — designed panel (resume, freelook, zoom, Pokédex, save/load).
      * Press START again (or B) to close.
+     *
+     * Do NOT call [EmulationState.pause] here: that path destroys the GL/VK surface and
+     * freezes the emu thread, which breaks savestate load (and can crash after LoadState).
+     * Scrim + dialog is enough for UX; the game keeps ticking under the menu.
      */
     fun openHoennQuickMenu() {
         if (!isAdded || _binding == null || !::emulationState.isInitialized) {
@@ -566,14 +552,6 @@ class EmulationFragment :
                 existing.dismiss()
                 return
             }
-        }
-
-        if (!emulationState.isPaused) {
-            emulationState.pause()
-            hoennMenuOwnsPause = true
-        } else if (!hoennMenuOwnsPause) {
-            // Already paused by the emulator drawer/etc — don't unpause on close.
-            hoennMenuOwnsPause = false
         }
 
         val view = layoutInflater.inflate(R.layout.activity_hoenn_quick_menu, null)
@@ -646,9 +624,6 @@ class EmulationFragment :
             clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         }
 
-        // When opening save/load slots from a row, stay paused through dismiss.
-        var keepPausedForChild = false
-
         fun closeMenu() {
             dialog.dismiss()
         }
@@ -667,17 +642,14 @@ class EmulationFragment :
             refreshToggleChips()
         }
         view.findViewById<View>(R.id.rowPokedex).setOnClickListener {
-            keepPausedForChild = false
             closeMenu()
             openHoennPokedex()
         }
         view.findViewById<View>(R.id.rowSave).setOnClickListener {
-            keepPausedForChild = true
             closeMenu()
             showHoennStateSlots(isSaving = true)
         }
         view.findViewById<View>(R.id.rowLoad).setOnClickListener {
-            keepPausedForChild = true
             closeMenu()
             showHoennStateSlots(isSaving = false)
         }
@@ -714,9 +686,6 @@ class EmulationFragment :
 
         dialog.setOnDismissListener {
             hoennQuickMenuDialog = null
-            if (!keepPausedForChild) {
-                resumeIfMenuPaused()
-            }
         }
 
         hoennQuickMenuDialog = dialog
@@ -839,8 +808,6 @@ class EmulationFragment :
             isSaving || savestates?.any { it.slot == slot } == true
         }
 
-        // Stay paused while picking a slot; resume after an action, or reopen the quick menu on Back.
-        var returningToMenu = false
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(
                 if (isSaving) {
@@ -862,37 +829,30 @@ class EmulationFragment :
                     NativeLibrary.saveState(slot)
                     Toast.makeText(context, R.string.saving, Toast.LENGTH_SHORT).show()
                 } else {
+                    // Emu thread must be running (no surface-destroy pause) so Load processes.
                     NativeLibrary.loadState(slot)
-                    reapplyTurboAfterLoad()
+                    // Defer re-apply until after LoadState finishes on the core thread.
+                    binding.root.postDelayed({ reapplyAfterSavestateLoad() }, 400)
                     Toast.makeText(context, R.string.loading, Toast.LENGTH_SHORT).show()
                 }
-                resumeIfMenuPaused()
             }
-            .setNegativeButton(R.string.hoenn_menu_back) { _, _ ->
-                returningToMenu = true
-                openHoennQuickMenu()
-            }
-            .setOnDismissListener {
-                // Outside-tap / cancel without Back — resume gameplay.
-                if (!returningToMenu) {
-                    resumeIfMenuPaused()
-                }
-            }
+            .setNegativeButton(R.string.hoenn_menu_back) { _, _ -> openHoennQuickMenu() }
             .show()
     }
 
     /**
-     * After savestate load, re-push temporary frame limit if turbo is still "on" in UI.
-     * Native limiter is also Reset() after LoadState (core); this covers the Kotlin turbo flag.
+     * After savestate load: re-push turbo + freecam + L3 bind.
+     * Native FrameLimiter::Reset runs in core after LoadState; this covers Kotlin flags.
      */
-    private fun reapplyTurboAfterLoad() {
+    private fun reapplyAfterSavestateLoad() {
         try {
             if (org.citra.citra_emu.utils.TurboHelper.isTurboSpeedEnabled()) {
                 org.citra.citra_emu.utils.TurboHelper.reloadTurbo(showToast = false)
             }
             org.citra.citra_emu.hoennforge.ThorProfile.applyL3TurboHotkey()
+            applyHoennFreecamIfNeeded()
         } catch (e: Exception) {
-            android.util.Log.w("HoennForge", "reapplyTurboAfterLoad failed", e)
+            android.util.Log.w("HoennForge", "reapplyAfterSavestateLoad failed", e)
         }
     }
 
@@ -1035,7 +995,7 @@ class EmulationFragment :
                         ).show()
                     } else {
                         NativeLibrary.loadState(slot)
-                        reapplyTurboAfterLoad()
+                        binding.root.postDelayed({ reapplyAfterSavestateLoad() }, 400)
                         binding.drawerLayout.close()
                         Toast.makeText(
                             context,

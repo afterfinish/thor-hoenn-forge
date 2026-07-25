@@ -9,11 +9,16 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
+import org.citra.citra_emu.features.settings.model.IntSetting
 import org.citra.citra_emu.utils.Log
 
 /**
  * START menu → Pokédex: OCR top screen → match → UI on **bottom** display when available.
+ *
+ * Capture prefers PixelCopy on the live surface so we avoid RequestScreenshot, which can
+ * perturb present-frame sizing and look like a drop to 1× internal resolution.
  */
 object PokedexController {
     fun open(fragment: Fragment, surfaceView: SurfaceView?) {
@@ -22,19 +27,26 @@ object PokedexController {
         val ctx = fragment.requireContext()
         Toast.makeText(ctx, R.string.hoenn_pokedex_scanning, Toast.LENGTH_SHORT).show()
 
+        val resBefore = IntSetting.RESOLUTION_FACTOR.int.let { if (it > 0) it else 4 }
+
         fragment.lifecycleScope.launch {
             try {
                 val repo = withContext(Dispatchers.IO) {
                     PokedexRepository.get(ctx)
                 }
                 val bitmap = withContext(Dispatchers.Default) {
-                    var bmp = TopScreenCapture.captureNative(0)
-                    if (bmp == null && surfaceView != null) {
-                        Log.warning("[Pokedex] native capture failed — PixelCopy fallback")
-                        bmp = TopScreenCapture.captureSurface(surfaceView)
+                    // Prefer surface copy — does not change emulator render scale.
+                    var bmp = surfaceView?.let { TopScreenCapture.captureSurface(it) }
+                    if (bmp == null) {
+                        Log.warning("[Pokedex] PixelCopy failed — native capture at scale=1 (OCR only)")
+                        // Explicit 1: only the offscreen screenshot buffer size, not game setting.
+                        bmp = TopScreenCapture.captureNative(1)
                     }
                     bmp?.let { TopScreenCapture.ensureOcrSize(it) }
                 }
+
+                restoreResolutionIfNeeded(resBefore)
+
                 if (bitmap == null) {
                     Toast.makeText(ctx, R.string.hoenn_pokedex_capture_fail, Toast.LENGTH_LONG).show()
                     return@launch
@@ -76,6 +88,7 @@ object PokedexController {
                 }
             } catch (e: Exception) {
                 Log.error("[Pokedex] failed: $e")
+                restoreResolutionIfNeeded(resBefore)
                 if (fragment.isAdded) {
                     Toast.makeText(
                         ctx,
@@ -84,6 +97,18 @@ object PokedexController {
                     ).show()
                 }
             }
+        }
+    }
+
+    private fun restoreResolutionIfNeeded(wanted: Int) {
+        try {
+            val current = IntSetting.RESOLUTION_FACTOR.int
+            if (current == wanted && current > 1) return
+            Log.warning("[Pokedex] restoring resolution $current -> $wanted")
+            IntSetting.RESOLUTION_FACTOR.int = wanted
+            NativeLibrary.reloadSettings()
+        } catch (e: Exception) {
+            Log.warning("[Pokedex] restoreResolution failed: $e")
         }
     }
 }

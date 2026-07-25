@@ -247,7 +247,9 @@ bool FreeCam::IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u3
     }
     const u32 flag = mem.Read32(process, base + OFF_FLAG);
     const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
-    return flag == LIVE_FLAG && OkGoldFov(fov);
+    // Accept FOV through the full zoom band. Using only the discovery band (≤400)
+    // made freelook die after zooming out — WriteFreelook gates on IsGoldLive.
+    return flag == LIVE_FLAG && OkFloat(fov) && fov >= FOV_GOLD_LO && fov <= FOV_ZOOM_MAX;
 }
 
 void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process,
