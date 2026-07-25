@@ -22,9 +22,9 @@ Dual-screen (AYN Thor) and freelook angles from dogfood:
 | ![Dual-screen freelook](screenshots/dual-161510.png) | ![Dual-screen freelook](screenshots/dual-161523.png) |
 | Dual screen | Dual screen |
 | ![Free look](screenshots/top-161303.png) | ![Free look](screenshots/top-161324.png) |
-| Free look (house) | Free look |
-| ![House freelook + AreaNav](screenshots/top-20260725-160720.png) | |
-| Top screen (Littleroot house) | |
+| Free look | Free look |
+| ![Free look + AreaNav](screenshots/top-20260725-160720.png) | |
+| Top screen (Littleroot) | |
 
 ---
 
