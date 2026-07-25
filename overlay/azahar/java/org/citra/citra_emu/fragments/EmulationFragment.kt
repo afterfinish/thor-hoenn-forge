@@ -817,7 +817,7 @@ class EmulationFragment :
         ).show()
     }
 
-    /** Rough path-lag follower experiment — walk outdoors and watch for trail. */
+    /** Party-lead sprite ghost + native path-lag thrash. */
     private fun toggleHoennFollowerProbe() {
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val titleId = if (::game.isInitialized) game.titleId else 0L
@@ -830,7 +830,11 @@ class EmulationFragment :
             return
         }
         val next = !prefs.followerProbeEnabled
-        val ok = org.citra.citra_emu.hoennforge.HoennFollower.apply(titleId, next)
+        val ok = org.citra.citra_emu.hoennforge.HoennFollower.apply(
+            activity = requireActivity(),
+            titleId = titleId,
+            enabled = next,
+        )
         if (!ok) {
             Toast.makeText(
                 requireContext(),
@@ -840,12 +844,15 @@ class EmulationFragment :
             return
         }
         prefs.followerProbeEnabled = next
+        val lead = org.citra.citra_emu.hoennforge.HoennFollower.lastLead
+        val party = org.citra.citra_emu.hoennforge.HoennFollower.lastParty
         val extra = if (next) {
-            try {
-                "\n" + org.citra.citra_emu.hoennforge.HoennFollower.statusLine()
-            } catch (_: Exception) {
-                ""
-            }
+            "\nlead=$lead party=$party\n" +
+                try {
+                    org.citra.citra_emu.hoennforge.HoennFollower.statusLine()
+                } catch (_: Exception) {
+                    ""
+                }
         } else {
             ""
         }
@@ -881,7 +888,11 @@ class EmulationFragment :
             org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(game.titleId, true)
         }
         if (prefs.followerProbeEnabled) {
-            org.citra.citra_emu.hoennforge.HoennFollower.apply(game.titleId, true)
+            org.citra.citra_emu.hoennforge.HoennFollower.apply(
+                activity = requireActivity(),
+                titleId = game.titleId,
+                enabled = true,
+            )
         }
     }
 

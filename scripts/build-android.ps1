@@ -202,9 +202,21 @@ if (Test-Path $nlPath) {
     external fun setHoennFollowerProbe(enabled: Boolean)
     external fun isHoennFollowerProbeEnabled(): Boolean
     external fun hoennFollowerStatus(): String
+    external fun setHoennFollowerPartySpecies(species: Int)
 "@
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt follower probe JNI"
+    }
+    if ($nl -notmatch "setHoennFollowerPartySpecies") {
+        $nl = Get-Content $nlPath -Raw
+        if ($nl -match "hoennFollowerStatus") {
+            $nl = $nl -replace "(external fun hoennFollowerStatus\(\): String)", @"
+`$1
+    external fun setHoennFollowerPartySpecies(species: Int)
+"@
+            [System.IO.File]::WriteAllText($nlPath, $nl)
+            Write-Host "Patched NativeLibrary.kt setHoennFollowerPartySpecies"
+        }
     }
 }
 # native.cpp freelook implementation
@@ -475,10 +487,29 @@ jstring Java_org_citra_citra_1emu_NativeLibrary_hoennFollowerStatus(JNIEnv* env,
     return env->NewStringUTF(s.c_str());
 }
 
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennFollowerPartySpecies(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj, jint species) {
+    Hoenn::FollowerProbe::GetInstance().SetPartyLeadSpecies(static_cast<int>(species));
+}
+
 '@
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp follower probe JNI"
+    }
+    if ($nc -notmatch "setHoennFollowerPartySpecies") {
+        $nc = Get-Content $nativeCpp -Raw
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennFollowerPartySpecies(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj, jint species) {
+    Hoenn::FollowerProbe::GetInstance().SetPartyLeadSpecies(static_cast<int>(species));
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp setHoennFollowerPartySpecies"
     }
 }
 $Main = Join-Path $Android "app\src\main"
