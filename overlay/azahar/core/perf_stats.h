@@ -204,6 +204,9 @@ private:
     /// Accumulated difference between walltime and emulated time
     std::chrono::microseconds frame_limiting_delta_err{0};
 
+    /// After Reset(), next DoFrameLimiting only re-baselines (no sleep) so turbo is instant
+    bool baseline_pending = false;
+
     /// Whether to use frame advancing (i.e. frame by frame)
     std::atomic_bool frame_advancing_enabled;
 

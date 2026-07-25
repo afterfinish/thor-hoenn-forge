@@ -117,13 +117,8 @@ class DumpPickerActivity : HoennActivity() {
             when (result) {
                 is DumpValidator.Result.Success -> {
                     pendingSuccess = result
-                    val gb = result.sizeBytes / (1024.0 * 1024.0 * 1024.0)
-                    textStatus.text = getString(
-                        R.string.hoenn_dump_ok,
-                        result.entry.label,
-                        OrasTitles.formatTitleId(result.titleId),
-                        String.format("%.2f", gb),
-                    )
+                    // Keep status to one short line — multi-line title/id/size squeezed Continue on Thor
+                    textStatus.text = getString(R.string.hoenn_dump_ready_short, result.entry.label)
                     applyContinueLabel(enabled = true)
                 }
                 is DumpValidator.Result.Failure -> {

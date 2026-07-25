@@ -62,7 +62,8 @@ private:
     bool invert_x = false;
     bool invert_y = true;
 
-    float user_fov = 480.f;
+    float user_fov = 280.f;
+    bool fov_seeded = false;
     float pitch = -12.74f;
     float yaw = 0.f;
     bool yaw_seeded = false;
@@ -89,6 +90,7 @@ private:
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);
     void WriteFreelook(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
+    void WriteZoomFov(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
 };
 
 } // namespace Hoenn

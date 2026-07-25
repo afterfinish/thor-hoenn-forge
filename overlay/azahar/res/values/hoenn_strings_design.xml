@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Strings for the design-fidelity screens (splash, quick menu, save/load, hints). -->
+<!--
+  Strings for design-fidelity screens that are NOT in hoenn_strings_snippet
+  (snippet is injected into strings.xml; this file is copied as its own values XML).
+  Do not duplicate names that appear in the snippet.
+-->
 <resources>
     <!-- Splash -->
     <string name="hoenn_splash_subtitle">An unofficial fan project</string>
     <string name="hoenn_splash_legal">Not affiliated with Nintendo or The Pokémon Company</string>
     <string name="hoenn_version">v0.4.1</string>
-
-    <!-- Quick menu row subtitles -->
-    <string name="hoenn_menu_save_desc">Slot 2 last used · 4 min ago</string>
-    <string name="hoenn_menu_load_desc">3 slots used</string>
 
     <!-- Controller hint glyphs + labels -->
     <string name="hoenn_glyph_a">A</string>
@@ -20,7 +20,7 @@
     <string name="hoenn_hint_back">Back</string>
     <string name="hoenn_hint_confirm">Confirm</string>
 
-    <!-- Save / load slots -->
+    <!-- Save / load slots (designed activity_hoenn_save_slots) -->
     <string name="hoenn_slots_save_title">Save state</string>
     <string name="hoenn_slots_load_title">Load state</string>
     <string name="hoenn_slot_auto">Auto</string>

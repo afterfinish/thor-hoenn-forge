@@ -30,6 +30,8 @@ class SettingsActivity : HoennActivity() {
 
         for ((id, pair) in navIds) {
             val (titleRes, bodyRes) = pair
+            // Set labels in code so a missing XML string never leaves a blank nav chip.
+            findViewById<TextView>(id).setText(titleRes)
             findViewById<View>(id).setOnClickListener {
                 selectNav(id, titleRes, bodyRes)
             }

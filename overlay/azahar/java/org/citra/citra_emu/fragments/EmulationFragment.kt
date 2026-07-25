@@ -6,12 +6,15 @@ package org.citra.citra_emu.fragments
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -24,12 +27,15 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Choreographer
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -522,8 +528,30 @@ class EmulationFragment :
 
     fun isDrawerOpen(): Boolean = binding.drawerLayout.isOpen
 
+    /** Currently shown START quick menu (designed Hoenn dialog). */
+    private var hoennQuickMenuDialog: Dialog? = null
+
     /**
-     * Hoenn Forge: Start menu — free look, zoom assist, save/load.
+     * True when we paused emulation for the START menu flow (including save/load child).
+     * Cleared only when gameplay should resume.
+     */
+    private var hoennMenuOwnsPause: Boolean = false
+
+    private fun resumeIfMenuPaused() {
+        if (!hoennMenuOwnsPause) return
+        hoennMenuOwnsPause = false
+        if (isAdded && ::emulationState.isInitialized && emulationState.isPaused) {
+            try {
+                emulationState.unpause()
+            } catch (_: Exception) {
+                // Emulation may already be tearing down.
+            }
+        }
+    }
+
+    /**
+     * Hoenn Forge: START menu — designed panel (resume, freelook, zoom, Pokédex, save/load).
+     * Press START again (or B) to close.
      */
     fun openHoennQuickMenu() {
         if (!isAdded || _binding == null || !::emulationState.isInitialized) {
@@ -532,43 +560,170 @@ class EmulationFragment :
         if (!NativeLibrary.isRunning()) {
             return
         }
-
-        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
-        val freelookOn = prefs.freelookEnabled
-        val zoomOn = prefs.cameraZoomAssistEnabled
-        val items = arrayOf(
-            getString(
-                if (freelookOn) {
-                    R.string.hoenn_menu_freelook_on
-                } else {
-                    R.string.hoenn_menu_freelook_off
-                },
-            ),
-            getString(
-                if (zoomOn) {
-                    R.string.hoenn_menu_zoom_on
-                } else {
-                    R.string.hoenn_menu_zoom_off
-                },
-            ),
-            getString(R.string.hoenn_menu_pokedex),
-            getString(R.string.hoenn_menu_save_state),
-            getString(R.string.hoenn_menu_load_state),
-            getString(R.string.hoenn_menu_resume),
-        )
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.hoenn_menu_title)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> toggleHoennFreelook()
-                    1 -> toggleHoennZoomAssist()
-                    2 -> openHoennPokedex()
-                    3 -> showHoennStateSlots(isSaving = true)
-                    4 -> showHoennStateSlots(isSaving = false)
-                    else -> { /* resume / dismiss */ }
-                }
+        // Toggle: second START while open closes the menu.
+        hoennQuickMenuDialog?.let { existing ->
+            if (existing.isShowing) {
+                existing.dismiss()
+                return
             }
-            .show()
+        }
+
+        if (!emulationState.isPaused) {
+            emulationState.pause()
+            hoennMenuOwnsPause = true
+        } else if (!hoennMenuOwnsPause) {
+            // Already paused by the emulator drawer/etc — don't unpause on close.
+            hoennMenuOwnsPause = false
+        }
+
+        val view = layoutInflater.inflate(R.layout.activity_hoenn_quick_menu, null)
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val chipGame = view.findViewById<TextView>(R.id.chipGameTag)
+        val chipFreelook = view.findViewById<TextView>(R.id.chipFreelookStatus)
+        val chipZoom = view.findViewById<TextView>(R.id.chipZoomStatus)
+        val textSaveDesc = view.findViewById<TextView>(R.id.textSaveDesc)
+        val textLoadDesc = view.findViewById<TextView>(R.id.textLoadDesc)
+
+        // Game tag (short OR/AS label when known).
+        if (::game.isInitialized) {
+            val entry = org.citra.citra_emu.hoennforge.OrasTitles.find(game.titleId)
+            chipGame.text = when (entry?.game) {
+                org.citra.citra_emu.hoennforge.OrasTitles.Game.OMEGA_RUBY ->
+                    getString(R.string.hoenn_game_tag_or)
+                org.citra.citra_emu.hoennforge.OrasTitles.Game.ALPHA_SAPPHIRE ->
+                    getString(R.string.hoenn_game_tag_as)
+                else -> game.title.ifBlank { getString(R.string.hoenn_brand) }
+            }
+        } else {
+            chipGame.text = getString(R.string.hoenn_brand)
+        }
+
+        fun paintToggleChip(chip: TextView, on: Boolean) {
+            chip.text = getString(if (on) R.string.hoenn_status_on else R.string.hoenn_status_off)
+            chip.setBackgroundResource(
+                if (on) R.drawable.hoenn_chip_on else R.drawable.hoenn_chip_muted,
+            )
+            chip.setTextColor(
+                resources.getColor(
+                    if (on) R.color.hoenn_accent_100 else R.color.hoenn_muted,
+                    requireContext().theme,
+                ),
+            )
+        }
+        fun refreshToggleChips() {
+            paintToggleChip(chipFreelook, prefs.freelookEnabled)
+            paintToggleChip(chipZoom, prefs.cameraZoomAssistEnabled)
+        }
+        fun refreshSlotDescs() {
+            val savestates = NativeLibrary.getSavestateInfo()
+            val used = savestates?.size ?: 0
+            textLoadDesc.text = if (used == 0) {
+                getString(R.string.hoenn_menu_load_desc)
+            } else {
+                getString(R.string.hoenn_menu_load_desc_fmt, used)
+            }
+            val last = savestates?.maxByOrNull { it.slot }
+            textSaveDesc.text = if (last != null) {
+                getString(R.string.hoenn_menu_save_desc_fmt, last.slot)
+            } else {
+                getString(R.string.hoenn_menu_save_desc)
+            }
+        }
+        refreshToggleChips()
+        refreshSlotDescs()
+
+        val dialog = Dialog(requireContext())
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(view)
+        dialog.setCancelable(true)
+        dialog.window?.apply {
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+            )
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            // Keep game surface visible under the scrim (no full black window).
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
+
+        // When opening save/load slots from a row, stay paused through dismiss.
+        var keepPausedForChild = false
+
+        fun closeMenu() {
+            dialog.dismiss()
+        }
+
+        view.findViewById<View>(R.id.quickMenuRoot).setOnClickListener { closeMenu() }
+        // Clicks on the card must not dismiss via root.
+        view.findViewById<View>(R.id.quickMenuPanel).setOnClickListener { /* consume */ }
+
+        view.findViewById<View>(R.id.rowResume).setOnClickListener { closeMenu() }
+        view.findViewById<View>(R.id.rowFreelook).setOnClickListener {
+            toggleHoennFreelook()
+            refreshToggleChips()
+        }
+        view.findViewById<View>(R.id.rowZoom).setOnClickListener {
+            toggleHoennZoomAssist()
+            refreshToggleChips()
+        }
+        view.findViewById<View>(R.id.rowPokedex).setOnClickListener {
+            keepPausedForChild = false
+            closeMenu()
+            openHoennPokedex()
+        }
+        view.findViewById<View>(R.id.rowSave).setOnClickListener {
+            keepPausedForChild = true
+            closeMenu()
+            showHoennStateSlots(isSaving = true)
+        }
+        view.findViewById<View>(R.id.rowLoad).setOnClickListener {
+            keepPausedForChild = true
+            closeMenu()
+            showHoennStateSlots(isSaving = false)
+        }
+
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) {
+                return@setOnKeyListener false
+            }
+            when (keyCode) {
+                KeyEvent.KEYCODE_BUTTON_B,
+                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_BUTTON_START,
+                -> {
+                    closeMenu()
+                    true
+                }
+                KeyEvent.KEYCODE_BUTTON_A,
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                -> {
+                    dialog.currentFocus?.performClick()
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    dialog.currentFocus?.focusSearch(View.FOCUS_UP)?.requestFocus()
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    dialog.currentFocus?.focusSearch(View.FOCUS_DOWN)?.requestFocus()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        dialog.setOnDismissListener {
+            hoennQuickMenuDialog = null
+            if (!keepPausedForChild) {
+                resumeIfMenuPaused()
+            }
+        }
+
+        hoennQuickMenuDialog = dialog
+        dialog.show()
+        view.findViewById<View>(R.id.rowResume).post {
+            view.findViewById<View>(R.id.rowResume).requestFocus()
+        }
     }
 
     /** Living Pokédex: OCR top screen → offline species entry. */
@@ -684,6 +839,8 @@ class EmulationFragment :
             isSaving || savestates?.any { it.slot == slot } == true
         }
 
+        // Stay paused while picking a slot; resume after an action, or reopen the quick menu on Back.
+        var returningToMenu = false
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(
                 if (isSaving) {
@@ -709,8 +866,18 @@ class EmulationFragment :
                     reapplyTurboAfterLoad()
                     Toast.makeText(context, R.string.loading, Toast.LENGTH_SHORT).show()
                 }
+                resumeIfMenuPaused()
             }
-            .setNegativeButton(R.string.hoenn_menu_back) { _, _ -> openHoennQuickMenu() }
+            .setNegativeButton(R.string.hoenn_menu_back) { _, _ ->
+                returningToMenu = true
+                openHoennQuickMenu()
+            }
+            .setOnDismissListener {
+                // Outside-tap / cancel without Back — resume gameplay.
+                if (!returningToMenu) {
+                    resumeIfMenuPaused()
+                }
+            }
             .show()
     }
 

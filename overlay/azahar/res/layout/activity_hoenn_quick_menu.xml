@@ -1,183 +1,374 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  33 START — quick menu. A modal dialog over dimmed, paused gameplay. Compact
-  brand chip + game tag, a focused "Resume" row, Save/Load rows with subtitles
-  and chevrons, a fading rule, and the A/B/START controller bar.
-  Enter: 200ms fade + 10% slide-up (see @anim/hoenn_menu_in); audio ducks.
-  Wire the emulator's START handler to inflate this over the paused surface.
+  START quick menu — modal over dimmed, paused gameplay.
+  Brand chip + game tag, Resume, camera toggles, Pokédex, Save/Load, controller bar.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quickMenuRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/hoenn_scrim">
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="40dp"
-        android:text="GAMEPLAY · DIMMED &amp; PAUSED"
-        android:textColor="@color/hoenn_neutral_700"
-        android:fontFamily="@font/inter_regular"
-        android:textSize="12sp"
-        android:letterSpacing="0.14" />
+    android:background="@color/hoenn_scrim"
+    android:clickable="true"
+    android:focusable="false">
 
     <LinearLayout
+        android:id="@+id/quickMenuPanel"
         android:layout_width="480dp"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:layout_marginHorizontal="24dp"
         android:orientation="vertical"
         android:background="@drawable/hoenn_bg_dialog"
-        android:padding="22dp">
+        android:padding="22dp"
+        android:clickable="true"
+        android:focusable="false">
 
         <!-- header: brand chip + title + game tag -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:focusable="false">
             <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:background="@drawable/hoenn_badge"
                 android:padding="9dp"
                 android:src="@drawable/hoenn_mark"
-                android:contentDescription="@string/hoenn_brand" />
+                android:contentDescription="@string/hoenn_brand"
+                android:focusable="false" />
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="12dp"
                 android:text="@string/hoenn_menu_title"
-                style="@style/Hoenn.Text.Title" />
+                style="@style/Hoenn.Text.Title"
+                android:focusable="false" />
             <TextView
+                android:id="@+id/chipGameTag"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="@drawable/hoenn_chip"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="6dp"
-                android:text="Alpha Sapphire"
+                android:text="@string/hoenn_brand"
                 android:fontFamily="@font/inter_medium"
                 android:textColor="@color/hoenn_accent_100"
-                android:textSize="13sp" />
+                android:textSize="13sp"
+                android:focusable="false" />
         </LinearLayout>
 
-        <!-- Resume (focused by default) -->
-        <LinearLayout
-            android:id="@+id/rowResume"
+        <ScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:minHeight="56dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/hoenn_row_menu"
-            android:paddingHorizontal="16dp"
-            android:focusable="true"
-            android:clickable="true">
-            <requestFocus />
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/hoenn_ic_play"
-                android:contentDescription="@null" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:text="@string/hoenn_menu_resume"
-                style="@style/Hoenn.Text.CardTitle" />
-        </LinearLayout>
+            android:layout_marginTop="12dp"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:focusable="false">
 
-        <!-- Save state -->
-        <LinearLayout
-            android:id="@+id/rowSave"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:minHeight="56dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/hoenn_row_menu"
-            android:paddingHorizontal="16dp"
-            android:focusable="true"
-            android:clickable="true">
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/hoenn_ic_save"
-                android:contentDescription="@null" />
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/hoenn_menu_save_state"
-                    style="@style/Hoenn.Text.CardTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/hoenn_menu_save_desc"
-                    style="@style/Hoenn.Text.Muted" />
-            </LinearLayout>
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:src="@drawable/hoenn_ic_chevron"
-                android:contentDescription="@null" />
-        </LinearLayout>
+                android:orientation="vertical"
+                android:focusable="false">
 
-        <!-- Load state -->
-        <LinearLayout
-            android:id="@+id/rowLoad"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:minHeight="56dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/hoenn_row_menu"
-            android:paddingHorizontal="16dp"
-            android:focusable="true"
-            android:clickable="true">
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/hoenn_ic_load"
-                android:contentDescription="@null" />
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
+                <!-- Resume (focused by default) -->
+                <LinearLayout
+                    android:id="@+id/rowResume"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/hoenn_menu_load_state"
-                    style="@style/Hoenn.Text.CardTitle" />
-                <TextView
-                    android:layout_width="wrap_content"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusDown="@+id/rowFreelook">
+                    <requestFocus />
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_play"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:text="@string/hoenn_menu_resume"
+                        style="@style/Hoenn.Text.CardTitle"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <!-- Free look toggle -->
+                <LinearLayout
+                    android:id="@+id/rowFreelook"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/hoenn_menu_load_desc"
-                    style="@style/Hoenn.Text.Muted" />
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowResume"
+                    android:nextFocusDown="@+id/rowZoom">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_mark"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_freelook"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_freelook_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/chipFreelookStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/hoenn_chip_muted"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="5dp"
+                        android:text="@string/hoenn_status_off"
+                        android:fontFamily="@font/inter_medium"
+                        android:textColor="@color/hoenn_muted"
+                        android:textSize="12sp"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <!-- Zoom assist toggle -->
+                <LinearLayout
+                    android:id="@+id/rowZoom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowFreelook"
+                    android:nextFocusDown="@+id/rowPokedex">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_edit"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_zoom"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_zoom_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/chipZoomStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/hoenn_chip_muted"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="5dp"
+                        android:text="@string/hoenn_status_off"
+                        android:fontFamily="@font/inter_medium"
+                        android:textColor="@color/hoenn_muted"
+                        android:textSize="12sp"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <!-- Pokédex -->
+                <LinearLayout
+                    android:id="@+id/rowPokedex"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowZoom"
+                    android:nextFocusDown="@+id/rowSave">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_check"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_pokedex_short"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_pokedex_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/hoenn_ic_chevron"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <!-- Save state -->
+                <LinearLayout
+                    android:id="@+id/rowSave"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowPokedex"
+                    android:nextFocusDown="@+id/rowLoad">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_save"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_save_state"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:id="@+id/textSaveDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_save_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/hoenn_ic_chevron"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <!-- Load state -->
+                <LinearLayout
+                    android:id="@+id/rowLoad"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowSave">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_load"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_load_state"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:id="@+id/textLoadDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_load_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/hoenn_ic_chevron"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                </LinearLayout>
             </LinearLayout>
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:src="@drawable/hoenn_ic_chevron"
-                android:contentDescription="@null" />
-        </LinearLayout>
+        </ScrollView>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
-            android:background="@drawable/hoenn_rule_fade" />
+            android:background="@drawable/hoenn_rule_fade"
+            android:focusable="false" />
 
         <include
             layout="@layout/hoenn_controller_hint_bar"

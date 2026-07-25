@@ -216,9 +216,12 @@ void FrameLimiter::WaitOnce() {
 }
 
 void FrameLimiter::Reset() {
-    previous_system_time_us = microseconds::zero();
+    // Do NOT zero previous_system_time_us to wall-zero: first DoFrameLimiting would
+    // treat the entire session as one huge frame and sleep / ignore turbo until a
+    // map transition re-synced timing. Mark baseline pending instead.
     previous_walltime = Clock::now();
     frame_limiting_delta_err = microseconds::zero();
+    baseline_pending = true;
 }
 
 void FrameLimiter::DoFrameLimiting(microseconds current_system_time_us) {
@@ -233,6 +236,15 @@ void FrameLimiter::DoFrameLimiting(microseconds current_system_time_us) {
     double sleep_scale = Settings::GetFrameLimit() / 100.0;
 
     if (Settings::GetFrameLimit() == 0) {
+        return;
+    }
+
+    // After turbo toggle / savestate: re-baseline without sleeping so new limit is immediate
+    if (baseline_pending) {
+        previous_system_time_us = current_system_time_us;
+        previous_walltime = now;
+        frame_limiting_delta_err = microseconds::zero();
+        baseline_pending = false;
         return;
     }
 

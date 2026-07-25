@@ -456,22 +456,9 @@ if ((Test-Path $strings) -and (Test-Path $snippetPath)) {
         $text = $text.Replace('>Azahar</string>', '>Hoenn Forge</string>')
     }
     $snippet = (Get-Content $snippetPath -Raw -Encoding UTF8).TrimEnd()
-    if ($text -notmatch 'hoenn_welcome_title') {
-        $text = $text -replace '</resources>', ($snippet + "`n`n</resources>")
-    } else {
-        # Snippet already present: merge any *new* keys so later UI fixes land without wipe
-        $added = 0
-        foreach ($m in [regex]::Matches($snippet, '<string name="([^"]+)">([\s\S]*?)</string>')) {
-            $name = $m.Groups[1].Value
-            if ($text -notmatch [regex]::Escape("name=`"$name`"")) {
-                $text = $text -replace '</resources>', ("    " + $m.Value + "`n</resources>")
-                $added++
-            }
-        }
-        if ($added -gt 0) {
-            Write-Host "Merged $added new Hoenn string(s) into strings.xml"
-        }
-    }
+    # Lines with hoenn_* were already stripped above — always re-append the full snippet
+    # so string value updates (not just new keys) ship on every build.
+    $text = $text -replace '</resources>', ($snippet + "`n`n</resources>")
     [System.IO.File]::WriteAllText($strings, $text + "`n", [System.Text.UTF8Encoding]::new($false))
     Write-Host "Injected Hoenn Forge strings"
 }

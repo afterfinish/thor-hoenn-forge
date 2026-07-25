@@ -37,11 +37,12 @@ constexpr float PITCH_MAX = 0.f;
 constexpr float PITCH_STEP = 0.30f;
 constexpr float YAW_STEP = 0.85f;
 constexpr float FOV_GOLD_LO = 150.f;
-constexpr float FOV_GOLD_HI = 400.f;
-constexpr float FOV_ZOOM_MIN = 220.f;
+constexpr float FOV_GOLD_HI = 400.f; // gold discovery band (default house FOV ~225)
+// Zoom may push FOV outside discovery band — do not use OkGoldFov for zoom writes
+constexpr float FOV_ZOOM_MIN = 180.f;
 constexpr float FOV_ZOOM_MAX = 750.f;
-constexpr float FOV_ASSIST = 480.f;
-constexpr float FOV_STEP = 12.f;
+constexpr float FOV_STEP = 10.f;
+constexpr u32 OFF_FOV_ALT = 0x6C;
 constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
 
@@ -126,13 +127,21 @@ void FreeCam::EnsureDevices() {
         }
         c_stick = Input::CreateDevice<Input::AnalogDevice>(param);
     }
+    // L/R: prefer bound profile; fall back to Android shoulder buttons (L1/R1)
+    auto make_btn = [](Settings::NativeButton::Values id, int android_code) {
+        std::string param = Settings::values.current_input_profile.buttons[id];
+        if (param.empty() || param.find("null") != std::string::npos) {
+            param = "engine:gamepad,code:" + std::to_string(android_code);
+        }
+        return Input::CreateDevice<Input::ButtonDevice>(param);
+    };
     if (!btn_l) {
-        btn_l = Input::CreateDevice<Input::ButtonDevice>(
-            Settings::values.current_input_profile.buttons[Settings::NativeButton::L]);
+        // KEYCODE_BUTTON_L1 = 102
+        btn_l = make_btn(Settings::NativeButton::L, 102);
     }
     if (!btn_r) {
-        btn_r = Input::CreateDevice<Input::ButtonDevice>(
-            Settings::values.current_input_profile.buttons[Settings::NativeButton::R]);
+        // KEYCODE_BUTTON_R1 = 103
+        btn_r = make_btn(Settings::NativeButton::R, 103);
     }
 }
 
@@ -185,9 +194,9 @@ void FreeCam::SetZoomAssistEnabled(bool e) {
     zoom_assist = e;
     btn_l.reset();
     btn_r.reset();
+    fov_seeded = false; // re-seed from live cam FOV on next tick (don't jump to 480)
     if (zoom_assist) {
-        user_fov = FOV_ASSIST;
-        LOG_WARNING(Core, "Hoenn zoom assist ON");
+        LOG_WARNING(Core, "Hoenn zoom assist ON (hold L out / R in)");
     } else {
         LOG_INFO(Core, "Hoenn zoom assist OFF");
     }
@@ -338,6 +347,15 @@ void FreeCam::WriteFreelook(Memory::MemorySystem& mem, Kernel::Process& process,
     }
 }
 
+void FreeCam::WriteZoomFov(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam) {
+    if (!HeapPtr(cam) || cam + OFF_FOV + 4 >= 0x0C000000) {
+        return;
+    }
+    // Dual FOV so house/interior layout stays coherent
+    WriteF(mem, process, cam + OFF_FOV, user_fov);
+    WriteF(mem, process, cam + OFF_FOV_ALT, user_fov);
+}
+
 void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (!freelook && !zoom_assist) {
         return;
@@ -384,25 +402,48 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         }
     }
 
-    if (zoom_assist && primary_cam && IsGoldLive(mem, *process, primary_cam)) {
-        bool l = false, r = false;
-        try {
-            if (btn_l) {
-                l = btn_l->GetStatus();
+    // Zoom assist: pick any live gold as target; FOV may leave discovery band
+    if (zoom_assist) {
+        u32 zcam = primary_cam;
+        if (!HeapPtr(zcam) || mem.Read32(*process, zcam + OFF_FLAG) != LIVE_FLAG) {
+            zcam = 0;
+            for (int i = 0; i < live_count; ++i) {
+                const u32 b = live_targets[static_cast<size_t>(i)];
+                if (HeapPtr(b) && mem.Read32(*process, b + OFF_FLAG) == LIVE_FLAG) {
+                    zcam = b;
+                    break;
+                }
             }
-            if (btn_r) {
-                r = btn_r->GetStatus();
+            if (!zcam && HeapPtr(slot_cam) && mem.Read32(*process, slot_cam + OFF_FLAG) == LIVE_FLAG) {
+                zcam = slot_cam;
             }
-        } catch (...) {
-            btn_l.reset();
-            btn_r.reset();
         }
-        if (l && !r) {
-            user_fov = std::min(FOV_ZOOM_MAX, user_fov + FOV_STEP);
-            WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
-        } else if (r && !l) {
-            user_fov = std::max(FOV_ZOOM_MIN, user_fov - FOV_STEP);
-            WriteF(mem, *process, primary_cam + OFF_FOV, user_fov);
+        if (zcam) {
+            if (!fov_seeded) {
+                const float cur = BFloat(mem.Read32(*process, zcam + OFF_FOV));
+                user_fov = OkFloat(cur) ? std::clamp(cur, FOV_ZOOM_MIN, FOV_ZOOM_MAX) : 280.f;
+                fov_seeded = true;
+            }
+            bool l = false, r = false;
+            try {
+                if (btn_l) {
+                    l = btn_l->GetStatus();
+                }
+                if (btn_r) {
+                    r = btn_r->GetStatus();
+                }
+            } catch (...) {
+                btn_l.reset();
+                btn_r.reset();
+            }
+            // L = zoom out (wider FOV), R = zoom in (narrower FOV)
+            if (l && !r) {
+                user_fov = std::min(FOV_ZOOM_MAX, user_fov + FOV_STEP);
+            } else if (r && !l) {
+                user_fov = std::max(FOV_ZOOM_MIN, user_fov - FOV_STEP);
+            }
+            // Re-assert every tick so the game cannot snap FOV back
+            WriteZoomFov(mem, *process, zcam);
         }
     }
 
