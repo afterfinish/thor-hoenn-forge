@@ -562,6 +562,7 @@ class EmulationFragment :
                     R.string.hoenn_menu_zoom_off
                 },
             ),
+            getString(R.string.hoenn_menu_pokedex),
             getString(R.string.hoenn_menu_cam_probe) + if (probeN > 0) " (#$probeN)" else " (#0 slot)",
             getString(R.string.hoenn_menu_cam_re_dump),
             getString(R.string.hoenn_menu_save_state),
@@ -575,14 +576,24 @@ class EmulationFragment :
                     0 -> toggleHoennFreelook()
                     1 -> showHoennFreelookExperimentMenu()
                     2 -> toggleHoennZoomAssist()
-                    3 -> showHoennCamProbeMenu()
-                    4 -> dumpHoennCamRE()
-                    5 -> showHoennStateSlots(isSaving = true)
-                    6 -> showHoennStateSlots(isSaving = false)
+                    3 -> openHoennPokedex()
+                    4 -> showHoennCamProbeMenu()
+                    5 -> dumpHoennCamRE()
+                    6 -> showHoennStateSlots(isSaving = true)
+                    7 -> showHoennStateSlots(isSaving = false)
                     else -> { /* resume / dismiss */ }
                 }
             }
             .show()
+    }
+
+    /** Living Pokédex: OCR top screen → offline species entry. */
+    private fun openHoennPokedex() {
+        if (!isAdded || _binding == null) return
+        org.citra.citra_emu.hoennforge.pokedex.PokedexController.open(
+            fragment = this,
+            surfaceView = binding.surfaceEmulation,
+        )
     }
 
     /**

@@ -218,6 +218,8 @@ dependencies {
     implementation("io.coil-kt:coil:2.7.0")
     implementation("org.ini4j:ini4j:0.5.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
+    // Hoenn Forge Pokédex — on-device Latin OCR (bundled model, offline after install)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
 
 // Download Vulkan Validation Layers from the KhronosGroup GitHub.

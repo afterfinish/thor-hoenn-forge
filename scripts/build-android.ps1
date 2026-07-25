@@ -150,6 +150,21 @@ if (Test-Path $nlPath) {
         [System.IO.File]::WriteAllText($nlPath, $nl)
         Write-Host "Patched NativeLibrary.kt hoennDumpCamRE JNI"
     }
+    if ($nl -notmatch "hoennCaptureTopScreen") {
+        $nl = Get-Content $nlPath -Raw
+        $nl = $nl -replace "(external fun hoennDumpCamRE\(tag: String\): String)", @"
+`$1
+
+    /**
+     * Hoenn Forge Pokédex: capture top 3DS screen.
+     * Returns IntArray: [width, height, ...ARGB pixels], or null on failure.
+     * @param resScale 0 = use emulator resolution factor
+     */
+    external fun hoennCaptureTopScreen(resScale: Int): IntArray?
+"@
+        [System.IO.File]::WriteAllText($nlPath, $nl)
+        Write-Host "Patched NativeLibrary.kt hoennCaptureTopScreen JNI"
+    }
 }
 # native.cpp freelook implementation
 $nativeCpp = Join-Path $Android "app\src\main\jni\native.cpp"
@@ -296,6 +311,101 @@ jstring Java_org_citra_citra_1emu_NativeLibrary_hoennDumpCamRE(JNIEnv* env,
     } else {
         Write-Host "native.cpp temporary frame limit Reset already present"
     }
+    # Pokédex: top-screen capture via RequestScreenshot + SingleFrameLayout
+    $nc = Get-Content $nativeCpp -Raw
+    if ($nc -notmatch "hoennCaptureTopScreen") {
+        if ($nc -notmatch "framebuffer_layout\.h") {
+            $nc = $nc -replace '(#include "core/core\.h")', @"
+`$1
+#include "core/3ds.h"
+#include "core/frontend/framebuffer_layout.h"
+#include "video_core/gpu.h"
+#include "video_core/renderer_base.h"
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <vector>
+"@
+        }
+        $jni = @'
+
+jintArray Java_org_citra_citra_1emu_NativeLibrary_hoennCaptureTopScreen(
+    JNIEnv* env, [[maybe_unused]] jobject obj, jint res_scale) {
+    auto& system = Core::System::GetInstance();
+    if (!system.IsPoweredOn()) {
+        return nullptr;
+    }
+    auto& renderer = system.GPU().Renderer();
+    u32 scale = res_scale > 0 ? static_cast<u32>(res_scale) : renderer.GetResolutionScaleFactor();
+    if (scale == 0) {
+        scale = 1;
+    }
+    if (scale > 8) {
+        scale = 8;
+    }
+    const u32 width = static_cast<u32>(Core::kScreenTopWidth) * scale;
+    const u32 height = static_cast<u32>(Core::kScreenTopHeight) * scale;
+    // swapped=false → top screen only
+    const Layout::FramebufferLayout layout =
+        Layout::SingleFrameLayout(width, height, false, false);
+
+    std::vector<u32> pixels(static_cast<size_t>(layout.width) * layout.height, 0);
+    std::mutex m;
+    std::condition_variable cv;
+    bool done = false;
+    bool invert = false;
+
+    renderer.RequestScreenshot(
+        pixels.data(),
+        [&](bool invert_y) {
+            invert = invert_y;
+            {
+                std::lock_guard<std::mutex> lock(m);
+                done = true;
+            }
+            cv.notify_one();
+        },
+        layout);
+
+    {
+        std::unique_lock<std::mutex> lock(m);
+        if (!cv.wait_for(lock, std::chrono::seconds(3), [&] { return done; })) {
+            LOG_ERROR(Frontend, "Hoenn Pokédex: top-screen capture timed out");
+            return nullptr;
+        }
+    }
+
+    if (invert) {
+        for (u32 y = 0; y < height / 2; ++y) {
+            for (u32 x = 0; x < width; ++x) {
+                const size_t a = static_cast<size_t>(y) * width + x;
+                const size_t b = static_cast<size_t>(height - 1 - y) * width + x;
+                std::swap(pixels[a], pixels[b]);
+            }
+        }
+    }
+
+    const jsize out_len = static_cast<jsize>(2 + pixels.size());
+    jintArray arr = env->NewIntArray(out_len);
+    if (!arr) {
+        return nullptr;
+    }
+    std::vector<jint> out(static_cast<size_t>(out_len));
+    out[0] = static_cast<jint>(width);
+    out[1] = static_cast<jint>(height);
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        out[2 + i] = static_cast<jint>(pixels[i]);
+    }
+    env->SetIntArrayRegion(arr, 0, out_len, out.data());
+    LOG_INFO(Frontend, "Hoenn Pokédex: captured top {}x{} scale={}", width, height, scale);
+    return arr;
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp hoennCaptureTopScreen JNI"
+    }
 }
 $Main = Join-Path $Android "app\src\main"
 $JavaDst = Join-Path $Main "java"
@@ -307,6 +417,18 @@ if (Test-Path $JavaSrc) {
         New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
         Copy-Item $_.FullName $target -Force
     }
+}
+# Offline Pokédex assets (species.json + NOTICE)
+$AssetsSrc = Join-Path $Overlay "assets"
+$AssetsDst = Join-Path $Main "assets"
+if (Test-Path $AssetsSrc) {
+    Get-ChildItem $AssetsSrc -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($AssetsSrc.Length).TrimStart('\','/')
+        $target = Join-Path $AssetsDst $rel
+        New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+        Copy-Item $_.FullName $target -Force
+    }
+    Write-Host "Applied assets (pokedex)"
 }
 if (Test-Path (Join-Path $Overlay "res\layout")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\layout") | Out-Null
@@ -353,6 +475,17 @@ if (Test-Path (Join-Path $Overlay "jni\android_common\android_common.h")) {
 }
 if (Test-Path (Join-Path $Overlay "app-build.gradle.kts")) {
     Copy-Item (Join-Path $Overlay "app-build.gradle.kts") (Join-Path $Android "app\build.gradle.kts") -Force
+    Write-Host "Applied overlay app-build.gradle.kts"
+}
+# Ensure ML Kit is present even if overlay gradle was partial
+$gradleApp = Join-Path $Android "app\build.gradle.kts"
+if ((Test-Path $gradleApp) -and ((Get-Content $gradleApp -Raw) -notmatch "text-recognition")) {
+    $g = Get-Content $gradleApp -Raw
+    $g = $g.Replace(
+        'implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")',
+        "implementation(`"org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2`")`r`n    implementation(`"com.google.mlkit:text-recognition:16.0.1`")")
+    [System.IO.File]::WriteAllText($gradleApp, $g)
+    Write-Host "Patched ML Kit text-recognition into build.gradle.kts"
 }
 
 # Always re-inject Hoenn Forge strings (line-filter old hoenn_* then append snippet)
