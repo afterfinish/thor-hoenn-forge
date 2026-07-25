@@ -610,7 +610,8 @@ class EmulationFragment :
         refreshToggleChips()
         refreshSlotDescs()
 
-        val dialog = Dialog(requireContext())
+        // Translucent theme + zero dim: only the card paints (no purple system/our scrim).
+        val dialog = Dialog(requireContext(), android.R.style.Theme_Translucent_NoTitleBar)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(view)
         dialog.setCancelable(true)
@@ -620,8 +621,12 @@ class EmulationFragment :
                 WindowManager.LayoutParams.MATCH_PARENT,
             )
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            // Keep game surface visible under the scrim (no full black window).
             clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            // Kill any residual theme dim (some skins re-apply FLAG_DIM_BEHIND).
+            val lp = attributes
+            lp.dimAmount = 0f
+            attributes = lp
+            setDimAmount(0f)
         }
 
         fun closeMenu() {
@@ -789,55 +794,169 @@ class EmulationFragment :
         }
     }
 
+    /**
+     * Designed save/load slot picker (same card language as the START quick menu).
+     * No hard pause — same surface-safe path as the quick menu.
+     */
     private fun showHoennStateSlots(isSaving: Boolean) {
+        if (!isAdded || _binding == null) return
+
         val savestates = NativeLibrary.getSavestateInfo()
-        val labels = Array(NativeLibrary.SAVESTATE_SLOT_COUNT) { slot ->
-            val occupied = savestates?.firstOrNull { it.slot == slot }
-            when {
-                occupied != null && slot == NativeLibrary.QUICKSAVE_SLOT ->
-                    getString(R.string.emulation_occupied_quicksave_slot, occupied.time)
-                occupied != null ->
-                    getString(R.string.emulation_occupied_state_slot, occupied.slot, occupied.time)
-                slot == NativeLibrary.QUICKSAVE_SLOT ->
-                    getString(R.string.emulation_quicksave_slot)
-                else ->
-                    getString(R.string.emulation_empty_state_slot, slot)
+        val view = layoutInflater.inflate(R.layout.activity_hoenn_save_slots, null)
+        val title = view.findViewById<TextView>(R.id.textSlotsTitle)
+        val chip = view.findViewById<TextView>(R.id.chipSlotsGame)
+        val list = view.findViewById<android.widget.LinearLayout>(R.id.slotList)
+
+        title.setText(
+            if (isSaving) R.string.hoenn_slots_save_title else R.string.hoenn_slots_load_title,
+        )
+        if (::game.isInitialized) {
+            val entry = org.citra.citra_emu.hoennforge.OrasTitles.find(game.titleId)
+            chip.text = when (entry?.game) {
+                org.citra.citra_emu.hoennforge.OrasTitles.Game.OMEGA_RUBY ->
+                    getString(R.string.hoenn_game_tag_or)
+                org.citra.citra_emu.hoennforge.OrasTitles.Game.ALPHA_SAPPHIRE ->
+                    getString(R.string.hoenn_game_tag_as)
+                else -> game.title.ifBlank { getString(R.string.hoenn_brand) }
             }
-        }
-        val enabled = BooleanArray(NativeLibrary.SAVESTATE_SLOT_COUNT) { slot ->
-            isSaving || savestates?.any { it.slot == slot } == true
+        } else {
+            chip.text = getString(R.string.hoenn_brand)
         }
 
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(
-                if (isSaving) {
-                    R.string.hoenn_menu_save_state
-                } else {
-                    R.string.hoenn_menu_load_state
-                },
+        // Controller bar: B Back · START Close
+        view.findViewById<TextView>(R.id.hintBLabel)?.setText(R.string.hoenn_hint_back)
+        view.findViewById<TextView>(R.id.hintStartLabel)?.setText(R.string.hoenn_hint_close)
+
+        val dialog = Dialog(requireContext(), android.R.style.Theme_Translucent_NoTitleBar)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(view)
+        dialog.setCancelable(true)
+        dialog.window?.apply {
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
             )
-            .setItems(labels) { _, slot ->
-                if (!enabled[slot]) {
-                    Toast.makeText(
-                        context,
-                        R.string.hoenn_menu_slot_empty,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    return@setItems
-                }
-                if (isSaving) {
-                    NativeLibrary.saveState(slot)
-                    Toast.makeText(context, R.string.saving, Toast.LENGTH_SHORT).show()
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            val lp = attributes
+            lp.dimAmount = 0f
+            attributes = lp
+            setDimAmount(0f)
+        }
+
+        fun closeSlots(reopenMenu: Boolean) {
+            dialog.dismiss()
+            if (reopenMenu) openHoennQuickMenu()
+        }
+
+        view.findViewById<View>(R.id.slotsRoot).setOnClickListener { closeSlots(reopenMenu = true) }
+        view.findViewById<View>(R.id.slotsPanel).setOnClickListener { /* consume */ }
+
+        var firstFocus: View? = null
+        for (slot in 0 until NativeLibrary.SAVESTATE_SLOT_COUNT) {
+            val occupied = savestates?.firstOrNull { it.slot == slot }
+            val empty = occupied == null
+            val canSelect = isSaving || !empty
+
+            val row = layoutInflater.inflate(R.layout.hoenn_slot_row, list, false)
+            val thumb = row.findViewById<View>(R.id.slotThumb)
+            val slotTitle = row.findViewById<TextView>(R.id.slotTitle)
+            val slotMeta = row.findViewById<TextView>(R.id.slotMeta)
+            val slotAction = row.findViewById<TextView>(R.id.slotAction)
+
+            slotTitle.text = when {
+                slot == NativeLibrary.QUICKSAVE_SLOT -> getString(R.string.hoenn_slot_quick)
+                else -> getString(R.string.hoenn_slot_n, slot)
+            }
+            if (empty) {
+                thumb.setBackgroundResource(R.drawable.hoenn_slot_empty)
+                slotMeta.setText(R.string.hoenn_slot_empty_meta)
+                slotAction.text = if (isSaving) {
+                    getString(R.string.hoenn_slot_action_save)
                 } else {
-                    // Emu thread must be running (no surface-destroy pause) so Load processes.
-                    NativeLibrary.loadState(slot)
-                    // Defer re-apply until after LoadState finishes on the core thread.
-                    binding.root.postDelayed({ reapplyAfterSavestateLoad() }, 400)
-                    Toast.makeText(context, R.string.loading, Toast.LENGTH_SHORT).show()
+                    ""
+                }
+                if (!isSaving) {
+                    row.alpha = 0.45f
+                }
+            } else {
+                thumb.setBackgroundResource(R.drawable.hoenn_slot_thumb)
+                val whenStr = occupied?.time?.let { d ->
+                    java.text.DateFormat.getDateTimeInstance(
+                        java.text.DateFormat.SHORT,
+                        java.text.DateFormat.SHORT,
+                    ).format(d)
+                } ?: ""
+                slotMeta.text = whenStr
+                slotAction.text = if (isSaving) {
+                    getString(R.string.hoenn_slot_action_overwrite)
+                } else {
+                    getString(R.string.hoenn_slot_action_load)
                 }
             }
-            .setNegativeButton(R.string.hoenn_menu_back) { _, _ -> openHoennQuickMenu() }
-            .show()
+
+            if (canSelect) {
+                row.setOnClickListener {
+                    if (isSaving) {
+                        NativeLibrary.saveState(slot)
+                        Toast.makeText(context, R.string.saving, Toast.LENGTH_SHORT).show()
+                        closeSlots(reopenMenu = false)
+                    } else {
+                        if (empty) {
+                            Toast.makeText(
+                                context,
+                                R.string.hoenn_menu_slot_empty,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            return@setOnClickListener
+                        }
+                        NativeLibrary.loadState(slot)
+                        binding.root.postDelayed({ reapplyAfterSavestateLoad() }, 400)
+                        Toast.makeText(context, R.string.loading, Toast.LENGTH_SHORT).show()
+                        closeSlots(reopenMenu = false)
+                    }
+                }
+                if (firstFocus == null) firstFocus = row
+            } else {
+                row.isClickable = false
+                row.isFocusable = false
+            }
+            list.addView(row)
+        }
+
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) {
+                return@setOnKeyListener false
+            }
+            when (keyCode) {
+                KeyEvent.KEYCODE_BUTTON_B,
+                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_BUTTON_START,
+                -> {
+                    closeSlots(reopenMenu = true)
+                    true
+                }
+                KeyEvent.KEYCODE_BUTTON_A,
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                -> {
+                    dialog.currentFocus?.performClick()
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    dialog.currentFocus?.focusSearch(View.FOCUS_UP)?.requestFocus()
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    dialog.currentFocus?.focusSearch(View.FOCUS_DOWN)?.requestFocus()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        dialog.show()
+        val focusTarget = firstFocus ?: list.getChildAt(0)
+        focusTarget?.post { focusTarget.requestFocus() }
     }
 
     /**
