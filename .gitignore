@@ -72,6 +72,15 @@ Thumbs.db
 *.swp
 *.swo
 
+# --- Local AI / agent session files (never publish) ---
+/AGENTS.md
+/SOUL.md
+/MEMORY.md
+/CLAUDE-DESIGN-BRIEF.txt
+/Agents.md
+/Soul.md
+/Memory.md
+
 # --- Python / misc research envs ---
 .venv/
 venv/

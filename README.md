@@ -115,7 +115,7 @@ APK (no game files)
 └── Azahar-based emulator core (Thor profile + freecam / zoom / turbo hooks)
 ```
 
-Working contracts for maintainers and AI assistants live in [SOUL.md](SOUL.md). Session handoff is [MEMORY.md](MEMORY.md). Design and research docs are under [docs/](docs/).
+Design and research docs for maintainers live under [docs/](docs/).
 
 ---
 
@@ -188,11 +188,9 @@ Pokémon, Pokémon character names, and related marks are trademarks of Nintendo
 
 ## Contributing
 
-1. Read **[SOUL.md](SOUL.md)** (legal and product non-negotiables).  
-2. Check **[MEMORY.md](MEMORY.md)** for current handoff.  
-3. Prefer small, reviewable changes. Preserve upstream license headers when touching Azahar-derived files.
-
-**After meaningful changes:** commit, push to the public remote, and update `MEMORY.md` when that is part of your workflow.
+1. Respect the legal rules above (no ROMs, keys, or copyrighted game data in the repo).  
+2. Prefer small, reviewable changes. Preserve upstream license headers when touching Azahar-derived files.  
+3. GPL-3.0 for Hoenn Forge code; keep Azahar lineage attributions intact.
 
 ---
 

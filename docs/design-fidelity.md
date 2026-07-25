@@ -5,9 +5,9 @@ Claude Design (`Hoenn Forge UI.dc.html`, project `ca62c4e3-…`), fixing the gap
 first pass missed. Visual preview (rendered from these exact tokens):
 **https://claude.ai/code/artifact/42733fcc-0ab8-4eff-9945-441c529abfc9**
 
-> The design **pivoted off the emerald/copper palette in `CLAUDE-DESIGN-BRIEF.txt`**
+> The design **pivoted off an early emerald/copper palette**
 > (a "starting point — refine" that the designer overrode) to the **Nocturne** blurple
-> system. The brief palette is stale; ignore it. Local `design/exports/*.png` have
+> system. That early palette is stale; ignore it. Local `design/exports/*.png` have
 > **empty brand-glyph slots** and `design/*handoff.html` is a compiled bundle — neither
 > is a readable source, which is why the glyph was missed. Source of truth is the
 > `.dc.html` in the Claude Design MCP.
