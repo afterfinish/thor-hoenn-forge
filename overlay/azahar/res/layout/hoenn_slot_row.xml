@@ -3,25 +3,19 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="6dp"
-    android:minHeight="64dp"
+    android:minHeight="56dp"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@drawable/hoenn_row_menu"
-    android:padding="10dp"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="12dp"
     android:focusable="true"
     android:clickable="true">
-
-    <View
-        android:id="@+id/slotThumb"
-        android:layout_width="84dp"
-        android:layout_height="48dp"
-        android:background="@drawable/hoenn_slot_thumb" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="14dp"
         android:orientation="vertical"
         android:focusable="false">
         <TextView
@@ -45,3 +39,4 @@
         style="@style/Hoenn.Text.Accent"
         android:focusable="false" />
 </LinearLayout>
+

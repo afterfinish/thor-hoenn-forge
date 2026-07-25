@@ -15,8 +15,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import org.citra.citra_emu.utils.Log
 
 /**
- * On-device Latin OCR via ML Kit, with multi-pass preprocessing to help pixel fonts
- * (ORAS nameplates) that ML Kit otherwise mangles (W/M, thin strokes, etc.).
+ * On-device Latin OCR via ML Kit.
+ *
+ * Prefer [recognizeQuick] (1–2 passes). Use [recognizeDeep] only when matching fails.
+ * Full multi-pass on large bitmaps was ~30s; quick path targets a few seconds.
  */
 object OcrService {
     data class Token(
@@ -29,45 +31,79 @@ object OcrService {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
-    /**
-     * Run OCR on several preprocessed variants and merge unique tokens (largest area first).
-     */
-    suspend fun recognize(bitmap: Bitmap): List<Token> {
-        val passes = buildPasses(bitmap)
-        val merged = LinkedHashMap<String, Token>()
-        for ((label, bmp) in passes) {
-            try {
-                val tokens = recognizeOnce(bmp)
-                Log.info("[Pokedex] OCR pass=$label tokens=${tokens.size}: ${tokens.take(8).joinToString { it.text }}")
-                for (t in tokens) {
-                    val key = t.text.lowercase()
-                    val prev = merged[key]
-                    if (prev == null || t.area > prev.area || t.confidence > prev.confidence) {
-                        merged[key] = t
-                    }
-                }
-            } catch (e: Exception) {
-                Log.warning("[Pokedex] OCR pass=$label failed: $e")
-            } finally {
-                if (bmp !== bitmap && !bmp.isRecycled) bmp.recycle()
+    /** Fast path: top-band contrast + optional full-frame (max ~2 ML Kit calls). */
+    suspend fun recognizeQuick(bitmap: Bitmap): List<Token> {
+        val scaled = scaleToMaxWidth(bitmap, 960)
+        val toRecycle = ArrayList<Bitmap>()
+        if (scaled !== bitmap) toRecycle.add(scaled)
+        try {
+            val merged = LinkedHashMap<String, Token>()
+            // 1) Top band only — nameplates live here; much smaller image
+            val band = cropTopBand(scaled, 0.45f)
+            if (band != null) {
+                toRecycle.add(band)
+                val contrast = contrastBoost(band, contrast = 1.7f, brightness = 16f)
+                toRecycle.add(contrast)
+                merge(merged, "quick-band", recognizeOnce(contrast))
+            }
+            // 2) Full frame once if band was weak
+            if (merged.size < 3) {
+                merge(merged, "quick-full", recognizeOnce(scaled))
+            }
+            return merged.values.sortedByDescending { it.area }
+        } finally {
+            for (b in toRecycle) {
+                if (!b.isRecycled) b.recycle()
             }
         }
-        return merged.values.sortedByDescending { it.area }
     }
 
-    private fun buildPasses(src: Bitmap): List<Pair<String, Bitmap>> {
-        val out = ArrayList<Pair<String, Bitmap>>(6)
-        out.add("raw" to src)
-        // Upscale aggressively for thin ORAS UI fonts
-        val big = upscale(src, minWidth = 1200)
-        if (big !== src) out.add("upscale" to big)
-        out.add("contrast" to contrastBoost(big, contrast = 1.6f, brightness = 12f))
-        out.add("high-contrast" to contrastBoost(big, contrast = 2.2f, brightness = 20f))
-        out.add("bw" to toBinary(big, threshold = 160))
-        out.add("bw-inv" to toBinary(big, threshold = 140, invert = true))
-        // Upper band often holds species name on summary / battle UI
-        cropTopBand(big, fraction = 0.42f)?.let { out.add("top-band" to it) }
-        return out
+    /**
+     * Deeper path when quick found nothing useful: contrast + B/W on modest upscale
+     * (max ~3 extra ML Kit calls).
+     */
+    suspend fun recognizeDeep(bitmap: Bitmap): List<Token> {
+        val scaled = scaleToMaxWidth(bitmap, 1100)
+        val toRecycle = ArrayList<Bitmap>()
+        if (scaled !== bitmap) toRecycle.add(scaled)
+        try {
+            val merged = LinkedHashMap<String, Token>()
+            merge(merged, "deep-raw", recognizeOnce(scaled))
+
+            val band = cropTopBand(scaled, 0.5f)
+            if (band != null) {
+                toRecycle.add(band)
+                val hi = contrastBoost(band, contrast = 2.1f, brightness = 24f)
+                toRecycle.add(hi)
+                merge(merged, "deep-band-hi", recognizeOnce(hi))
+                val bw = toBinary(band, threshold = 155)
+                toRecycle.add(bw)
+                merge(merged, "deep-band-bw", recognizeOnce(bw))
+            }
+            return merged.values.sortedByDescending { it.area }
+        } finally {
+            for (b in toRecycle) {
+                if (!b.isRecycled) b.recycle()
+            }
+        }
+    }
+
+    /** @deprecated Prefer [recognizeQuick] then [recognizeDeep]. */
+    suspend fun recognize(bitmap: Bitmap): List<Token> = recognizeQuick(bitmap)
+
+    private fun merge(into: LinkedHashMap<String, Token>, label: String, tokens: List<Token>) {
+        Log.info(
+            "[Pokedex] OCR pass=$label tokens=${tokens.size}: ${
+                tokens.take(8).joinToString { it.text }
+            }",
+        )
+        for (t in tokens) {
+            val key = t.text.lowercase()
+            val prev = into[key]
+            if (prev == null || t.area > prev.area || t.confidence > prev.confidence) {
+                into[key] = t
+            }
+        }
     }
 
     private suspend fun recognizeOnce(bitmap: Bitmap): List<Token> =
@@ -76,7 +112,6 @@ object OcrService {
             client.process(image)
                 .addOnSuccessListener { result ->
                     val tokens = ArrayList<Token>()
-                    // Full lines (helps multi-word names: Mr. Mime, Type: Null)
                     for (block in result.textBlocks) {
                         for (line in block.lines) {
                             val lineText = line.text.trim()
@@ -102,10 +137,10 @@ object OcrService {
                 }
         }
 
-    private fun upscale(src: Bitmap, minWidth: Int): Bitmap {
-        if (src.width >= minWidth) return src
-        val scale = minWidth.toFloat() / src.width
-        val w = (src.width * scale).toInt().coerceAtLeast(1)
+    private fun scaleToMaxWidth(src: Bitmap, maxWidth: Int): Bitmap {
+        if (src.width <= maxWidth) return src
+        val scale = maxWidth.toFloat() / src.width
+        val w = maxWidth
         val h = (src.height * scale).toInt().coerceAtLeast(1)
         return Bitmap.createScaledBitmap(src, w, h, true)
     }
@@ -127,7 +162,7 @@ object OcrService {
         return out
     }
 
-    private fun toBinary(src: Bitmap, threshold: Int, invert: Boolean = false): Bitmap {
+    private fun toBinary(src: Bitmap, threshold: Int): Bitmap {
         val w = src.width
         val h = src.height
         val pixels = IntArray(w * h)
@@ -137,10 +172,8 @@ object OcrService {
             val r = (c shr 16) and 0xFF
             val g = (c shr 8) and 0xFF
             val b = c and 0xFF
-            // Luma; ORAS UI text is light-on-dark or dark-on-light depending on screen
             val y = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-            val white = if (invert) y < threshold else y >= threshold
-            pixels[i] = if (white) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+            pixels[i] = if (y >= threshold) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
         }
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         out.setPixels(pixels, 0, w, 0, 0, w, h)

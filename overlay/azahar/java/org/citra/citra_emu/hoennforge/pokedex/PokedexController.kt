@@ -41,7 +41,8 @@ object PokedexController {
                         Log.warning("[Pokedex] PixelCopy failed — native capture at scale=1")
                         bmp = TopScreenCapture.captureNative(1)
                     }
-                    bmp?.let { TopScreenCapture.ensureOcrSize(it, minWidth = 1000) }
+                    // Keep capture modest — OCR service scales as needed
+                    bmp?.let { TopScreenCapture.ensureOcrSize(it, minWidth = 640) }
                 }
 
                 restoreResolutionIfNeeded(resBefore)
@@ -52,21 +53,31 @@ object PokedexController {
                     return@launch
                 }
 
-                val tokens = withContext(Dispatchers.Default) {
+                val hits = withContext(Dispatchers.Default) {
                     try {
-                        OcrService.recognize(bitmap)
+                        // Fast path (~1–2 ML Kit calls). Deep path only if no match.
+                        val t0 = System.nanoTime()
+                        var tokens = OcrService.recognizeQuick(bitmap)
+                        var matched = NameMatcher.matchTokens(tokens.map { it.text }, repo)
+                        val quickMs = (System.nanoTime() - t0) / 1_000_000
+                        Log.info(
+                            "[Pokedex] quick ${quickMs}ms tokens=${tokens.size} hits=${matched.size}: " +
+                                tokens.take(10).joinToString { it.text },
+                        )
+                        if (matched.isEmpty()) {
+                            val t1 = System.nanoTime()
+                            tokens = OcrService.recognizeDeep(bitmap)
+                            matched = NameMatcher.matchTokens(tokens.map { it.text }, repo)
+                            val deepMs = (System.nanoTime() - t1) / 1_000_000
+                            Log.info(
+                                "[Pokedex] deep ${deepMs}ms tokens=${tokens.size} hits=${matched.size}: " +
+                                    tokens.take(10).joinToString { it.text },
+                            )
+                        }
+                        matched
                     } finally {
                         if (!bitmap.isRecycled) bitmap.recycle()
                     }
-                }
-                Log.info(
-                    "[Pokedex] OCR tokens=${tokens.size}: ${
-                        tokens.take(16).joinToString { it.text }
-                    }",
-                )
-
-                val hits = withContext(Dispatchers.Default) {
-                    NameMatcher.matchTokens(tokens.map { it.text }, repo)
                 }
 
                 if (!fragment.isAdded) return@launch

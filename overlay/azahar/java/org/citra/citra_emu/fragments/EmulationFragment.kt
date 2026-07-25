@@ -859,7 +859,6 @@ class EmulationFragment :
             val canSelect = isSaving || !empty
 
             val row = layoutInflater.inflate(R.layout.hoenn_slot_row, list, false)
-            val thumb = row.findViewById<View>(R.id.slotThumb)
             val slotTitle = row.findViewById<TextView>(R.id.slotTitle)
             val slotMeta = row.findViewById<TextView>(R.id.slotMeta)
             val slotAction = row.findViewById<TextView>(R.id.slotAction)
@@ -869,7 +868,6 @@ class EmulationFragment :
                 else -> getString(R.string.hoenn_slot_n, slot)
             }
             if (empty) {
-                thumb.setBackgroundResource(R.drawable.hoenn_slot_empty)
                 slotMeta.setText(R.string.hoenn_slot_empty_meta)
                 slotAction.text = if (isSaving) {
                     getString(R.string.hoenn_slot_action_save)
@@ -880,7 +878,6 @@ class EmulationFragment :
                     row.alpha = 0.45f
                 }
             } else {
-                thumb.setBackgroundResource(R.drawable.hoenn_slot_thumb)
                 val whenStr = occupied?.time?.let { d ->
                     java.text.DateFormat.getDateTimeInstance(
                         java.text.DateFormat.SHORT,
