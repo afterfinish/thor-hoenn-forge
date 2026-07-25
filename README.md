@@ -8,7 +8,23 @@ You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS cor
 > **This repository and the distributed app do not include any game ROMs, decryption keys, or copyrighted game binaries.** You must provide a dump of a game you own.
 
 **Source:** [github.com/afterfinish/thor-hoenn-forge](https://github.com/afterfinish/thor-hoenn-forge)  
-**Package ID:** `dev.tzigdon.hoennforge`
+**Package ID:** `dev.tzigdon.hoennforge`  
+**Latest release:** [alpha-0.1](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1)
+
+---
+
+## Screenshots
+
+Dual-screen (AYN Thor) and freelook angles from dogfood:
+
+| | |
+|:--:|:--:|
+| ![Dual-screen freelook](screenshots/dual-161510.png) | ![Dual-screen freelook](screenshots/dual-161523.png) |
+| Dual screen | Dual screen |
+| ![Free look](screenshots/top-161303.png) | ![Free look](screenshots/top-161324.png) |
+| Free look (house) | Free look |
+| ![House freelook + AreaNav](screenshots/top-20260725-160720.png) | |
+| Top screen (Littleroot house) | |
 
 ---
 
@@ -55,10 +71,13 @@ You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS cor
 
 ## Getting started
 
-1. Install the APK (release build or a build you produce from this tree).
-2. On first launch, choose an app data folder, then point at your dump.
-3. Pick **vanilla** or a **randomized** run and wait for prepare to finish.
-4. Play. **START** opens the quick menu; **L3** toggles turbo.
+1. Download **`HoennForge-alpha-0.1.apk`** from [Releases](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1) (or build from this tree).
+2. Install on an arm64 Android 10+ device (AYN Thor recommended). Allow install from unknown sources if needed.
+3. On first launch, choose an app data folder, then point at your dump.
+4. Pick **vanilla** or a **randomized** run and wait for prepare to finish.
+5. Play. **START** opens the quick menu; **L3** toggles turbo.
+
+**Alpha note:** Prefer a **new in-game save** for clean testing. Avoid loading savestates made during earlier freeze sessions.
 
 Do not open issues asking for ROMs, keys, or download links — they will be closed.
 
