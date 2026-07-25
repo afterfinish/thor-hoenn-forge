@@ -10,24 +10,13 @@
         </shape>
     </item>
 
-    <!-- Focused: accent double ring (same signature as primary) -->
+    <!-- Focused: same size as default (no inset double-ring — that squashed buttons on Thor) -->
     <item android:state_focused="true">
-        <layer-list>
-            <item>
-                <shape android:shape="rectangle">
-                    <solid android:color="@android:color/transparent" />
-                    <corners android:radius="14dp" />
-                    <stroke android:width="@dimen/hoenn_focus_ring" android:color="@color/hoenn_accent" />
-                </shape>
-            </item>
-            <item android:left="5dp" android:top="5dp" android:right="5dp" android:bottom="5dp">
-                <shape android:shape="rectangle">
-                    <solid android:color="@color/hoenn_text_tint_07" />
-                    <corners android:radius="@dimen/hoenn_radius_btn" />
-                    <stroke android:width="@dimen/hoenn_hairline" android:color="@color/hoenn_divider" />
-                </shape>
-            </item>
-        </layer-list>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/hoenn_text_tint_07" />
+            <corners android:radius="@dimen/hoenn_radius_btn" />
+            <stroke android:width="3dp" android:color="@color/hoenn_accent" />
+        </shape>
     </item>
 
     <item android:state_pressed="true">

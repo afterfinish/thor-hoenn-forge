@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,9 +53,8 @@ class DumpPickerActivity : HoennActivity() {
         textStatus = findViewById(R.id.textStatus)
         progress = findViewById(R.id.progress)
         buttonContinue = findViewById(R.id.buttonContinue)
-        // Material/AppCompat theming can drop layout text on some skins — set explicitly
-        buttonContinue.setText(R.string.hoenn_dump_continue)
-        buttonContinue.isEnabled = false
+        // Force label + color: Material Button theming left an empty outline on Thor
+        applyContinueLabel(enabled = false)
         val buttonPick = findViewById<Button>(R.id.buttonPick)
         buttonPick.setOnClickListener {
             openDump.launch(arrayOf("application/octet-stream", "*/*"))
@@ -71,7 +71,7 @@ class DumpPickerActivity : HoennActivity() {
             val success = pendingSuccess ?: return@setOnClickListener
             val uri = pendingUri ?: return@setOnClickListener
             // Guard double-tap while next screen is slow to load
-            buttonContinue.isEnabled = false
+            applyContinueLabel(enabled = false)
             val prefs = HoennPrefs(this)
             prefs.dumpUri = uri.toString()
             prefs.dumpDisplayName = success.displayName
@@ -89,10 +89,23 @@ class DumpPickerActivity : HoennActivity() {
         buttonPick.post { buttonPick.requestFocus() }
     }
 
+    private fun applyContinueLabel(enabled: Boolean) {
+        val label = getString(R.string.hoenn_dump_continue).ifBlank { "Continue" }
+        buttonContinue.text = label
+        buttonContinue.contentDescription = label
+        // Solid accent — avoid color-state lists that can go invisible on some skins
+        buttonContinue.setTextColor(ContextCompat.getColor(this, R.color.hoenn_accent))
+        // Cancel any stuck press-scale animator from stateListAnimator
+        buttonContinue.scaleX = 1f
+        buttonContinue.scaleY = 1f
+        buttonContinue.isEnabled = enabled
+        buttonContinue.alpha = if (enabled) 1f else 0.5f
+    }
+
     private fun validateUri(uri: Uri) {
         progress.visibility = View.VISIBLE
         textStatus.setText(R.string.hoenn_dump_checking)
-        buttonContinue.isEnabled = false
+        applyContinueLabel(enabled = false)
         pendingUri = uri
         pendingSuccess = null
 
@@ -111,13 +124,11 @@ class DumpPickerActivity : HoennActivity() {
                         OrasTitles.formatTitleId(result.titleId),
                         String.format("%.2f", gb),
                     )
-                    buttonContinue.setText(R.string.hoenn_dump_continue)
-                    buttonContinue.isEnabled = true
+                    applyContinueLabel(enabled = true)
                 }
                 is DumpValidator.Result.Failure -> {
                     textStatus.text = result.message
-                    buttonContinue.setText(R.string.hoenn_dump_continue)
-                    buttonContinue.isEnabled = false
+                    applyContinueLabel(enabled = false)
                 }
             }
         }

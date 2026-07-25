@@ -98,8 +98,9 @@
                 android:id="@+id/buttonPick"
                 style="@style/Hoenn.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/hoenn_btn_height"
                 android:layout_marginTop="16dp"
+                android:minHeight="@dimen/hoenn_btn_height"
                 android:text="@string/hoenn_dump_pick" />
             <TextView
                 android:id="@+id/buttonWhereDump"
@@ -126,15 +127,17 @@
                 android:layout_marginTop="12dp"
                 android:gravity="center"
                 style="@style/Hoenn.Text.Muted" />
+            <!-- Same Primary style as Browse; fixed height so focus ring / wrap_content can't squash it -->
             <Button
                 android:id="@+id/buttonContinue"
                 style="@style/Hoenn.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_height="@dimen/hoenn_btn_height"
+                android:layout_marginTop="16dp"
                 android:enabled="false"
+                android:minHeight="@dimen/hoenn_btn_height"
                 android:text="@string/hoenn_dump_continue"
-                android:textColor="@color/hoenn_btn_primary_text" />
+                android:textColor="@color/hoenn_accent" />
         </LinearLayout>
     </LinearLayout>
 
