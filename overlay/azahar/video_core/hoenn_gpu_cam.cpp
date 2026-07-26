@@ -199,6 +199,12 @@ struct Scan {
     /// detector: it was established by turning the camera and watching which row followed,
     /// where the detector only ever infers from hit counts.
     int cal_row = -1;
+    /// How many times each row has been confirmed by correspondence. Needed because more
+    /// than one row turns with the camera: anything rigidly carried in the camera's frame
+    /// turns by the same angle. Route 104 alternated between 90 and 3 on successive
+    /// interior visits, and pinning whichever was seen last made free look work on every
+    /// other trip. Votes accumulate; the most-confirmed row wins.
+    u32 cal_row_votes[kNumTriples]{};
     bool cal_valid = false;
     bool cal_load_tried = false;
 };
@@ -671,6 +677,9 @@ void LoadCalibration() {
     s.cal_scale = len;
     const int row = static_cast<int>(v[7]);
     s.cal_row = (row >= 0 && row <= kLastTriple) ? row : -1;
+    if (s.cal_row >= 0) {
+        s.cal_row_votes[s.cal_row] = 1; // a stored row is evidence, not gospel
+    }
     s.cal_valid = true;
     g.calibrated.store(true, std::memory_order_relaxed);
     LOG_INFO(Render,
@@ -1137,14 +1146,41 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             if (best_row >= 0 && best_err <= std::max(1.5f, want * 0.35f)) {
                 float cur[12];
                 ReadTriple(f, best_row, cur);
-                if (s.cal_row != best_row) {
-                    LOG_INFO(Render,
-                             "Hoenn GPU cam: camera row is {} — it turned {:.1f} deg while "
-                             "the interior camera turned {:.1f}",
-                             best_row, best_turn, want);
+                // Several rows turn with the camera; only one *is* the camera. The view
+                // matrix is carried by essentially every 3D draw, while a row riding in
+                // the camera's frame is carried by far fewer — 512 of 512 uploads against
+                // 329 on Route 104. Reject a match that is not near the top of that
+                // distribution before it can earn a vote.
+                u32 busiest = 0;
+                for (int r = 0; r < kNumTriples; ++r) {
+                    busiest = std::max(busiest, s.last_hits[r]);
                 }
-                s.cal_row = best_row;
-                SolveCalibration(s.cal_ref_rows[best_row], cur);
+                const u32 row_hits = s.last_hits[best_row];
+                if (busiest > 0 && row_hits * 10 < busiest * 9) {
+                    LOG_INFO(Render,
+                             "Hoenn GPU cam: row {} turned with the camera but only {} of "
+                             "{} draws carry it — riding in the camera's frame, not the "
+                             "camera",
+                             best_row, row_hits, busiest);
+                } else {
+                    ++s.cal_row_votes[best_row];
+                    int win = best_row;
+                    for (int r = 0; r < kNumTriples; ++r) {
+                        if (s.cal_row_votes[r] > s.cal_row_votes[win] ||
+                            (s.cal_row_votes[r] == s.cal_row_votes[win] &&
+                             s.last_hits[r] > s.last_hits[win])) {
+                            win = r;
+                        }
+                    }
+                    if (s.cal_row != win) {
+                        LOG_INFO(Render,
+                                 "Hoenn GPU cam: camera row is {} ({} votes) — it turned "
+                                 "{:.1f} deg while the interior camera turned {:.1f}",
+                                 win, s.cal_row_votes[win], best_turn, want);
+                    }
+                    s.cal_row = win;
+                    SolveCalibration(s.cal_ref_rows[best_row], cur);
+                }
             } else {
                 LOG_INFO(Render,
                          "Hoenn GPU cam: no row matched a {:.1f} deg camera turn "
