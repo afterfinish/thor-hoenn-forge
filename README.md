@@ -9,7 +9,7 @@ You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS cor
 
 **Source:** [github.com/afterfinish/thor-hoenn-forge](https://github.com/afterfinish/thor-hoenn-forge)  
 **Package ID:** `dev.tzigdon.hoennforge`  
-**Latest release:** [alpha-0.1](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1)  
+**Latest release:** [alpha-0.2](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.2)  
 **Discord:** [discord.gg/v4qA5cA6D6](https://discord.gg/v4qA5cA6D6) — questions, bug reports, and dogfood feedback
 
 ---
@@ -72,13 +72,13 @@ Dual-screen (AYN Thor) and freelook angles from dogfood:
 
 ## Getting started
 
-1. Download **`HoennForge-alpha-0.1.apk`** from [Releases](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1) (or build from this tree).
+1. Download **`HoennForge-alpha-0.2.apk`** from [Releases](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.2) (or build from this tree).
 2. Install on an arm64 Android 10+ device (AYN Thor recommended). Allow install from unknown sources if needed.
 3. On first launch, choose an app data folder, then point at your dump.
 4. Pick **vanilla** or a **randomized** run and wait for prepare to finish.
 5. Play. **START** opens the quick menu; **L3** toggles turbo.
 
-**Alpha note:** Prefer a **new in-game save** for clean testing. Avoid loading savestates made during earlier freeze sessions.
+**Alpha note:** Prefer a **new in-game save** for clean testing. Savestates made in alpha-0.1 sessions predate the memory-corruption fix and are best not carried over.
 
 Do not open issues asking for ROMs, keys, or download links — they will be closed.
 
