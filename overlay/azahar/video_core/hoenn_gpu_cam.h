@@ -36,7 +36,11 @@ enum Param : int {
     ParamActive = 6,       ///< r   0/1 — is the GPU camera driving the view right now
     ParamYaw = 7,          ///< r   current yaw in degrees
     ParamPitch = 8,        ///< r   current pitch in degrees
+    ParamInvert = 9,       ///< rw  bit 0 inverts yaw, bit 1 inverts pitch
 };
+
+constexpr int kInvertYaw = 1;
+constexpr int kInvertPitch = 2;
 
 constexpr int kRowModeAuto = -1;
 constexpr int kRowModeAll = -2;

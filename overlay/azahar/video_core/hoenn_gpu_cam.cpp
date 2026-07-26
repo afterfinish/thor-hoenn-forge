@@ -61,11 +61,10 @@ struct Shared {
     std::atomic<float> pitch{0.0f};
     std::atomic<int> detected_row{-1};
     std::atomic<int> qualify_count{0};
+    std::atomic<int> invert{0};
 };
 Shared g;
 
-// Scan state. Touched only from the thread that issues draws (Azahar has no separate
-// GPU thread — the rasterizer runs on the emulation thread), so no locking here.
 /// How many consecutive uploads the locked row may fail to qualify before we go looking
 /// for a different one. Roughly a frame's worth of draws, so a handful of billboard or
 /// UI draws that happen to reuse the same row cannot make the selection oscillate.
@@ -75,6 +74,8 @@ constexpr int kLockMissLimit = 128;
 /// before we switch, so the choice cannot flip back and forth within a scene.
 constexpr int kMigrateMargin = 240;
 
+// Scan state. Touched only from the thread that issues draws (Azahar has no separate
+// GPU thread — the rasterizer runs on the emulation thread), so no locking here.
 struct Scan {
     int candidates[kMaxCandidates]{};
     bool candidate_live[kMaxCandidates]{};
@@ -300,6 +301,12 @@ void SetParam(int param, float value) {
         g.radius.store(std::clamp(value, 1.0f, 100000.0f), std::memory_order_relaxed);
         LOG_INFO(Render, "Hoenn GPU cam: radius={}", value);
         break;
+    case ParamInvert: {
+        const int bits = static_cast<int>(value) & (kInvertYaw | kInvertPitch);
+        g.invert.store(bits, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: invert={}", bits);
+        break;
+    }
     default:
         break;
     }
@@ -325,6 +332,8 @@ float GetParam(int param) {
         return g.yaw.load(std::memory_order_relaxed);
     case ParamPitch:
         return g.pitch.load(std::memory_order_relaxed);
+    case ParamInvert:
+        return static_cast<float>(g.invert.load(std::memory_order_relaxed));
     default:
         return 0.0f;
     }
@@ -345,9 +354,17 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         ResetScan();
     }
 
+    // Which way the world should swing for a given stick direction depends on the
+    // engine's handedness, which we cannot know without looking at the screen. Expose it
+    // rather than guess, so a wrong guess costs a menu tap instead of a rebuild.
+    const int invert = g.invert.load(std::memory_order_relaxed);
+    const float yaw_sign = (invert & kInvertYaw) ? -1.0f : 1.0f;
+    const float pitch_sign = (invert & kInvertPitch) ? -1.0f : 1.0f;
+
     const bool probe = g.probe.load(std::memory_order_relaxed);
-    const float yaw_deg = probe ? kProbeYawDeg : g.yaw.load(std::memory_order_relaxed);
-    const float pitch_deg = probe ? 0.0f : g.pitch.load(std::memory_order_relaxed);
+    const float yaw_deg =
+        yaw_sign * (probe ? kProbeYawDeg : g.yaw.load(std::memory_order_relaxed));
+    const float pitch_deg = probe ? 0.0f : pitch_sign * g.pitch.load(std::memory_order_relaxed);
     const int mode = g.row_mode.load(std::memory_order_relaxed);
     const bool transpose = g.transpose.load(std::memory_order_relaxed);
     const float radius = g.radius.load(std::memory_order_relaxed);
@@ -462,9 +479,9 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         s.last_log = now;
         LOG_INFO(Render,
                  "Hoenn GPU cam: row={} applying={} qualifying={} live={} stable={} mode={} "
-                 "probe={} yaw={:.1f} pitch={:.1f} d={:.0f} transpose={}",
+                 "probe={} yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={}",
                  reported_row, source_row, s.total_qualifying, live, best_stable, mode, probe,
-                 yaw_deg, pitch_deg, radius, transpose);
+                 yaw_deg, pitch_deg, radius, transpose, invert);
     }
 
     if (source_row < 0) {

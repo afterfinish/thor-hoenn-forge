@@ -26,6 +26,10 @@ object HoennGpuCam {
     const val PARAM_ACTIVE = 6
     const val PARAM_YAW = 7
     const val PARAM_PITCH = 8
+    const val PARAM_INVERT = 9
+
+    const val INVERT_YAW = 1
+    const val INVERT_PITCH = 2
 
     const val ROW_MODE_AUTO = -1
     const val ROW_MODE_ALL = -2
@@ -65,6 +69,12 @@ object HoennGpuCam {
         get() = take(PARAM_RADIUS, 2300f)
         set(value) = put(PARAM_RADIUS, value)
 
+    /** Bitmask of [INVERT_YAW] / [INVERT_PITCH]. Which way is "right" depends on the
+     *  engine's handedness, which can only be settled by looking at the screen. */
+    var invert: Int
+        get() = take(PARAM_INVERT).toInt()
+        set(value) = put(PARAM_INVERT, value.toFloat())
+
     val detectedRow: Int
         get() = take(PARAM_DETECTED_ROW, -1f).toInt()
 
@@ -80,11 +90,19 @@ object HoennGpuCam {
         rowMode = prefs.gpuCamRowMode
         transpose = prefs.gpuCamTranspose
         radius = prefs.gpuCamRadius
+        invert = prefs.gpuCamInvert
     }
 
     fun rowModeLabel(mode: Int): String = when (mode) {
         ROW_MODE_AUTO -> "Auto"
         ROW_MODE_ALL -> "All"
         else -> "Row $mode"
+    }
+
+    fun invertLabel(bits: Int): String = when (bits and (INVERT_YAW or INVERT_PITCH)) {
+        0 -> "none"
+        INVERT_YAW -> "yaw"
+        INVERT_PITCH -> "pitch"
+        else -> "yaw + pitch"
     }
 }

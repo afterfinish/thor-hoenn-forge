@@ -81,6 +81,11 @@ class HoennPrefs(context: Context) {
         get() = prefs.getFloat(KEY_GPUCAM_RADIUS, 2300f)
         set(value) = prefs.edit { putFloat(KEY_GPUCAM_RADIUS, value) }
 
+    /** Outdoor free look: bitmask, 1 inverts yaw and 2 inverts pitch. */
+    var gpuCamInvert: Int
+        get() = prefs.getInt(KEY_GPUCAM_INVERT, 0)
+        set(value) = prefs.edit { putInt(KEY_GPUCAM_INVERT, value) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -128,6 +133,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_ROW = "gpucam_row_mode"
         private const val KEY_GPUCAM_TRANSPOSE = "gpucam_transpose"
         private const val KEY_GPUCAM_RADIUS = "gpucam_radius"
+        private const val KEY_GPUCAM_INVERT = "gpucam_invert"
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }

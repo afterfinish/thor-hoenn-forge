@@ -74,6 +74,7 @@ Outcomes:
 | Nothing tilts, chip shows a row number | Wrong triple | Row -> **pick a number**, sweep 0..93 |
 | Nothing tilts, chip shows no row | No orthonormal triple exists — the engine passes a combined MVP | Needs the `P * O * P^-1` fallback, not yet built |
 | World rotates but around a distant point, not the player | Uniforms are column-major, or the radius is far off | Toggle **Matrix layout**, then retune **Orbit radius** |
+| Right stick swings the wrong way | Engine handedness guessed wrong | Cycle **Invert** (none / yaw / pitch / both) |
 
 `adb logcat | grep "Hoenn GPU cam"` prints the chosen row, how many triples qualified, the
 mode and the angles once per second.

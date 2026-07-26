@@ -842,6 +842,7 @@ class EmulationFragment :
                 ),
             ),
             getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
+            getString(R.string.hoenn_gpucam_invert_fmt, cam.invertLabel(prefs.gpuCamInvert)),
             getString(R.string.hoenn_gpucam_reset),
         )
 
@@ -901,12 +902,19 @@ class EmulationFragment :
                             onChanged()
                         }
                     }
+                    // none -> yaw -> pitch -> both -> none
                     5 -> {
+                        val next = (prefs.gpuCamInvert + 1) and 3
+                        prefs.gpuCamInvert = next
+                        cam.invert = next
+                    }
+                    6 -> {
                         prefs.gpuCamProbe = false
                         prefs.gpuCamRowMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
                         prefs.gpuCamTranspose = false
                         prefs.gpuCamRadius = 2300f
+                        prefs.gpuCamInvert = 0
                         cam.restore(prefs)
                     }
                 }
