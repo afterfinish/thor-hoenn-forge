@@ -80,6 +80,31 @@ Thumbs.db
 /Agents.md
 /Soul.md
 /Memory.md
+/info.txt
+/Info.txt
+
+# --- Local dogfood / debug capture artifacts (never publish) ---
+# Root-level build transcripts, adb logcat captures and ad-hoc screenshots
+# (build-*.txt, camlog*.txt, freeze-*.txt, probe-*.txt, *-screenshot.png, ...).
+# Nothing tracked lives at the repo root as .txt/.png, so these are blanket rules.
+/*.txt
+/*.png
+
+# Dogfood captures under screenshots/ — only the shots referenced by README stay
+/screenshots/*
+!/screenshots/dual-161510.png
+!/screenshots/dual-161523.png
+!/screenshots/top-161303.png
+!/screenshots/top-161324.png
+!/screenshots/top-20260725-160720.png
+
+# Local research/one-off helper scripts (not part of the published build)
+/scripts/fix-dump-strings.py
+/scripts/fix-native-mojibake.py
+/scripts/fix-string-mojibake.py
+/scripts/parse-re-dumps.py
+/scripts/shot-dual.ps1
+/scripts/shot-top.ps1
 
 # --- Python / misc research envs ---
 .venv/
