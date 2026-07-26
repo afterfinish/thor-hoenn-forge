@@ -464,7 +464,19 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
     // trickle of hits while three far better rows were ignored — Route 104 sat locked on
     // row 28 while rows 75 and 90 were carried by every single draw. The locked row must
     // now stay a legitimate acquisition candidate, and it gets several windows to.
-    if (s.last_hits[s.locked_row] < acquire_floor) {
+    //
+    // Staying above the floor is still not enough on its own. Route 104 then sat locked on
+    // row 61 — a bone, 323 hits with 30 changes — while row 90 was carried by all 512
+    // uploads and never changed once. 61 cleared the floor, so it never went cold and the
+    // view matrix could never take over: the camera rotated a single bone of each
+    // character into a spike and left the world alone. A lock must also yield to a row
+    // that is decisively better, not merely survive.
+    const u32 locked_hits = s.last_hits[s.locked_row];
+    const u32 locked_const =
+        locked_hits - std::min(locked_hits, s.last_changes[s.locked_row]);
+    const bool outclassed =
+        best >= 0 && best != s.locked_row && best_const > locked_const * 3 / 2;
+    if (locked_hits < acquire_floor || outclassed) {
         ++s.cold_windows;
     } else {
         s.cold_windows = 0;
@@ -767,6 +779,7 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         yaw_sign * (probe ? kProbeYawDeg : g.yaw.load(std::memory_order_relaxed));
     const float pitch_deg = probe ? 0.0f : pitch_sign * g.pitch.load(std::memory_order_relaxed);
     const int mode = g.row_mode.load(std::memory_order_relaxed);
+    const int pivot_mode = g.pivot_mode.load(std::memory_order_relaxed);
     const bool transpose = g.transpose.load(std::memory_order_relaxed);
 
     // Radius <= 0 means "measure it". The camera object's own distance field (+0xA8) is on
@@ -839,22 +852,21 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             s.last_log = now;
             LOG_INFO(Render,
                      "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
-                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={} | pivotmode={} "
-                     "pivot=({:.0f}, {:.0f}, {:.0f}) | eye depth mean={:.0f} min={:.0f} "
-                     "max={:.0f}",
+                     "yaw={:.1f} pitch={:.1f} transpose={} invert={} | pivotmode={} "
+                     "cal={} calpivot=({:.0f}, {:.0f}, {:.0f}) |p|={:.0f} "
+                     "calaxis=({:.2f}, {:.2f}, {:.2f}) | measured=({:.0f}, {:.0f}, {:.0f}) "
+                     "depth={:.0f}",
                      s.locked_row, s.cold_windows, s.steady_rows, live, mode, probe, yaw_deg,
-                     pitch_deg, radius, transpose, invert,
-                     g.pivot_mode.load(std::memory_order_relaxed), s.last_pivot[0],
-                     s.last_pivot[1], s.last_pivot[2], s.last_depth_mean, s.last_depth_min,
-                     s.last_depth_max);
+                     pitch_deg, transpose, invert, pivot_mode, s.cal_valid, s.cal_pivot[0],
+                     s.cal_pivot[1], s.cal_pivot[2], s.cal_scale, s.cal_axis[0], s.cal_axis[1],
+                     s.cal_axis[2], s.last_pivot[0], s.last_pivot[1], s.last_pivot[2],
+                     s.last_depth_mean);
             LogCensus();
         }
     }
 
     g.detected_row.store(s.locked_row, std::memory_order_relaxed);
     g.qualify_count.store(live, std::memory_order_relaxed);
-
-    const int pivot_mode = g.pivot_mode.load(std::memory_order_relaxed);
 
     // --- Reference row: the single source of O ------------------------------------------
     const int ref_row = (mode >= 0 && mode <= kLastTriple) ? mode : s.locked_row;
