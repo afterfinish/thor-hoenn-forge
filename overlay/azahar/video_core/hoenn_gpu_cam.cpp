@@ -76,6 +76,12 @@ constexpr auto kResumeGrace = std::chrono::seconds(8);
 /// recovered axis is not dominated by rounding in the uniform floats.
 constexpr float kCalMinYawDeg = 4.0f;
 
+/// Sanity bounds on a recovered sample. A camera cut or map transition decomposes into a
+/// huge angle and an implausible pivot; honest interior samples sit at a few degrees with
+/// |p| of roughly 165 eye-space units.
+constexpr float kCalMaxAngleDeg = 30.0f;
+constexpr float kCalMaxPivot = 2000.0f;
+
 // Orthonormality tolerances. Generous enough for f24 -> f32 rounding.
 constexpr float kLenSqTol = 0.04f;
 constexpr float kDotTol = 0.02f;
@@ -595,13 +601,41 @@ bool SolveCalibration(const float ref[12], const float cur[12]) {
         return false;
     }
 
-    s.cal_axis[0] = axis[0];
-    s.cal_axis[1] = axis[1];
-    s.cal_axis[2] = axis[2];
-    s.cal_pivot[0] = p[0];
-    s.cal_pivot[1] = p[1];
-    s.cal_pivot[2] = p[2];
-    s.cal_scale = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+    // Reject nonsense before it poisons the average. A camera cut, a map transition or a
+    // scripted pan shows up as a huge "rotation" between two consecutive samples: one
+    // observed sample read 101 degrees with |p|=315 while the honest ones sat at 4-8
+    // degrees and |p|~165. Neither bound is tuned finely; they only have to separate a
+    // stick nudge from a teleport.
+    const float p_len = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+    const float angle_deg = std::fabs(angle) * 180.0f / 3.14159265f;
+    if (angle_deg > kCalMaxAngleDeg || p_len > kCalMaxPivot || p_len < 1.0f) {
+        return false;
+    }
+
+    // Smooth across samples: each one is a two-frame difference of floats read out of a
+    // uniform block, so individually they are noisy — the axis wandered between -0.11 and
+    // -0.37 in X across five good samples — while their mean is stable.
+    if (s.cal_valid) {
+        constexpr float a = 0.25f;
+        for (int i = 0; i < 3; ++i) {
+            s.cal_axis[i] = s.cal_axis[i] * (1.0f - a) + axis[i] * a;
+            s.cal_pivot[i] = s.cal_pivot[i] * (1.0f - a) + p[i] * a;
+        }
+        const float n = std::sqrt(s.cal_axis[0] * s.cal_axis[0] + s.cal_axis[1] * s.cal_axis[1] +
+                                  s.cal_axis[2] * s.cal_axis[2]);
+        if (n > 1.0e-3f) {
+            s.cal_axis[0] /= n;
+            s.cal_axis[1] /= n;
+            s.cal_axis[2] /= n;
+        }
+    } else {
+        for (int i = 0; i < 3; ++i) {
+            s.cal_axis[i] = axis[i];
+            s.cal_pivot[i] = p[i];
+        }
+    }
+    s.cal_scale = std::sqrt(s.cal_pivot[0] * s.cal_pivot[0] + s.cal_pivot[1] * s.cal_pivot[1] +
+                            s.cal_pivot[2] * s.cal_pivot[2]);
     s.cal_valid = true;
     g.calibrated.store(true, std::memory_order_relaxed);
     LOG_INFO(Render,
@@ -907,11 +941,16 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     switch (pivot_mode) {
     case kPivotCalibrated:
         if (s.cal_valid) {
-            // Learned indoors, where the engine's own camera motion showed us its fixed
-            // point. Rescale the direction to this map's camera distance: the shape of the
-            // orbit is a property of the engine, the size of it is a property of the map.
-            const float k = (s.cal_scale > 1.0e-3f && s.last_depth_mean > 1.0e-3f)
-                                ? s.last_depth_mean / s.cal_scale
+            // Used exactly as learned. An earlier version rescaled this by the ratio of
+            // measured eye depths, on the theory that the orbit's size is a property of
+            // the map. That was wrong and would have thrown the fix away: the interior
+            // camera reports |p| ~165 while the per-object "eye depth" reads ~4950, so the
+            // ratio is about 30x. Those two numbers are not in the same space — the depth
+            // sample comes from per-object matrices that evidently carry a different scale
+            // — and feeding it in as a radius is precisely what sent the scene off screen.
+            // Eye space is eye space; the calibrated point needs no adjustment.
+            const float k = (radius_pref > 0.0f && s.cal_scale > 1.0e-3f)
+                                ? radius_pref / s.cal_scale
                                 : 1.0f;
             p[0] = s.cal_pivot[0] * k;
             p[1] = s.cal_pivot[1] * k;
