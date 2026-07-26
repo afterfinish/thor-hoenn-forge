@@ -107,7 +107,9 @@ private:
     void ResetYaw();
     void StopGpuCam();
     void ResetPathOwnership();
-    void UpdatePathOwnership();
+    /// @param memory_viable the primary camera is running the interior controller, i.e.
+    ///        the one that actually reads the eulers the memory path writes.
+    void UpdatePathOwnership(bool memory_viable);
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);

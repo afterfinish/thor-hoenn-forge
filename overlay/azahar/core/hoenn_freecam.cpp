@@ -156,8 +156,8 @@ void FreeCam::ResetPathOwnership() {
 
 // Run once per collect cycle, never per tick. live_count is a heuristic sampled on a
 // timer, so it dips to zero for reasons that have nothing to do with leaving a building.
-void FreeCam::UpdatePathOwnership() {
-    if (live_count > 0) {
+void FreeCam::UpdatePathOwnership(bool memory_viable) {
+    if (memory_viable) {
         map_had_gold = true;
         ++gold_hit_cycles;
         gold_miss_cycles = 0;
@@ -178,9 +178,10 @@ void FreeCam::UpdatePathOwnership() {
         }
     }
     if (was_gpu != gpu_path) {
-        LOG_INFO(Core, "Hoenn freelook path -> {} (live={} hit={} miss={} had_gold={})",
-                 gpu_path ? "GPU" : "memory", live_count, gold_hit_cycles, gold_miss_cycles,
-                 map_had_gold);
+        LOG_INFO(Core,
+                 "Hoenn freelook path -> {} (viable={} live={} hit={} miss={} had_gold={})",
+                 gpu_path ? "GPU" : "memory", memory_viable, live_count, gold_hit_cycles,
+                 gold_miss_cycles, map_had_gold);
         if (!gpu_path) {
             StopGpuCam();
         }
@@ -238,6 +239,10 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         quiet_until = 1;
         live_count = 0;
         primary_cam = 0;
+        // Also drop the remembered target. CollectLiveTargets reconsiders last_good_cam
+        // and brute-scans around it, so a house camera kept being rediscovered in stale
+        // heap after stepping outside.
+        last_good_cam = 0;
         last_collect_tick = 0;
         ResetYaw();
         StopGpuCam();
@@ -505,7 +510,19 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (primary_cam && primary_cam != prev_pri) {
             SeedAnglesFromCam(mem, *process, primary_cam);
         }
-        UpdatePathOwnership();
+        // Ownership turns on the controller *type*, not on whether a camera-shaped object
+        // exists. The GOLD test is a heuristic — flag 0x0F plus an FOV in range — and heap
+        // left over from a building keeps satisfying it after the map changes, which
+        // stranded the driver on the memory path outdoors with a stale target at
+        // 082D4898: writes that go nowhere, a dead stick, and no way to hand over.
+        //
+        // The mode word is the real signal. ORAS records the controller it constructed
+        // there: 0x00020001 for the interior camera that reads our eulers, 0x000D0001 for
+        // the town/route one that derives eye and look-at from map geometry and ignores
+        // them. Only the former is worth owning.
+        const bool memory_viable =
+            primary_cam != 0 && mem.Read32(*process, primary_cam + OFF_MODE) == MODE_FREELOOK;
+        UpdatePathOwnership(memory_viable);
     }
 
     // Zoom assist: pick any live gold as target; FOV may leave the discovery band.
