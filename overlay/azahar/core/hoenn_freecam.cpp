@@ -59,6 +59,9 @@ constexpr int ANDROID_STICK_C = 718;
 // degrees, and the clamp (±40 yaw / ±25 pitch) is much tighter than the memory camera's.
 constexpr float GPU_YAW_STEP = 1.10f;
 constexpr float GPU_PITCH_STEP = 0.45f;
+// Eye-space units per tick of held L/R. Sized against the ~225-unit orbit distance the
+// interior calibration reports, so a second of holding covers a useful fraction of it.
+constexpr float GPU_DOLLY_STEP = 8.0f;
 
 // Collect cycles (COLLECT_INTERVAL / COLLECT_MISS_INTERVAL apart, so 150-450 ms each)
 // that must agree before the stick changes hands. Handover is deliberately slow and
@@ -613,14 +616,36 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (std::fabs(sx) >= STICK_DEADZONE) {
             const float x = invert_x ? sx : -sx;
             gpu_yaw = std::clamp(gpu_yaw + x * sensitivity * GPU_YAW_STEP,
-                                 -GpuCam::kYawClampDeg, GpuCam::kYawClampDeg);
+                                 -GpuCam::YawClampDeg(), GpuCam::YawClampDeg());
         }
         // Pitch, like yaw, runs the other way here than on the memory path — same reason:
         // the engine interprets the memory value, we apply the GPU one ourselves.
         if (std::fabs(sy) >= STICK_DEADZONE) {
             const float y = invert_y ? -sy : sy;
             gpu_pitch = std::clamp(gpu_pitch + y * sensitivity * GPU_PITCH_STEP,
-                                   -GpuCam::kPitchClampDeg, GpuCam::kPitchClampDeg);
+                                   -GpuCam::PitchClampDeg(), GpuCam::PitchClampDeg());
+        }
+        // L/R zoom, outdoors. The memory path writes an FOV that the town controller
+        // re-derives every frame and ignores, so here it becomes a dolly along the view
+        // axis instead: not a lens change, but the camera really does move, and it costs
+        // no guest memory. Gated on the same toggle as indoors so the control is one
+        // feature rather than two that happen to share buttons.
+        if (zoom_assist) {
+            bool l = false, r = false;
+            try {
+                if (btn_l) {
+                    l = btn_l->GetStatus();
+                }
+                if (btn_r) {
+                    r = btn_r->GetStatus();
+                }
+            } catch (...) {
+                btn_l.reset();
+                btn_r.reset();
+            }
+            if (l != r) {
+                GpuCam::SetDolly(GpuCam::GetDolly() + (l ? GPU_DOLLY_STEP : -GPU_DOLLY_STEP));
+            }
         }
         GpuCam::SetActive(true, gpu_yaw, gpu_pitch);
         // RasterizerOpenGL/Vulkan::UploadUniforms only re-uploads the PICA float block

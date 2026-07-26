@@ -38,7 +38,12 @@ enum Param : int {
     ParamPitch = 8,        ///< r   current pitch in degrees
     ParamInvert = 9,       ///< rw  bit 0 inverts yaw, bit 1 inverts pitch
     ParamPivotMode = 10,   ///< rw  where the orbit centre sits — see kPivot* below
+    ParamRange = 11,       ///< rw  multiplier on the yaw/pitch clamps
 };
+
+/// Default look range. Wider than the original clamps, which device testing found too
+/// restrictive once the camera was actually working.
+constexpr float kDefaultRange = 2.0f;
 
 /// Where to put the point the camera orbits around.
 ///
@@ -65,10 +70,22 @@ constexpr int kRowModeAuto = -1;
 constexpr int kRowModeAll = -2;
 
 /// The game culls and submits geometry for its own frustum, so rotating far reveals
-/// unrendered space and backfaces (the same limitation Dolphin's Free Look has).
-/// These clamps keep the look inside what the game actually drew.
-constexpr float kYawClampDeg = 40.0f;
-constexpr float kPitchClampDeg = 25.0f;
+/// unrendered space and backfaces (the same limitation Dolphin's Free Look has). These are
+/// the base clamps, scaled by the user's chosen range — see [YawClampDeg].
+///
+/// They started as a guess at where culling would become objectionable, made before the
+/// camera worked well enough to find out. It does now, and the answer is a matter of taste
+/// rather than correctness, so the range is a setting.
+constexpr float kYawClampBaseDeg = 40.0f;
+constexpr float kPitchClampBaseDeg = 25.0f;
+
+/// Hard ceiling on pitch regardless of range: at 90 degrees the up vector and the view
+/// direction line up and the yaw axis stops being well defined.
+constexpr float kPitchClampCeilDeg = 85.0f;
+
+/// Effective clamps, base times the selected range.
+float YawClampDeg();
+float PitchClampDeg();
 
 /// Fixed angle for A/B testing: substitutes a constant yaw for the stick so a change
 /// can be judged without also moving. It no longer forces the GPU path on where the
@@ -93,6 +110,19 @@ void SetActive(bool active, float yaw_deg, float pitch_deg);
 
 /// Disable the GPU camera and zero the angles. Safe to call every tick.
 void Disable();
+
+/// Dolly the camera along its own view axis, in eye-space units. Positive pulls back.
+///
+/// This is what L/R zoom has to become outdoors. Indoors zoom writes an FOV into the
+/// game's camera object, but the town controller re-derives FOV every frame and ignores
+/// the write, which is the same reason free look needed this path at all. Moving the
+/// camera is not the same as widening the lens — there is no perspective change — but it
+/// is the honest equivalent here, and it costs no guest memory.
+void SetDolly(float units);
+float GetDolly();
+
+/// Clamp on the dolly, as a multiple of the calibrated orbit distance.
+constexpr float kDollyRangeMul = 3.0f;
 
 /// Watch the interior camera instead of driving anything.
 ///

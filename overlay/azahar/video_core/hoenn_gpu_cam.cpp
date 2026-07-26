@@ -107,6 +107,8 @@ struct Shared {
     std::atomic<int> qualify_count{0};
     std::atomic<int> invert{0};
     std::atomic<int> pivot_mode{kPivotCalibrated};
+    std::atomic<float> range{kDefaultRange};
+    std::atomic<float> dolly{0.0f};
     /// Set while the interior memory camera owns the view: sample, do not drive.
     std::atomic<bool> observing{false};
     std::atomic<bool> calibrated{false};
@@ -547,10 +549,32 @@ void LogCensus() {
 
 } // namespace
 
+void SetDolly(float units) {
+    // Bound to the orbit distance so the knob stays in the same world as the camera; with
+    // no calibration there is no scale to reason about, so nothing moves.
+    const float d = s.cal_valid ? s.cal_scale : 0.0f;
+    const float lim = d * kDollyRangeMul;
+    g.dolly.store(std::clamp(units, -lim, lim), std::memory_order_relaxed);
+}
+
+float GetDolly() {
+    return g.dolly.load(std::memory_order_relaxed);
+}
+
+float YawClampDeg() {
+    return kYawClampBaseDeg * g.range.load(std::memory_order_relaxed);
+}
+
+float PitchClampDeg() {
+    return std::min(kPitchClampCeilDeg,
+                    kPitchClampBaseDeg * g.range.load(std::memory_order_relaxed));
+}
+
 void SetActive(bool active, float yaw_deg, float pitch_deg) {
-    g.yaw.store(std::clamp(yaw_deg, -kYawClampDeg, kYawClampDeg), std::memory_order_relaxed);
-    g.pitch.store(std::clamp(pitch_deg, -kPitchClampDeg, kPitchClampDeg),
-                  std::memory_order_relaxed);
+    const float yc = YawClampDeg();
+    const float pc = PitchClampDeg();
+    g.yaw.store(std::clamp(yaw_deg, -yc, yc), std::memory_order_relaxed);
+    g.pitch.store(std::clamp(pitch_deg, -pc, pc), std::memory_order_relaxed);
     g.observing.store(false, std::memory_order_relaxed);
     g.active.store(active, std::memory_order_relaxed);
 }
@@ -560,6 +584,7 @@ void Disable() {
     g.pitch.store(0.0f, std::memory_order_relaxed);
     g.active.store(false, std::memory_order_relaxed);
     g.observing.store(false, std::memory_order_relaxed);
+    g.dolly.store(0.0f, std::memory_order_relaxed);
 }
 
 bool IsProbeEnabled() {
@@ -815,6 +840,11 @@ void SetParam(int param, float value) {
         LOG_INFO(Render, "Hoenn GPU cam: invert={}", bits);
         break;
     }
+    case ParamRange:
+        g.range.store(std::clamp(value, 0.25f, 4.5f), std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: range={:.2f}x (yaw +-{:.0f}, pitch +-{:.0f})", value,
+                 YawClampDeg(), PitchClampDeg());
+        break;
     case ParamPivotMode: {
         int mode = static_cast<int>(value);
         if (mode < 0 || mode >= kPivotModeCount) {
@@ -851,6 +881,8 @@ float GetParam(int param) {
         return g.pitch.load(std::memory_order_relaxed);
     case ParamPivotMode:
         return static_cast<float>(g.pivot_mode.load(std::memory_order_relaxed));
+    case ParamRange:
+        return g.range.load(std::memory_order_relaxed);
     case ParamInvert:
         return static_cast<float>(g.invert.load(std::memory_order_relaxed));
     default:
@@ -1172,10 +1204,13 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         break;
     }
 
+    // Dolly rides on top of the orbit: the camera looks down -Z, so pushing the world
+    // further along -Z is the same as pulling the camera back.
+    const float dolly = g.dolly.load(std::memory_order_relaxed);
     const float tr[3] = {
         p[0] - (rot.m[0][0] * p[0] + rot.m[0][1] * p[1] + rot.m[0][2] * p[2]),
         p[1] - (rot.m[1][0] * p[0] + rot.m[1][1] * p[1] + rot.m[1][2] * p[2]),
-        p[2] - (rot.m[2][0] * p[0] + rot.m[2][1] * p[1] + rot.m[2][2] * p[2]),
+        p[2] - (rot.m[2][0] * p[0] + rot.m[2][1] * p[1] + rot.m[2][2] * p[2]) - dolly,
     };
 
     if (mode >= 0 && mode <= kLastTriple) {

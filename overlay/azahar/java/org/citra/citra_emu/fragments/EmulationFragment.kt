@@ -845,6 +845,7 @@ class EmulationFragment :
                 R.string.hoenn_gpucam_pivot_fmt,
                 cam.pivotModeLabel(prefs.gpuCamPivotMode),
             ),
+            getString(R.string.hoenn_gpucam_range_fmt, cam.rangeLabel(prefs.gpuCamRange)),
             getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
             getString(R.string.hoenn_gpucam_invert_fmt, cam.invertLabel(prefs.gpuCamInvert)),
             getString(R.string.hoenn_gpucam_reset),
@@ -902,7 +903,17 @@ class EmulationFragment :
                         prefs.gpuCamPivotMode = next
                         cam.pivotMode = next
                     }
+                    // Look range: 1x -> 2x -> 3x -> 4.5x -> 1x. The original clamps were a
+                    // guess made before the camera worked; how far is too far is a matter
+                    // of taste and of how much unrendered space a given map reveals.
                     5 -> {
+                        val steps = floatArrayOf(1f, 2f, 3f, 4.5f)
+                        val idx = steps.indexOfFirst { it >= prefs.gpuCamRange - 0.01f }
+                        val next = steps[if (idx < 0) 0 else (idx + 1) % steps.size]
+                        prefs.gpuCamRange = next
+                        cam.range = next
+                    }
+                    6 -> {
                         promptHoennGpuCamNumber(
                             titleRes = R.string.hoenn_gpucam_radius_pick,
                             initial = prefs.gpuCamRadius.toInt().toString(),
@@ -917,12 +928,12 @@ class EmulationFragment :
                         }
                     }
                     // none -> yaw -> pitch -> both -> none
-                    6 -> {
+                    7 -> {
                         val next = (prefs.gpuCamInvert + 1) and 3
                         prefs.gpuCamInvert = next
                         cam.invert = next
                     }
-                    7 -> {
+                    8 -> {
                         prefs.gpuCamProbe = false
                         prefs.gpuCamRowMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
@@ -931,6 +942,7 @@ class EmulationFragment :
                         prefs.gpuCamInvert = 0
                         prefs.gpuCamPivotMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_CALIBRATED
+                        prefs.gpuCamRange = 2f
                         cam.restore(prefs)
                     }
                 }

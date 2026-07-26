@@ -28,6 +28,7 @@ object HoennGpuCam {
     const val PARAM_PITCH = 8
     const val PARAM_INVERT = 9
     const val PARAM_PIVOT_MODE = 10
+    const val PARAM_RANGE = 11
 
     /** Mean eye-space translation of the per-object matrices — carries direction, not just
      *  distance, which the axis modes below do not. */
@@ -86,6 +87,11 @@ object HoennGpuCam {
         get() = take(PARAM_INVERT).toInt()
         set(value) = put(PARAM_INVERT, value.toFloat())
 
+    /** Multiplier on the yaw/pitch clamps. 1.0 is +-40 yaw / +-25 pitch. */
+    var range: Float
+        get() = take(PARAM_RANGE, 2f)
+        set(value) = put(PARAM_RANGE, value)
+
     /** Where the orbit centre sits. See [PIVOT_MEASURED] and friends. */
     var pivotMode: Int
         get() = take(PARAM_PIVOT_MODE, PIVOT_MEASURED.toFloat()).toInt()
@@ -108,6 +114,7 @@ object HoennGpuCam {
         radius = prefs.gpuCamRadius
         invert = prefs.gpuCamInvert
         pivotMode = prefs.gpuCamPivotMode
+        range = prefs.gpuCamRange
     }
 
     fun rowModeLabel(mode: Int): String = when (mode) {
@@ -115,6 +122,9 @@ object HoennGpuCam {
         ROW_MODE_ALL -> "All"
         else -> "Row $mode"
     }
+
+    fun rangeLabel(r: Float): String =
+        "%.0f° yaw / %.0f° pitch".format(40f * r, minOf(85f, 25f * r))
 
     fun pivotModeLabel(mode: Int): String = when (mode) {
         PIVOT_CALIBRATED -> "Learned from interior"
