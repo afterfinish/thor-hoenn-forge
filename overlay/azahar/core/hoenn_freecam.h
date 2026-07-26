@@ -23,10 +23,14 @@ namespace Hoenn {
 
 /**
  * v1 ship camera tools:
- * - Free look (right stick): GOLD dual eulers — works in houses / many interiors
+ * - Free look (right stick): hybrid.
+ *     * Indoors, where the memory camera has a live GOLD target, we keep writing the
+ *       dual eulers. That is a real in-engine camera, so culling stays correct.
+ *     * Everywhere else — towns, routes, caves, gyms — the game's camera controller
+ *       never reads those fields, so the stick instead drives Hoenn::GpuCam, which
+ *       rotates the view transform in the vertex-shader uniforms. Zero guest writes.
  * - Zoom assist (L/R): FOV on primary GOLD
  *
- * Town freelook is out of scope for v1 (render ignores dual eulers outdoors).
  * No experiment menu, CRO patches, shadows, or RE thrash.
  */
 class FreeCam {
@@ -68,6 +72,12 @@ private:
     float yaw = 0.f;
     bool yaw_seeded = false;
 
+    // GPU-path free look (Hoenn::GpuCam). These are *deltas* applied on top of whatever
+    // camera the game itself computed, not absolute angles like the memory path above.
+    float gpu_yaw = 0.f;
+    float gpu_pitch = 0.f;
+    bool gpu_active = false;
+
     bool in_battle = false;
     u64 quiet_until = 0;
     u32 last_process_id = 0;
@@ -86,6 +96,7 @@ private:
 
     void EnsureDevices();
     void ResetYaw();
+    void StopGpuCam();
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);

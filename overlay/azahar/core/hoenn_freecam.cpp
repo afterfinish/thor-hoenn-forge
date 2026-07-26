@@ -1,8 +1,15 @@
-// Copyright Hoenn Forge — ORAS free look (houses) + L/R zoom assist
+// Copyright Hoenn Forge — ORAS free look + L/R zoom assist
 //
-// Ship path only: GOLD dual pitch/yaw (+0x98/+0x9C and mirrors +0x54/+0x58).
+// Memory path (interiors): GOLD dual pitch/yaw (+0x98/+0x9C and mirrors +0x54/+0x58).
 // No mode unlock, CRO patch, shadows, matrix thrash, or RE experiment menu.
 // Those caused black screens, freezes, and poison after map transitions.
+//
+// GPU path (everywhere else): ORAS selects a camera controller type at construction.
+// Interiors get one that reads the euler fields above; towns, routes, caves and gyms get
+// one that derives eye and look-at from map geometry and never reads them, which is why
+// our writes stick in RAM outdoors yet nothing moves on screen. So outdoors we stop
+// writing guest memory entirely and rotate the view transform in the vertex-shader
+// uniforms instead — see video_core/hoenn_gpu_cam.h.
 
 #include "core/hoenn_freecam.h"
 
@@ -17,6 +24,9 @@
 #include "core/core_timing.h"
 #include "core/hle/kernel/process.h"
 #include "core/memory.h"
+#include "video_core/gpu.h"
+#include "video_core/hoenn_gpu_cam.h"
+#include "video_core/pica/pica_core.h"
 
 namespace Hoenn {
 
@@ -44,6 +54,11 @@ constexpr float FOV_STEP = 10.f;
 constexpr u32 OFF_FOV_ALT = 0x6C;
 constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
+
+// GPU-path steps. Slightly larger than the memory-path steps because these are eye-space
+// degrees, and the clamp (±40 yaw / ±25 pitch) is much tighter than the memory camera's.
+constexpr float GPU_YAW_STEP = 1.10f;
+constexpr float GPU_PITCH_STEP = 0.45f;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 constexpr u64 QUIET_AFTER_TRANSITION = 80'000'000;
@@ -111,6 +126,16 @@ void FreeCam::ResetYaw() {
     yaw = 0.f;
 }
 
+// Park the GPU camera at identity. Cheap and idempotent, so every early return in Tick()
+// can call it: if the driver stops running for any reason the view snaps back to the
+// game's own camera rather than staying rotated.
+void FreeCam::StopGpuCam() {
+    gpu_active = false;
+    gpu_yaw = 0.f;
+    gpu_pitch = 0.f;
+    GpuCam::Disable();
+}
+
 void FreeCam::OnCoreReconnect() {
     quiet_until = 1;
     in_battle = false;
@@ -118,6 +143,7 @@ void FreeCam::OnCoreReconnect() {
     primary_cam = 0;
     last_collect_tick = 0;
     ResetYaw();
+    StopGpuCam();
 }
 
 void FreeCam::EnsureDevices() {
@@ -153,6 +179,7 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         in_battle = true;
         live_count = 0;
         primary_cam = 0;
+        StopGpuCam();
     } else if (name == "DllField") {
         in_battle = false;
         quiet_until = 1;
@@ -160,6 +187,7 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         primary_cam = 0;
         last_collect_tick = 0;
         ResetYaw();
+        StopGpuCam();
     }
 }
 
@@ -167,6 +195,7 @@ void FreeCam::OnModuleUnloaded(std::string_view name) {
     if (name == "DllField") {
         live_count = 0;
         primary_cam = 0;
+        StopGpuCam();
     } else if (name == "DllBattle") {
         in_battle = false;
     }
@@ -180,8 +209,11 @@ void FreeCam::SetFreelookEnabled(bool e) {
     c_stick.reset();
     if (freelook) {
         ResetYaw();
-        LOG_WARNING(Core, "Hoenn freelook ON (houses/interiors — dual GOLD eulers)");
+        StopGpuCam();
+        LOG_WARNING(Core, "Hoenn freelook ON (memory eulers indoors, GPU view rotation "
+                          "everywhere else)");
     } else {
+        StopGpuCam();
         LOG_INFO(Core, "Hoenn freelook OFF");
     }
 }
@@ -371,9 +403,11 @@ void FreeCam::WriteZoomFov(Memory::MemorySystem& mem, Kernel::Process& process, 
 
 void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (!freelook && !zoom_assist) {
+        StopGpuCam();
         return;
     }
     if (!system.IsPoweredOn() || in_battle) {
+        StopGpuCam();
         return;
     }
 
@@ -397,11 +431,13 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         primary_cam = 0;
         last_collect_tick = 0;
         ResetYaw();
+        StopGpuCam();
     }
     if (HeapPtr(slot_cam)) {
         last_slot_cam = slot_cam;
     }
     if (now < quiet_until) {
+        StopGpuCam();
         return;
     }
 
@@ -466,9 +502,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     if (!freelook) {
-        return;
-    }
-    if (live_count == 0) {
+        StopGpuCam();
         return;
     }
 
@@ -479,6 +513,52 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         }
     } catch (...) {
         c_stick.reset();
+    }
+
+    // Hybrid split. A live GOLD target means the game instantiated the interior camera
+    // controller, which does read our eulers — that path gives a real in-engine camera
+    // with correct culling, so it keeps ownership. With no live target the game is
+    // running a controller that ignores those fields entirely (towns, routes, caves,
+    // gyms), and the GPU view rotation takes over. The probe forces the GPU path on
+    // regardless, so the discriminating experiment can be run inside a house too.
+    const bool memory_path_live = live_count > 0;
+    const bool probe = GpuCam::IsProbeEnabled();
+    const bool use_gpu = probe || !memory_path_live;
+
+    if (use_gpu) {
+        if (!gpu_active) {
+            gpu_active = true;
+            gpu_yaw = 0.f;
+            gpu_pitch = 0.f;
+        }
+        if (std::fabs(sx) >= STICK_DEADZONE) {
+            const float x = invert_x ? -sx : sx;
+            gpu_yaw = std::clamp(gpu_yaw + x * sensitivity * GPU_YAW_STEP,
+                                 -GpuCam::kYawClampDeg, GpuCam::kYawClampDeg);
+        }
+        if (std::fabs(sy) >= STICK_DEADZONE) {
+            const float y = invert_y ? sy : -sy;
+            gpu_pitch = std::clamp(gpu_pitch + y * sensitivity * GPU_PITCH_STEP,
+                                   -GpuCam::kPitchClampDeg, GpuCam::kPitchClampDeg);
+        }
+        GpuCam::SetActive(true, gpu_yaw, gpu_pitch);
+        // RasterizerOpenGL/Vulkan::UploadUniforms only re-uploads the PICA float block
+        // when pica.vs_setup.uniforms_dirty is set. A game that uploads a per-object
+        // matrix every draw keeps it set for us, but one that uploads a single view
+        // matrix and reuses it would freeze the angle at whatever was last sent, so
+        // force a refresh. Same thread as the command processor, so this is a plain
+        // store, not a race.
+        system.GPU().PicaCore().vs_setup.uniforms_dirty = true;
+    } else if (gpu_active) {
+        StopGpuCam();
+    }
+
+    if (!memory_path_live) {
+        if ((diag++ % 300) == 0) {
+            LOG_INFO(Core, "Hoenn freelook GPU path y={:.1f} p={:.1f} row={}", gpu_yaw, gpu_pitch,
+                     static_cast<int>(GpuCam::GetParam(GpuCam::ParamDetectedRow)));
+        }
+        return;
     }
 
     if (std::fabs(sy) >= STICK_DEADZONE) {
