@@ -109,6 +109,7 @@ struct Shared {
     std::atomic<int> pivot_mode{kPivotCalibrated};
     std::atomic<float> range{kDefaultRange};
     std::atomic<float> dolly{0.0f};
+    std::atomic<float> pivot_y{kDefaultPivotY};
     /// Set while the interior memory camera owns the view: sample, do not drive.
     std::atomic<bool> observing{false};
     std::atomic<bool> calibrated{false};
@@ -906,6 +907,10 @@ void SetParam(int param, float value) {
         LOG_INFO(Render, "Hoenn GPU cam: invert={}", bits);
         break;
     }
+    case ParamPivotY:
+        g.pivot_y.store(std::clamp(value, -2000.0f, 2000.0f), std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: pivot height={:.0f}", value);
+        break;
     case ParamRange:
         g.range.store(std::clamp(value, 0.25f, 4.5f), std::memory_order_relaxed);
         LOG_INFO(Render, "Hoenn GPU cam: range={:.2f}x (yaw 360, pitch +-{:.0f})", value,
@@ -949,6 +954,8 @@ float GetParam(int param) {
         return static_cast<float>(g.pivot_mode.load(std::memory_order_relaxed));
     case ParamRange:
         return g.range.load(std::memory_order_relaxed);
+    case ParamPivotY:
+        return g.pivot_y.load(std::memory_order_relaxed);
     case ParamInvert:
         return static_cast<float>(g.invert.load(std::memory_order_relaxed));
     default:
@@ -1265,7 +1272,7 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             // nothing else can: 225 here, against the ~5000 the per-object matrices claim.
             const float d = radius_pref > 0.0f ? radius_pref : kDefaultOrbitDistance;
             p[0] = 0.0f;
-            p[1] = 0.0f;
+            p[1] = g.pivot_y.load(std::memory_order_relaxed);
             p[2] = -d;
             break;
         }

@@ -39,7 +39,19 @@ enum Param : int {
     ParamInvert = 9,       ///< rw  bit 0 inverts yaw, bit 1 inverts pitch
     ParamPivotMode = 10,   ///< rw  where the orbit centre sits — see kPivot* below
     ParamRange = 11,       ///< rw  multiplier on the yaw/pitch clamps
+    ParamPivotY = 12,      ///< rw  eye-space height of the orbit centre
 };
+
+/// Eye-space height of the orbit centre, relative to the screen-centre ray.
+///
+/// The pivot was (0, 0, -d): dead centre of the frame at depth d. Outdoors the player is
+/// not at the centre of the frame, she sits low in it, so that puts the orbit centre above
+/// her -- and with the camera pitched down, above-and-beyond reads on screen as a point
+/// roughly a body-length behind her. Sliding d only moves the pivot along the wrong axis,
+/// which is why every distance preset was worse than the default.
+///
+/// Negative is down. Zero keeps the old centre-ray behaviour.
+constexpr float kDefaultPivotY = 0.0f;
 
 /// Default look range. Wider than the original clamps, which device testing found too
 /// restrictive once the camera was actually working.

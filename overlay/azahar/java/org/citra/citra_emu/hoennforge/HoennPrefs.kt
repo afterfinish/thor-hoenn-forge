@@ -93,6 +93,11 @@ class HoennPrefs(context: Context) {
         get() = prefs.getFloat(KEY_GPUCAM_RANGE, 2f)
         set(value) = prefs.edit { putFloat(KEY_GPUCAM_RANGE, value) }
 
+    /** Outdoor free look: eye-space height of the orbit centre. Negative is down. */
+    var gpuCamPivotY: Float
+        get() = prefs.getFloat(KEY_GPUCAM_PIVOT_Y, 0f)
+        set(value) = prefs.edit { putFloat(KEY_GPUCAM_PIVOT_Y, value) }
+
     /** Where the orbit centre sits — see [HoennGpuCam.PIVOT_CALIBRATED]. */
     var gpuCamPivotMode: Int
         get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_CALIBRATED)
@@ -148,6 +153,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
         private const val KEY_GPUCAM_PIVOT = "gpucam_pivot_mode"
         private const val KEY_GPUCAM_RANGE = "gpucam_range"
+        private const val KEY_GPUCAM_PIVOT_Y = "gpucam_pivot_y"
         private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
         private const val GPUCAM_GEN = 7
         // legacy key migrated on first read via cameraZoomAssist if needed

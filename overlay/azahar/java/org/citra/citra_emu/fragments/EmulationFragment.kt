@@ -847,6 +847,7 @@ class EmulationFragment :
             ),
             getString(R.string.hoenn_gpucam_range_fmt, cam.rangeLabel(prefs.gpuCamRange)),
             getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
+            getString(R.string.hoenn_gpucam_pivoty_fmt, prefs.gpuCamPivotY),
             getString(R.string.hoenn_gpucam_invert_fmt, cam.invertLabel(prefs.gpuCamInvert)),
             getString(R.string.hoenn_gpucam_reset),
         )
@@ -929,13 +930,23 @@ class EmulationFragment :
                         prefs.gpuCamRadius = next
                         cam.radius = next
                     }
-                    // none -> yaw -> pitch -> both -> none
+                    // Orbit height. The player sits low in the frame outdoors, so the
+                    // centre-ray pivot lands above her and the camera appears to turn
+                    // about a point a body-length behind. Down is negative.
                     7 -> {
+                        val steps = floatArrayOf(0f, -40f, -80f, -120f, -170f, -230f, -300f, 60f)
+                        val idx = steps.indexOfFirst { kotlin.math.abs(it - prefs.gpuCamPivotY) < 0.01f }
+                        val next = steps[(if (idx < 0) 0 else idx + 1) % steps.size]
+                        prefs.gpuCamPivotY = next
+                        cam.pivotY = next
+                    }
+                    // none -> yaw -> pitch -> both -> none
+                    8 -> {
                         val next = (prefs.gpuCamInvert + 1) and 3
                         prefs.gpuCamInvert = next
                         cam.invert = next
                     }
-                    8 -> {
+                    9 -> {
                         prefs.gpuCamProbe = false
                         prefs.gpuCamRowMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
@@ -945,6 +956,7 @@ class EmulationFragment :
                         prefs.gpuCamPivotMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_CALIBRATED
                         prefs.gpuCamRange = 2f
+                        prefs.gpuCamPivotY = 0f
                         cam.restore(prefs)
                     }
                 }

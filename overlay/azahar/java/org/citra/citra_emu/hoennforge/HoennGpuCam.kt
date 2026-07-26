@@ -29,6 +29,7 @@ object HoennGpuCam {
     const val PARAM_INVERT = 9
     const val PARAM_PIVOT_MODE = 10
     const val PARAM_RANGE = 11
+    const val PARAM_PIVOT_Y = 12
 
     /** Mean eye-space translation of the per-object matrices — carries direction, not just
      *  distance, which the axis modes below do not. */
@@ -92,6 +93,11 @@ object HoennGpuCam {
         get() = take(PARAM_RANGE, 2f)
         set(value) = put(PARAM_RANGE, value)
 
+    /** Eye-space height of the orbit centre. Negative is down, toward the player. */
+    var pivotY: Float
+        get() = take(PARAM_PIVOT_Y, 0f)
+        set(value) = put(PARAM_PIVOT_Y, value)
+
     /** Where the orbit centre sits. See [PIVOT_MEASURED] and friends. */
     var pivotMode: Int
         get() = take(PARAM_PIVOT_MODE, PIVOT_MEASURED.toFloat()).toInt()
@@ -115,6 +121,7 @@ object HoennGpuCam {
         invert = prefs.gpuCamInvert
         pivotMode = prefs.gpuCamPivotMode
         range = prefs.gpuCamRange
+        pivotY = prefs.gpuCamPivotY
     }
 
     fun rowModeLabel(mode: Int): String = when (mode) {

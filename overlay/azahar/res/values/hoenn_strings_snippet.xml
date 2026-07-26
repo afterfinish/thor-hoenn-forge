@@ -128,6 +128,7 @@
     <string name="hoenn_gpucam_layout_rows">rows</string>
     <string name="hoenn_gpucam_layout_cols">columns</string>
     <string name="hoenn_gpucam_pivot_fmt">Orbit centre: %1$s</string>
+    <string name="hoenn_gpucam_pivoty_fmt">Orbit height: %1$.0f (0 = frame centre)</string>
     <string name="hoenn_gpucam_range_fmt">Look range: %1$s</string>
     <string name="hoenn_gpucam_radius_fmt">Orbit distance: %1$.0f (0 = default 225)</string>
     <string name="hoenn_gpucam_invert_fmt">Invert: %1$s</string>
