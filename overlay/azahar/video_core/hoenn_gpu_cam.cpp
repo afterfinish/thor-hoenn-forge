@@ -71,6 +71,11 @@ constexpr int kColdWindowsToSwitch = 4;
 // park shorter than this keeps the lock and the window statistics.
 constexpr auto kResumeGrace = std::chrono::seconds(8);
 
+/// How far the interior camera must have turned before its motion is worth decomposing.
+/// Small enough that a normal flick of the stick calibrates, large enough that the
+/// recovered axis is not dominated by rounding in the uniform floats.
+constexpr float kCalMinYawDeg = 4.0f;
+
 // Orthonormality tolerances. Generous enough for f24 -> f32 rounding.
 constexpr float kLenSqTol = 0.04f;
 constexpr float kDotTol = 0.02f;
@@ -89,7 +94,10 @@ struct Shared {
     std::atomic<int> detected_row{-1};
     std::atomic<int> qualify_count{0};
     std::atomic<int> invert{0};
-    std::atomic<int> pivot_mode{kPivotMeasured};
+    std::atomic<int> pivot_mode{kPivotCalibrated};
+    /// Set while the interior memory camera owns the view: sample, do not drive.
+    std::atomic<bool> observing{false};
+    std::atomic<bool> calibrated{false};
 };
 Shared g;
 
@@ -155,6 +163,21 @@ struct Scan {
     bool was_active = false;
     std::chrono::steady_clock::time_point parked_at{};
     std::chrono::steady_clock::time_point last_log{};
+
+    // --- Interior calibration ---------------------------------------------------------
+    // A reference sample of the view row taken while the memory camera was driving, and
+    // the driver's yaw at that moment. Compared against a later sample to recover what the
+    // engine actually does to the view transform for a known change in angle.
+    float cal_ref[12]{};
+    float cal_ref_yaw = 0.0f;
+    bool cal_ref_valid = false;
+    /// Pivot in eye space and rotation axis, both learned. cal_scale is the pivot's
+    /// distance at calibration time, kept so the direction can be rescaled to a map whose
+    /// camera sits at a different distance from the player.
+    float cal_pivot[3]{};
+    float cal_axis[3]{0.0f, 1.0f, 0.0f};
+    float cal_scale = 0.0f;
+    bool cal_valid = false;
 };
 Scan s;
 
@@ -499,6 +522,7 @@ void SetActive(bool active, float yaw_deg, float pitch_deg) {
     g.yaw.store(std::clamp(yaw_deg, -kYawClampDeg, kYawClampDeg), std::memory_order_relaxed);
     g.pitch.store(std::clamp(pitch_deg, -kPitchClampDeg, kPitchClampDeg),
                   std::memory_order_relaxed);
+    g.observing.store(false, std::memory_order_relaxed);
     g.active.store(active, std::memory_order_relaxed);
 }
 
@@ -506,10 +530,94 @@ void Disable() {
     g.yaw.store(0.0f, std::memory_order_relaxed);
     g.pitch.store(0.0f, std::memory_order_relaxed);
     g.active.store(false, std::memory_order_relaxed);
+    g.observing.store(false, std::memory_order_relaxed);
 }
 
 bool IsProbeEnabled() {
     return g.probe.load(std::memory_order_relaxed);
+}
+
+/// Recover what the engine did to the view transform between two samples of the same row,
+/// and reduce it to the two things the outdoor path needs: an axis and a point to turn
+/// about. Returns false when the samples are too close together to say anything.
+///
+/// D = cur * ref^-1 for rigid [R|t] matrices. Its fixed point p satisfies (I - R)p = t.
+/// (I - R) is singular along the rotation axis — turning about the axis leaves it alone —
+/// so the system is solved in the plane perpendicular to the axis, where it is well posed.
+bool SolveCalibration(const float ref[12], const float cur[12]) {
+    // Rotation between the two: Rd = Rc * Rr^T (Rr orthonormal, so transpose inverts).
+    float rd[3][3];
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            rd[i][j] = cur[i * 4 + 0] * ref[j * 4 + 0] + cur[i * 4 + 1] * ref[j * 4 + 1] +
+                       cur[i * 4 + 2] * ref[j * 4 + 2];
+        }
+    }
+    // td = tc - Rd * tr
+    const float tr[3] = {ref[3], ref[7], ref[11]};
+    const float td[3] = {
+        cur[3] - (rd[0][0] * tr[0] + rd[0][1] * tr[1] + rd[0][2] * tr[2]),
+        cur[7] - (rd[1][0] * tr[0] + rd[1][1] * tr[1] + rd[1][2] * tr[2]),
+        cur[11] - (rd[2][0] * tr[0] + rd[2][1] * tr[1] + rd[2][2] * tr[2]),
+    };
+
+    // Axis and angle from the rotation. The axis is the antisymmetric part; its length is
+    // sin(angle), which doubles as the "did anything actually turn" test.
+    float axis[3] = {rd[2][1] - rd[1][2], rd[0][2] - rd[2][0], rd[1][0] - rd[0][1]};
+    const float sin2 = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (sin2 < 1.0e-3f) {
+        return false; // too small a turn to decompose reliably
+    }
+    axis[0] /= sin2;
+    axis[1] /= sin2;
+    axis[2] /= sin2;
+
+    // Solve (I - R)p = t restricted to the plane normal to the axis. Project t into that
+    // plane, then apply the closed form for a planar rotation by the recovered angle:
+    // p_perp = ((I - R)^T t) / |I - R|^2 is ill-conditioned near zero angle, so use the
+    // standard identity p = (t_perp + axis x t_perp * cot(angle/2) ) / 2 instead.
+    const float cos_a = std::clamp((rd[0][0] + rd[1][1] + rd[2][2] - 1.0f) * 0.5f, -1.0f, 1.0f);
+    const float angle = std::atan2(sin2 * 0.5f, cos_a);
+    const float half = angle * 0.5f;
+    if (std::fabs(std::sin(half)) < 1.0e-4f) {
+        return false;
+    }
+    const float cot_half = std::cos(half) / std::sin(half);
+
+    const float t_dot_a = td[0] * axis[0] + td[1] * axis[1] + td[2] * axis[2];
+    const float tp[3] = {td[0] - t_dot_a * axis[0], td[1] - t_dot_a * axis[1],
+                         td[2] - t_dot_a * axis[2]};
+    const float cross[3] = {axis[1] * tp[2] - axis[2] * tp[1], axis[2] * tp[0] - axis[0] * tp[2],
+                            axis[0] * tp[1] - axis[1] * tp[0]};
+    const float p[3] = {0.5f * (tp[0] + cot_half * cross[0]), 0.5f * (tp[1] + cot_half * cross[1]),
+                        0.5f * (tp[2] + cot_half * cross[2])};
+    if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) {
+        return false;
+    }
+
+    s.cal_axis[0] = axis[0];
+    s.cal_axis[1] = axis[1];
+    s.cal_axis[2] = axis[2];
+    s.cal_pivot[0] = p[0];
+    s.cal_pivot[1] = p[1];
+    s.cal_pivot[2] = p[2];
+    s.cal_scale = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+    s.cal_valid = true;
+    g.calibrated.store(true, std::memory_order_relaxed);
+    LOG_INFO(Render,
+             "Hoenn GPU cam CALIBRATED from interior camera: pivot=({:.0f}, {:.0f}, {:.0f}) "
+             "|p|={:.0f} axis=({:.3f}, {:.3f}, {:.3f}) angle={:.2f} deg",
+             p[0], p[1], p[2], s.cal_scale, axis[0], axis[1], axis[2], angle * 180.0f / 3.14159265f);
+    return true;
+}
+
+void Observe(float yaw_deg, float /*pitch_deg*/) {
+    g.observing.store(true, std::memory_order_relaxed);
+    g.yaw.store(yaw_deg, std::memory_order_relaxed);
+}
+
+bool IsCalibrated() {
+    return g.calibrated.load(std::memory_order_relaxed);
 }
 
 void SetParam(int param, float value) {
@@ -590,7 +698,12 @@ float GetParam(int param) {
 }
 
 void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
-    if (!g.active.load(std::memory_order_relaxed)) {
+    const bool driving = g.active.load(std::memory_order_relaxed);
+    // Indoors the memory camera owns the view and we only watch, to learn the pivot and
+    // axis the engine itself uses. The detector runs either way, so by the time the GPU
+    // path takes over outdoors the row is already locked and calibrated.
+    const bool watching = !driving && g.observing.load(std::memory_order_relaxed);
+    if (!driving && !watching) {
         if (s.was_active) {
             s.was_active = false;
             s.parked_at = std::chrono::steady_clock::now();
@@ -707,6 +820,8 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     g.detected_row.store(s.locked_row, std::memory_order_relaxed);
     g.qualify_count.store(live, std::memory_order_relaxed);
 
+    const int pivot_mode = g.pivot_mode.load(std::memory_order_relaxed);
+
     // --- Reference row: the single source of O ------------------------------------------
     const int ref_row = (mode >= 0 && mode <= kLastTriple) ? mode : s.locked_row;
     if (ref_row >= 0 && ref_row <= kLastTriple && live_now[ref_row]) {
@@ -725,6 +840,30 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         }
     }
 
+    // --- Calibration: learn from the interior camera rather than guess ------------------
+    if (watching) {
+        if (ref_row >= 0 && live_now[ref_row]) {
+            float cur[12];
+            ReadTriple(f, ref_row, cur);
+            const float yaw_now = g.yaw.load(std::memory_order_relaxed);
+            if (!s.cal_ref_valid) {
+                std::memcpy(s.cal_ref, cur, sizeof(cur));
+                s.cal_ref_yaw = yaw_now;
+                s.cal_ref_valid = true;
+            } else if (std::fabs(yaw_now - s.cal_ref_yaw) >= kCalMinYawDeg) {
+                // The engine has swung its own camera by a usable amount. Whatever it did
+                // to the view row over that interval is, by definition, a correct camera
+                // rotation for this game — so recover its fixed point and axis. Re-baseline
+                // either way: a solve that failed for being too small will not get better
+                // by being compared against an ever older reference.
+                SolveCalibration(s.cal_ref, cur);
+                std::memcpy(s.cal_ref, cur, sizeof(cur));
+                s.cal_ref_yaw = yaw_now;
+            }
+        }
+        return; // never write while the memory camera owns the view
+    }
+
     if (ref_row < 0 || !s.up_valid) {
         return; // no trustworthy axis to rotate about yet
     }
@@ -733,7 +872,13 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     }
 
     // Positive stick-right yaws the camera right, which means rotating the world left.
-    const Mat3 r_yaw = AxisAngle(s.up[0], s.up[1], s.up[2], -yaw_deg * kDegToRad);
+    // Prefer the axis recovered from the interior camera over the one read out of the view
+    // matrix's up column: it is the axis the engine demonstrably turns about, sign included.
+    const bool use_cal_axis = pivot_mode == kPivotCalibrated && s.cal_valid;
+    const float ax = use_cal_axis ? s.cal_axis[0] : s.up[0];
+    const float ay = use_cal_axis ? s.cal_axis[1] : s.up[1];
+    const float az = use_cal_axis ? s.cal_axis[2] : s.up[2];
+    const Mat3 r_yaw = AxisAngle(ax, ay, az, -yaw_deg * kDegToRad);
     const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
     const Mat3 rot = Mul(r_pitch, r_yaw);
 
@@ -750,7 +895,24 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     // direction as well as the distance. The axis modes are kept so the convention can
     // still be falsified by hand.
     float p[3]{};
-    switch (g.pivot_mode.load(std::memory_order_relaxed)) {
+    switch (pivot_mode) {
+    case kPivotCalibrated:
+        if (s.cal_valid) {
+            // Learned indoors, where the engine's own camera motion showed us its fixed
+            // point. Rescale the direction to this map's camera distance: the shape of the
+            // orbit is a property of the engine, the size of it is a property of the map.
+            const float k = (s.cal_scale > 1.0e-3f && s.last_depth_mean > 1.0e-3f)
+                                ? s.last_depth_mean / s.cal_scale
+                                : 1.0f;
+            p[0] = s.cal_pivot[0] * k;
+            p[1] = s.cal_pivot[1] * k;
+            p[2] = s.cal_pivot[2] * k;
+        } else if (s.last_pivot_valid) {
+            p[0] = s.last_pivot[0]; // not calibrated yet — measured point is the best guess
+            p[1] = s.last_pivot[1];
+            p[2] = s.last_pivot[2];
+        }
+        break;
     case kPivotMeasured:
         if (s.last_pivot_valid) {
             const float len = std::sqrt(s.last_pivot[0] * s.last_pivot[0] +

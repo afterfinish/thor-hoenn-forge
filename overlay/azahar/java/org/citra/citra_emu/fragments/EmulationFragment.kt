@@ -930,7 +930,7 @@ class EmulationFragment :
                         prefs.gpuCamRadius = 0f
                         prefs.gpuCamInvert = 0
                         prefs.gpuCamPivotMode =
-                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_MEASURED
+                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_CALIBRATED
                         cam.restore(prefs)
                     }
                 }

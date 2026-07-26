@@ -48,11 +48,14 @@ enum Param : int {
 /// forward *and below* the eye, so a pivot on the Z axis at the measured distance sits
 /// thousands of units above the player.
 enum PivotMode : int {
-    kPivotMeasured = 0,   ///< mean eye-space translation of the per-object matrices
-    kPivotForwardPos = 1, ///< (0, 0, +radius)
-    kPivotForwardNeg = 2, ///< (0, 0, -radius)
-    kPivotNone = 3,       ///< swivel about the eye; cannot displace geometry
-    kPivotModeCount = 4,
+    /// Learned from the interior camera — see [Observe]. The default, and the only mode
+    /// that involves no guessing at all.
+    kPivotCalibrated = 0,
+    kPivotMeasured = 1,   ///< mean eye-space translation of the per-object matrices
+    kPivotForwardPos = 2, ///< (0, 0, +radius)
+    kPivotForwardNeg = 3, ///< (0, 0, -radius)
+    kPivotNone = 4,       ///< swivel about the eye; cannot displace geometry
+    kPivotModeCount = 5,
 };
 
 constexpr int kInvertYaw = 1;
@@ -90,6 +93,24 @@ void SetActive(bool active, float yaw_deg, float pitch_deg);
 
 /// Disable the GPU camera and zero the angles. Safe to call every tick.
 void Disable();
+
+/// Watch the interior camera instead of driving anything.
+///
+/// This is the calibration path, and the reason the outdoor camera does not have to guess.
+/// Indoors the memory driver moves the game's *own* camera, correctly, and the result lands
+/// in the same uniform row the GPU path wants to drive. Sampling that row at two different
+/// angles gives D = M1 * M0^-1, the exact transform the engine applies for a known change
+/// in yaw. A rigid transform has a fixed point, found by solving (I - R)p = t, and that
+/// point is the pivot the game orbits about — measured in eye space rather than assumed.
+/// The rotation axis falls out of the same decomposition.
+///
+/// Every convention that was previously a coin flip — handedness, which way is forward,
+/// where the orbit centre sits, row versus column major — is therefore observed instead of
+/// argued about. Call this from the driver each tick while the memory path owns the camera.
+void Observe(float yaw_deg, float pitch_deg);
+
+/// True once a usable interior calibration has been captured.
+bool IsCalibrated();
 
 /// True when the discriminating experiment is armed, so the driver knows to keep the
 /// GPU path live even where the memory camera already works.

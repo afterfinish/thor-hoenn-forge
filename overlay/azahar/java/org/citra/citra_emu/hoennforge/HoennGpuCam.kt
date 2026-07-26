@@ -31,11 +31,13 @@ object HoennGpuCam {
 
     /** Mean eye-space translation of the per-object matrices — carries direction, not just
      *  distance, which the axis modes below do not. */
-    const val PIVOT_MEASURED = 0
-    const val PIVOT_FORWARD_POS = 1
-    const val PIVOT_FORWARD_NEG = 2
-    const val PIVOT_NONE = 3
-    const val PIVOT_MODE_COUNT = 4
+    /** Learned by watching the interior camera move — no conventions assumed. */
+    const val PIVOT_CALIBRATED = 0
+    const val PIVOT_MEASURED = 1
+    const val PIVOT_FORWARD_POS = 2
+    const val PIVOT_FORWARD_NEG = 3
+    const val PIVOT_NONE = 4
+    const val PIVOT_MODE_COUNT = 5
 
     const val INVERT_YAW = 1
     const val INVERT_PITCH = 2
@@ -115,6 +117,7 @@ object HoennGpuCam {
     }
 
     fun pivotModeLabel(mode: Int): String = when (mode) {
+        PIVOT_CALIBRATED -> "Learned from interior"
         PIVOT_MEASURED -> "Measured point"
         PIVOT_FORWARD_POS -> "Forward +Z"
         PIVOT_FORWARD_NEG -> "Forward -Z"

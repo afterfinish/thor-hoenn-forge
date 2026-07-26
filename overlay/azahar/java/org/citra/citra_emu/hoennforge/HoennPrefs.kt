@@ -88,9 +88,9 @@ class HoennPrefs(context: Context) {
         get() = prefs.getInt(KEY_GPUCAM_INVERT, 0)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_INVERT, value) }
 
-    /** Where the orbit centre sits — see [HoennGpuCam.PIVOT_MEASURED]. */
+    /** Where the orbit centre sits — see [HoennGpuCam.PIVOT_CALIBRATED]. */
     var gpuCamPivotMode: Int
-        get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_MEASURED)
+        get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_CALIBRATED)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_PIVOT, value) }
 
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
@@ -143,7 +143,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
         private const val KEY_GPUCAM_PIVOT = "gpucam_pivot_mode"
         private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
-        private const val GPUCAM_GEN = 3
+        private const val GPUCAM_GEN = 4
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }

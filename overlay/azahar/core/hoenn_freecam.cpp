@@ -607,8 +607,16 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         // force a refresh. Same thread as the command processor, so this is a plain
         // store, not a race.
         system.GPU().PicaCore().vs_setup.uniforms_dirty = true;
-    } else if (gpu_active) {
-        StopGpuCam();
+    } else {
+        if (gpu_active) {
+            StopGpuCam();
+        }
+        // The memory camera owns this map, which means the engine is about to move its own
+        // camera correctly — the one thing the GPU path cannot do by reasoning. Publish our
+        // yaw so the hook can watch the view row change against a known angle and recover
+        // the pivot and axis the engine actually uses. Costs a sweep per upload indoors and
+        // writes nothing; see GpuCam::Observe.
+        GpuCam::Observe(yaw, pitch);
     }
 
     if (use_gpu || live_count == 0) {
