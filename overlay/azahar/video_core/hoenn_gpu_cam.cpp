@@ -195,6 +195,10 @@ struct Scan {
     float cal_pivot[3]{};
     float cal_axis[3]{0.0f, 1.0f, 0.0f};
     float cal_scale = 0.0f;
+    /// The row correspondence proved is the camera, or -1. This outranks the statistical
+    /// detector: it was established by turning the camera and watching which row followed,
+    /// where the detector only ever infers from hit counts.
+    int cal_row = -1;
     bool cal_valid = false;
     bool cal_load_tried = false;
 };
@@ -462,6 +466,22 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
     }
     s.steady_rows = steady;
 
+    // Correspondence outranks statistics. Row 90 was identified as the camera by turning
+    // the interior camera and seeing which row turned with it; the detector then dropped it
+    // after a Pokemon Center transition briefly pushed its hit count under the floor, and
+    // wandered to 28 and then 76. Row 76 provably does not turn with the camera, so free
+    // look silently stopped working and the NPCs drawn through that row were stretched into
+    // strings. A heuristic must not be allowed to overrule a measurement.
+    if (s.cal_row >= 0 && s.cal_row <= kLastTriple && s.last_hits[s.cal_row] > 0) {
+        if (s.locked_row != s.cal_row) {
+            LOG_INFO(Render, "Hoenn GPU cam: pinning lock to the identified camera row {}",
+                     s.cal_row);
+        }
+        s.locked_row = s.cal_row;
+        s.cold_windows = 0;
+        return;
+    }
+
     if (s.locked_row < 0) {
         s.locked_row = best;
         s.cold_windows = 0;
@@ -561,8 +581,17 @@ float GetDolly() {
     return g.dolly.load(std::memory_order_relaxed);
 }
 
-float YawClampDeg() {
-    return kYawClampBaseDeg * g.range.load(std::memory_order_relaxed);
+float WrapDeg(float deg) {
+    if (!std::isfinite(deg)) {
+        return 0.0f;
+    }
+    while (deg > 180.0f) {
+        deg -= 360.0f;
+    }
+    while (deg < -180.0f) {
+        deg += 360.0f;
+    }
+    return deg;
 }
 
 float PitchClampDeg() {
@@ -571,9 +600,11 @@ float PitchClampDeg() {
 }
 
 void SetActive(bool active, float yaw_deg, float pitch_deg) {
-    const float yc = YawClampDeg();
+    // Yaw wraps rather than clamping: a full turn about the vertical is well defined and
+    // is what "look around" means. Pitch still clamps, because past vertical the up vector
+    // and the view direction align and the yaw axis stops existing.
     const float pc = PitchClampDeg();
-    g.yaw.store(std::clamp(yaw_deg, -yc, yc), std::memory_order_relaxed);
+    g.yaw.store(WrapDeg(yaw_deg), std::memory_order_relaxed);
     g.pitch.store(std::clamp(pitch_deg, -pc, pc), std::memory_order_relaxed);
     g.observing.store(false, std::memory_order_relaxed);
     g.active.store(active, std::memory_order_relaxed);
@@ -600,8 +631,9 @@ std::string CalPath() {
 }
 
 void SaveCalibration() {
-    const float v[7] = {1.0f,           s.cal_pivot[0], s.cal_pivot[1], s.cal_pivot[2],
-                        s.cal_axis[0],  s.cal_axis[1],  s.cal_axis[2]};
+    const float v[8] = {1.0f,          s.cal_pivot[0], s.cal_pivot[1],
+                        s.cal_pivot[2], s.cal_axis[0],  s.cal_axis[1],
+                        s.cal_axis[2],  static_cast<float>(s.cal_row)};
     FileUtil::IOFile file(CalPath(), "wb");
     if (file.IsOpen()) {
         file.WriteBytes(v, sizeof(v));
@@ -609,7 +641,7 @@ void SaveCalibration() {
 }
 
 void LoadCalibration() {
-    float v[7]{};
+    float v[8]{};
     FileUtil::IOFile file(CalPath(), "rb");
     if (!file.IsOpen() || file.ReadBytes(v, sizeof(v)) != sizeof(v) || v[0] != 1.0f) {
         return;
@@ -636,6 +668,8 @@ void LoadCalibration() {
     s.cal_axis[1] = v[5];
     s.cal_axis[2] = v[6];
     s.cal_scale = len;
+    const int row = static_cast<int>(v[7]);
+    s.cal_row = (row >= 0 && row <= kLastTriple) ? row : -1;
     s.cal_valid = true;
     g.calibrated.store(true, std::memory_order_relaxed);
     LOG_INFO(Render,
@@ -842,8 +876,8 @@ void SetParam(int param, float value) {
     }
     case ParamRange:
         g.range.store(std::clamp(value, 0.25f, 4.5f), std::memory_order_relaxed);
-        LOG_INFO(Render, "Hoenn GPU cam: range={:.2f}x (yaw +-{:.0f}, pitch +-{:.0f})", value,
-                 YawClampDeg(), PitchClampDeg());
+        LOG_INFO(Render, "Hoenn GPU cam: range={:.2f}x (yaw 360, pitch +-{:.0f})", value,
+                 PitchClampDeg());
         break;
     case ParamPivotMode: {
         int mode = static_cast<int>(value);
@@ -1102,10 +1136,13 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             if (best_row >= 0 && best_err <= std::max(1.5f, want * 0.35f)) {
                 float cur[12];
                 ReadTriple(f, best_row, cur);
-                LOG_INFO(Render,
-                         "Hoenn GPU cam: camera row is {} — it turned {:.1f} deg while the "
-                         "interior camera turned {:.1f}",
-                         best_row, best_turn, want);
+                if (s.cal_row != best_row) {
+                    LOG_INFO(Render,
+                             "Hoenn GPU cam: camera row is {} — it turned {:.1f} deg while "
+                             "the interior camera turned {:.1f}",
+                             best_row, best_turn, want);
+                }
+                s.cal_row = best_row;
                 SolveCalibration(s.cal_ref_rows[best_row], cur);
             } else {
                 LOG_INFO(Render,

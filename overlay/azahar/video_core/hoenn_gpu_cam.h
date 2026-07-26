@@ -70,21 +70,23 @@ constexpr int kRowModeAuto = -1;
 constexpr int kRowModeAll = -2;
 
 /// The game culls and submits geometry for its own frustum, so rotating far reveals
-/// unrendered space and backfaces (the same limitation Dolphin's Free Look has). These are
-/// the base clamps, scaled by the user's chosen range — see [YawClampDeg].
+/// unrendered space and backfaces (the same limitation Dolphin's Free Look has). Pitch is
+/// therefore clamped, scaled by the user's chosen range — see [PitchClampDeg].
 ///
-/// They started as a guess at where culling would become objectionable, made before the
-/// camera worked well enough to find out. It does now, and the answer is a matter of taste
-/// rather than correctness, so the range is a setting.
-constexpr float kYawClampBaseDeg = 40.0f;
+/// Yaw is **not** clamped. It turns about the vertical, so it has no degenerate pose to
+/// protect against and no reason to stop: it wraps, giving a full 360 degrees around the
+/// player. The original limit was a guess made before the camera worked well enough to
+/// judge it, and on device it simply read as the camera running out of travel halfway.
 constexpr float kPitchClampBaseDeg = 25.0f;
+
+/// Fold an angle into [-180, 180]. Yaw accumulates without bound otherwise.
+float WrapDeg(float deg);
 
 /// Hard ceiling on pitch regardless of range: at 90 degrees the up vector and the view
 /// direction line up and the yaw axis stops being well defined.
 constexpr float kPitchClampCeilDeg = 85.0f;
 
-/// Effective clamps, base times the selected range.
-float YawClampDeg();
+/// Effective pitch clamp, base times the selected range.
 float PitchClampDeg();
 
 /// Fixed angle for A/B testing: substitutes a constant yaw for the stick so a change

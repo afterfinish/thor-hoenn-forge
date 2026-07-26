@@ -87,7 +87,7 @@ object HoennGpuCam {
         get() = take(PARAM_INVERT).toInt()
         set(value) = put(PARAM_INVERT, value.toFloat())
 
-    /** Multiplier on the yaw/pitch clamps. 1.0 is +-40 yaw / +-25 pitch. */
+    /** Multiplier on the pitch clamp. 1.0 is +-25 pitch. Yaw is unclamped. */
     var range: Float
         get() = take(PARAM_RANGE, 2f)
         set(value) = put(PARAM_RANGE, value)
@@ -123,8 +123,8 @@ object HoennGpuCam {
         else -> "Row $mode"
     }
 
-    fun rangeLabel(r: Float): String =
-        "%.0f° yaw / %.0f° pitch".format(40f * r, minOf(85f, 25f * r))
+    /** Yaw is unclamped and wraps, so only the pitch limit varies with range. */
+    fun rangeLabel(r: Float): String = "360° yaw / ±%.0f° pitch".format(minOf(85f, 25f * r))
 
     fun pivotModeLabel(mode: Int): String = when (mode) {
         PIVOT_CALIBRATED -> "Learned from interior"
