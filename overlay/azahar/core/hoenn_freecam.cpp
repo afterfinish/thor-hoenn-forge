@@ -37,8 +37,7 @@ constexpr float PITCH_MAX = 0.f;
 constexpr float PITCH_STEP = 0.30f;
 constexpr float YAW_STEP = 0.85f;
 constexpr float FOV_GOLD_LO = 150.f;
-constexpr float FOV_GOLD_HI = 400.f; // gold discovery band (default house FOV ~225)
-// Zoom may push FOV outside discovery band — do not use OkGoldFov for zoom writes
+// Zoom pushes FOV past the ~225 default house value, so acceptance spans the zoom band
 constexpr float FOV_ZOOM_MIN = 180.f;
 constexpr float FOV_ZOOM_MAX = 750.f;
 constexpr float FOV_STEP = 10.f;
@@ -76,8 +75,12 @@ bool OkFloat(float f) {
     return std::isfinite(f) && std::fabs(f) < 1.0e8f;
 }
 
-bool OkGoldFov(float f) {
-    return std::isfinite(f) && f >= FOV_GOLD_LO && f <= FOV_GOLD_HI;
+// A camera FOV across the full zoom band — the acceptance test for anything we are
+// about to overwrite with an FOV. Deliberately narrow at the bottom: a guest pointer
+// (0x08000000–0x0BFFFFFF) reinterpreted as a float is ~1e-32 and a small integer field
+// is smaller still, so neither can pass and neither can be clobbered.
+bool OkCameraFov(float f) {
+    return std::isfinite(f) && f >= FOV_GOLD_LO && f <= FOV_ZOOM_MAX;
 }
 
 std::shared_ptr<Kernel::Process> Resolve(Core::System& sys, u32 pid) {
@@ -249,7 +252,7 @@ bool FreeCam::IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u3
     const float fov = BFloat(mem.Read32(process, base + OFF_FOV));
     // Accept FOV through the full zoom band. Using only the discovery band (≤400)
     // made freelook die after zooming out — WriteFreelook gates on IsGoldLive.
-    return flag == LIVE_FLAG && OkFloat(fov) && fov >= FOV_GOLD_LO && fov <= FOV_ZOOM_MAX;
+    return flag == LIVE_FLAG && OkCameraFov(fov);
 }
 
 void FreeCam::CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process,
@@ -350,12 +353,20 @@ void FreeCam::WriteFreelook(Memory::MemorySystem& mem, Kernel::Process& process,
 }
 
 void FreeCam::WriteZoomFov(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam) {
-    if (!HeapPtr(cam) || cam + OFF_FOV + 4 >= 0x0C000000) {
+    // Identify the object before writing to it. This used to be a bare HeapPtr bounds
+    // test, so the write landed on any heap object that happened to hold 0x0F at +0x80.
+    if (!IsGoldLive(mem, process, cam)) {
         return;
     }
-    // Dual FOV so house/interior layout stays coherent
     WriteF(mem, process, cam + OFF_FOV, user_fov);
-    WriteF(mem, process, cam + OFF_FOV_ALT, user_fov);
+    // Dual FOV so house/interior layout stays coherent — but only where the mirror
+    // already holds an FOV. Writing +0x6C blind is what overwrote a guest pointer with
+    // 180.0f (FOV_ZOOM_MIN, what R clamps to). The game then dereferenced 0x43340000 —
+    // the bit pattern of 180.0f — and walked an array from there, flooding the
+    // emulation thread with unmapped reads at roughly 100k/s until it stalled.
+    if (OkCameraFov(BFloat(mem.Read32(process, cam + OFF_FOV_ALT)))) {
+        WriteF(mem, process, cam + OFF_FOV_ALT, user_fov);
+    }
 }
 
 void FreeCam::Tick(Core::System& system, u32 process_id) {
@@ -404,19 +415,24 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         }
     }
 
-    // Zoom assist: pick any live gold as target; FOV may leave discovery band
-    if (zoom_assist) {
+    // Zoom assist: pick any live gold as target; FOV may leave the discovery band.
+    // Candidates are validated with IsGoldLive rather than the bare 0x0F flag byte —
+    // a u32 15 at +0x80 is a common heap pattern, and accepting it is what let the FOV
+    // write land on a non-camera object. Skipped entirely when nothing validated as
+    // gold (the outdoor case), where the struct layout does not hold and zoom has no
+    // visible effect anyway because the game re-derives FOV each frame.
+    if (zoom_assist && live_count > 0) {
         u32 zcam = primary_cam;
-        if (!HeapPtr(zcam) || mem.Read32(*process, zcam + OFF_FLAG) != LIVE_FLAG) {
+        if (!IsGoldLive(mem, *process, zcam)) {
             zcam = 0;
             for (int i = 0; i < live_count; ++i) {
                 const u32 b = live_targets[static_cast<size_t>(i)];
-                if (HeapPtr(b) && mem.Read32(*process, b + OFF_FLAG) == LIVE_FLAG) {
+                if (IsGoldLive(mem, *process, b)) {
                     zcam = b;
                     break;
                 }
             }
-            if (!zcam && HeapPtr(slot_cam) && mem.Read32(*process, slot_cam + OFF_FLAG) == LIVE_FLAG) {
+            if (!zcam && IsGoldLive(mem, *process, slot_cam)) {
                 zcam = slot_cam;
             }
         }
