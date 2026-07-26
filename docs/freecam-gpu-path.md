@@ -1,6 +1,8 @@
 # Outdoor free look via the GPU path
 
-Status: implemented, builds, **not yet visually confirmed on device**.
+Status: **mechanism confirmed on device.** A fixed 12° yaw visibly transforms real Route
+104 geometry, so "the view transform is reachable in `f[0..95]`" is settled fact, not a
+hypothesis. What remains is picking the right matrix and applying it coherently.
 
 ## Why the memory camera cannot work outdoors
 
@@ -49,13 +51,41 @@ overlay file covers the Thor's Vulkan path.
 transition, or softlock. The auto-disable requirements in `freecam-research.md` collapse
 to a plain toggle.
 
-## Shipping shape: hybrid
+## Shipping shape: hybrid, on a latched decision
 
 - **Live GOLD target** (interiors): the memory camera keeps ownership. It moves the
   engine's real camera, so culling is correct and there are no artefacts.
 - **No live target** (towns, routes, caves, gyms): the GPU camera takes over.
-- Transitions between the two reset the GPU deltas to zero.
-- The probe forces the GPU path on everywhere, so the experiment can be run in a house.
+- Ownership is **latched**, never derived per tick. `live_count` is a heuristic sampled
+  on a timer and zeroed on module load and slot-pointer change, so a single transient
+  zero used to hand the camera over for a frame or two and back — which flickered
+  indoors, and kept the outdoor row detector re-acquiring from scratch. Handover now
+  needs 4 consecutive empty collect cycles (12 on a map where the memory camera has
+  already worked), and the memory path reclaims after 2.
+- The probe does **not** force the GPU path on. It only substitutes a fixed 12° yaw for
+  the stick while the GPU path is already active.
+
+## Coherence: the thing that actually broke
+
+The first device run rendered Route 104 with its terrain plane flung off screen while
+trees, bridge, berry bushes and shadows stayed put and unrotated. Three causes, all now
+fixed:
+
+1. **`O` was rebuilt per upload** from whichever row qualified at that moment, so draws
+   in the same frame received different rotations. `O` is now derived once from a cached
+   up-axis belonging to a single locked reference row, held even across uploads where
+   that row does not qualify.
+2. **The candidate list was capped at 12** while 21 triples qualified, so a shifting
+   subset of the scene was transformed and the rest was not. All 94 triples are now swept
+   on every upload; there is no cap and no staleness.
+3. **Selection ran per upload.** It now runs once per window (512 uploads or 200 ms),
+   ranking rows by how many draws in the window carried them *and* whether the value ever
+   changed. The lock is sticky: acquiring needs ≥50% of draws, displacing needs the
+   locked row to be under 12.5% for 8 consecutive windows.
+
+The default row mode is **All qualifying triples**, because a scene's rigid transforms
+live at several rows at once (terrain shader, prop shader, bone palettes) and every one
+of them is a world→eye transform that must receive the same eye-space `O`.
 
 ## Running the discriminating experiment
 
@@ -76,14 +106,35 @@ Outcomes:
 | World rotates but around a distant point, not the player | Uniforms are column-major, or the radius is far off | Toggle **Matrix layout**, then retune **Orbit radius** |
 | Right stick swings the wrong way | Engine handedness guessed wrong | Cycle **Invert** (none / yaw / pitch / both) |
 
-`adb logcat | grep "Hoenn GPU cam"` prints the chosen row, how many triples qualified, the
-mode and the angles once per second.
+## Reading the census
+
+`adb logcat | grep "Hoenn GPU cam"` prints two lines a second:
+
+```
+Hoenn GPU cam: locked=28 cold=0 steady=3 live=3 mode=-2 probe=true yaw=12.0 ...
+Hoenn GPU cam census over 512 uploads, row:hits/changes = 28:512/0 3:498/497 6:210/209
+```
+
+`row:hits/changes` is how many uniform uploads in the window carried a rigid transform at
+that row, and how many of those differed from the previous one.
+
+- **many hits, zero changes** — a view matrix. This is what the lock should hold.
+- **many hits, almost as many changes** — a per-object world-view matrix. Correct to
+  rotate (that is why All mode exists), but a bad lock target.
+- **few hits** — a transient prop or bone matrix.
+
+If two rows both show high hits and zero changes, ORAS is running more than one shader
+family with the view at different rows; All mode covers that and Auto does not.
+
+`Hoenn freelook path -> GPU/memory` in the same log shows ownership changing hands.
 
 ## Honest limitations
 
 - The game culls and submits geometry for **its** frustum. Rotating far reveals
   unrendered space and backfaces — the same limitation Dolphin's Free Look has. Hence the
   clamps: ±40° yaw, ±25° pitch.
+- Orbit radius 0 is a safe fallback: it swivels about the eye instead of orbiting the
+  player, so no amount of transforming the wrong matrix can fling geometry off screen.
 - The stick is sampled from the freecam tick at ~16 Hz, so motion is stepped rather than
   smooth. Raising the tick rate would also speed up zoom assist, which is why it was left
   alone.

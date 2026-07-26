@@ -78,6 +78,15 @@ private:
     float gpu_pitch = 0.f;
     bool gpu_active = false;
 
+    // Which path owns the stick. Latched, never derived per tick: live_count is
+    // recomputed on a timer and zeroed on module load and slot-pointer change, so a
+    // single transient zero used to hand the camera to the GPU path for a frame or two
+    // and back, which flickered indoors and kept the row detector re-acquiring.
+    bool gpu_path = false;
+    bool map_had_gold = false;
+    int gold_hit_cycles = 0;
+    int gold_miss_cycles = 0;
+
     bool in_battle = false;
     u64 quiet_until = 0;
     u32 last_process_id = 0;
@@ -97,6 +106,8 @@ private:
     void EnsureDevices();
     void ResetYaw();
     void StopGpuCam();
+    void ResetPathOwnership();
+    void UpdatePathOwnership();
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);

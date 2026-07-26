@@ -17,10 +17,26 @@
 //   front of it — the player — and it is correct whether M is a pure view matrix or a
 //   per-object world-view matrix, because the view part is a left factor of both.
 //
-//   The yaw axis is world-up expressed in eye space, recovered from M itself (column 1
-//   of its 3x3, i.e. M * (0,1,0)). Yawing about the raw eye-space Y axis would roll the
+//   The yaw axis is world-up expressed in eye space, recovered from the reference
+//   matrix (column 1 of its 3x3). Yawing about the raw eye-space Y axis would roll the
 //   horizon, because the game camera is pitched down. Pitch is about eye-space X, which
 //   is screen-horizontal by construction.
+//
+// All of the above is confirmed on device: a fixed 12-degree yaw visibly transforms real
+// Route 104 geometry. What the first device run also proved is that *coherence* is the
+// whole remaining problem, so three rules now govern this file.
+//
+//   1. O must be identical for every draw in a frame. It is built from a cached up-axis
+//      belonging to one locked reference row, never from whichever row happens to
+//      qualify on the current upload. The first version rebuilt O per upload from a
+//      flapping row, which is why Route 104 came apart: draws in the same frame received
+//      different rotations, and the terrain was flung off screen while the props stayed.
+//   2. Nothing may be capped. The first version tracked at most 12 candidate rows while
+//      21 qualified, so a changing subset of the scene was transformed and the rest was
+//      not. All 94 triples are now swept on every upload.
+//   3. Selection is decided over a window of draws, not per upload, and the lock is
+//      sticky. A row wins because most draws in the window carried it *and* it never
+//      changed; it is only displaced after being cold for many consecutive windows.
 
 #include "video_core/hoenn_gpu_cam.h"
 
@@ -28,6 +44,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include "common/logging/log.h"
 
@@ -36,13 +53,24 @@ namespace {
 
 constexpr int kRows = 96;
 constexpr int kLastTriple = kRows - 3; // valid triple starts are 0..93
-constexpr int kMaxCandidates = 12;
+constexpr int kNumTriples = kLastTriple + 1;
 
-// A full 94-triple sweep costs ~1.4k flops. Uniform uploads happen per draw, so the
-// sweep is amortised: candidates found by the last sweep are re-checked every upload
-// (cheap), the full sweep runs every kRescanUploads uploads. At one upload per frame
-// that is a re-detect roughly twice a second; at thousands per frame it is noise.
-constexpr int kRescanUploads = 32;
+// A "window" stands in for one frame's worth of draws: SetFromRegs has no frame boundary
+// to hook, so the window closes after this many uniform uploads or after kWindowMaxTime,
+// whichever comes first. Scores are ratios, so only the order of magnitude matters.
+constexpr u32 kWindowUploads = 512;
+constexpr int kClockCheckInterval = 64;
+constexpr auto kWindowMaxTime = std::chrono::milliseconds(200);
+
+// Thresholds, as 1/256ths of the window's upload count.
+constexpr u32 kAcquireHitFrac = 128; // a candidate must appear in >= 50% of uploads
+constexpr u32 kColdHitFrac = 32;     // below 12.5% counts as cold
+constexpr int kColdWindowsToSwitch = 8;
+
+// The driver parks the GPU camera on map transitions, quiet windows and battles.
+// Re-acquiring from scratch on every resume is what makes the choice oscillate, so a
+// park shorter than this keeps the lock and the window statistics.
+constexpr auto kResumeGrace = std::chrono::seconds(8);
 
 // Orthonormality tolerances. Generous enough for f24 -> f32 rounding.
 constexpr float kLenSqTol = 0.04f;
@@ -54,7 +82,7 @@ constexpr float kDegToRad = 0.017453292519943295f;
 struct Shared {
     std::atomic<bool> active{false};
     std::atomic<bool> probe{false};
-    std::atomic<int> row_mode{kRowModeAuto};
+    std::atomic<int> row_mode{kRowModeAll};
     std::atomic<bool> transpose{false};
     std::atomic<float> radius{kDefaultRadius};
     std::atomic<float> yaw{0.0f};
@@ -65,42 +93,54 @@ struct Shared {
 };
 Shared g;
 
-/// How many consecutive uploads the locked row may fail to qualify before we go looking
-/// for a different one. Roughly a frame's worth of draws, so a handful of billboard or
-/// UI draws that happen to reuse the same row cannot make the selection oscillate.
-constexpr int kLockMissLimit = 128;
-
-/// Migration hysteresis: a rival row has to be this much more stable than the locked one
-/// before we switch, so the choice cannot flip back and forth within a scene.
-constexpr int kMigrateMargin = 240;
-
-// Scan state. Touched only from the thread that issues draws (Azahar has no separate
-// GPU thread — the rasterizer runs on the emulation thread), so no locking here.
+// Scan state. Touched only from the thread that issues draws (Azahar has no separate GPU
+// thread — the rasterizer runs on the emulation thread), so no locking here.
 struct Scan {
-    int candidates[kMaxCandidates]{};
-    bool candidate_live[kMaxCandidates]{};
-    int candidate_count = 0;
-    int total_qualifying = 0;
-    float prev[kLastTriple + 1][12]{};
-    bool prev_valid[kLastTriple + 1]{};
-    u16 stable[kLastTriple + 1]{};
-    int uploads_since_scan = kRescanUploads;
+    // Current window.
+    u32 hits[kNumTriples]{};
+    u32 changes[kNumTriples]{};
+    float prev[kNumTriples][12]{};
+    bool prev_valid[kNumTriples]{};
+    u32 window_uploads = 0;
+    int clock_countdown = kClockCheckInterval;
+    std::chrono::steady_clock::time_point window_start{};
+
+    // Last closed window. Selection and the census read only this.
+    u32 last_hits[kNumTriples]{};
+    u32 last_changes[kNumTriples]{};
+    u32 last_uploads = 0;
+    u32 steady_rows = 0;
+
     int locked_row = -1;
-    int locked_miss = 0;
-    bool last_probe = false;
+    int cold_windows = 0;
+
+    // World-up in eye space, taken from the locked row. Held across uploads where that
+    // row does not qualify, so O stays identical for every draw in the frame.
+    float up[3]{0.0f, 1.0f, 0.0f};
+    bool up_valid = false;
+
     bool was_active = false;
+    std::chrono::steady_clock::time_point parked_at{};
     std::chrono::steady_clock::time_point last_log{};
 };
 Scan s;
 
 void ResetScan() {
-    s.candidate_count = 0;
-    s.total_qualifying = 0;
+    std::memset(s.hits, 0, sizeof(s.hits));
+    std::memset(s.changes, 0, sizeof(s.changes));
     std::memset(s.prev_valid, 0, sizeof(s.prev_valid));
-    std::memset(s.stable, 0, sizeof(s.stable));
-    s.uploads_since_scan = kRescanUploads;
+    std::memset(s.last_hits, 0, sizeof(s.last_hits));
+    std::memset(s.last_changes, 0, sizeof(s.last_changes));
+    s.last_uploads = 0;
+    s.steady_rows = 0;
+    s.window_uploads = 0;
+    s.clock_countdown = kClockCheckInterval;
     s.locked_row = -1;
-    s.locked_miss = 0;
+    s.cold_windows = 0;
+    s.up_valid = false;
+    s.up[0] = 0.0f;
+    s.up[1] = 1.0f;
+    s.up[2] = 0.0f;
 }
 
 bool Finite3(const Common::Vec4f& v) {
@@ -123,24 +163,25 @@ bool IsAxisAligned(const Common::Vec4f& a, const Common::Vec4f& b, const Common:
     return true;
 }
 
+/// Ordered so the cheapest test that rejects most rows runs first: this now runs for all
+/// 94 triples on every uniform upload, on data that is already in L1.
 bool Qualifies(const std::array<Common::Vec4f, kRows>& f, int r) {
     const Common::Vec4f& a = f[static_cast<size_t>(r)];
-    const Common::Vec4f& b = f[static_cast<size_t>(r) + 1];
-    const Common::Vec4f& c = f[static_cast<size_t>(r) + 2];
-    if (!Finite3(a) || !Finite3(b) || !Finite3(c)) {
-        return false;
-    }
-
     const float la = a.x * a.x + a.y * a.y + a.z * a.z;
-    if (std::fabs(la - 1.0f) > kLenSqTol) {
-        return false;
+    if (!(std::fabs(la - 1.0f) <= kLenSqTol)) {
+        return false; // inverted comparison, so NaN falls out here too
     }
+    const Common::Vec4f& b = f[static_cast<size_t>(r) + 1];
     const float lb = b.x * b.x + b.y * b.y + b.z * b.z;
-    if (std::fabs(lb - 1.0f) > kLenSqTol) {
+    if (!(std::fabs(lb - 1.0f) <= kLenSqTol)) {
         return false;
     }
+    const Common::Vec4f& c = f[static_cast<size_t>(r) + 2];
     const float lc = c.x * c.x + c.y * c.y + c.z * c.z;
-    if (std::fabs(lc - 1.0f) > kLenSqTol) {
+    if (!(std::fabs(lc - 1.0f) <= kLenSqTol)) {
+        return false;
+    }
+    if (!Finite3(a) || !Finite3(b) || !Finite3(c)) {
         return false;
     }
 
@@ -256,6 +297,113 @@ bool SameTriple(const float a[12], const float b[12]) {
     return true;
 }
 
+/// Close the window: promote the accumulators, then re-run selection.
+///
+/// The view matrix is the triple that (a) most draws in the window carried and (b) never
+/// changed while they did. Ranking on "constant hits" separates it from a per-object
+/// world-view matrix, which scores just as many hits but changes on nearly every one,
+/// and from a transient bone or prop matrix, which fails the hit threshold outright.
+void CloseWindow(std::chrono::steady_clock::time_point now) {
+    std::memcpy(s.last_hits, s.hits, sizeof(s.hits));
+    std::memcpy(s.last_changes, s.changes, sizeof(s.changes));
+    s.last_uploads = s.window_uploads;
+    std::memset(s.hits, 0, sizeof(s.hits));
+    std::memset(s.changes, 0, sizeof(s.changes));
+    s.window_uploads = 0;
+    s.window_start = now;
+
+    if (s.last_uploads == 0) {
+        return;
+    }
+
+    const u32 acquire_floor = (s.last_uploads * kAcquireHitFrac) / 256;
+    const u32 cold_floor = (s.last_uploads * kColdHitFrac) / 256;
+
+    int best = -1;
+    u32 best_const = 0;
+    u32 best_hits = 0;
+    u32 steady = 0;
+    for (int r = 0; r < kNumTriples; ++r) {
+        const u32 h = s.last_hits[r];
+        if (h == 0 || h < acquire_floor) {
+            continue;
+        }
+        ++steady;
+        const u32 constant = h - std::min(h, s.last_changes[r]);
+        if (best < 0 || constant > best_const || (constant == best_const && h > best_hits)) {
+            best = r;
+            best_const = constant;
+            best_hits = h;
+        }
+    }
+    s.steady_rows = steady;
+
+    if (s.locked_row < 0) {
+        s.locked_row = best;
+        s.cold_windows = 0;
+        if (best >= 0) {
+            LOG_INFO(Render, "Hoenn GPU cam: locked row {} ({} hits, {} constant, of {} uploads)",
+                     best, best_hits, best_const, s.last_uploads);
+        }
+        return;
+    }
+
+    // Sticky: the bar to displace an existing lock is far higher than the bar to acquire
+    // one. A row that merely dips below the threshold for a window keeps the lock.
+    if (s.last_hits[s.locked_row] < cold_floor) {
+        ++s.cold_windows;
+    } else {
+        s.cold_windows = 0;
+    }
+    if (s.cold_windows >= kColdWindowsToSwitch && best >= 0 && best != s.locked_row) {
+        LOG_INFO(Render, "Hoenn GPU cam: lock {} went cold for {} windows, switching to {}",
+                 s.locked_row, s.cold_windows, best);
+        s.locked_row = best;
+        s.cold_windows = 0;
+        s.up_valid = false;
+    }
+}
+
+/// One line naming every row that a meaningful share of draws carried in the last
+/// window, most-used first, as `row:hits/changes`. The view matrix is the row with many
+/// hits and zero changes; a per-object world-view matrix has many hits and almost as
+/// many changes. This is meant to be read straight off logcat instead of sweeping rows
+/// by hand. Destroys last_hits, which is rebuilt every window anyway.
+void LogCensus() {
+    char buf[512];
+    int n = 0;
+    int listed = 0;
+    const u32 floor = (s.last_uploads * 24) / 256; // carried by >= ~9% of draws
+
+    while (listed < 16 && n < static_cast<int>(sizeof(buf)) - 32) {
+        int pick = -1;
+        u32 pick_hits = 0;
+        for (int r = 0; r < kNumTriples; ++r) {
+            const u32 h = s.last_hits[r];
+            if (h == 0 || h <= floor) {
+                continue;
+            }
+            if (pick < 0 || h > pick_hits) {
+                pick = r;
+                pick_hits = h;
+            }
+        }
+        if (pick < 0) {
+            break;
+        }
+        n += std::snprintf(buf + n, sizeof(buf) - static_cast<size_t>(n), "%s%d:%u/%u",
+                           listed ? " " : "", pick, pick_hits,
+                           std::min(pick_hits, s.last_changes[pick]));
+        s.last_hits[pick] = 0; // consumed
+        ++listed;
+    }
+    if (listed == 0) {
+        std::snprintf(buf, sizeof(buf), "(none)");
+    }
+    LOG_INFO(Render, "Hoenn GPU cam census over {} uploads, row:hits/changes = {}",
+             s.last_uploads, buf);
+}
+
 } // namespace
 
 void SetActive(bool active, float yaw_deg, float pitch_deg) {
@@ -298,7 +446,9 @@ void SetParam(int param, float value) {
         LOG_INFO(Render, "Hoenn GPU cam: transpose={}", value != 0.0f);
         break;
     case ParamRadius:
-        g.radius.store(std::clamp(value, 1.0f, 100000.0f), std::memory_order_relaxed);
+        // Zero is meaningful and safe: it swivels about the eye instead of orbiting the
+        // player, so no amount of picking the wrong matrix can fling geometry away.
+        g.radius.store(std::clamp(value, 0.0f, 100000.0f), std::memory_order_relaxed);
         LOG_INFO(Render, "Hoenn GPU cam: radius={}", value);
         break;
     case ParamInvert: {
@@ -343,20 +493,24 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     if (!g.active.load(std::memory_order_relaxed)) {
         if (s.was_active) {
             s.was_active = false;
-            ResetScan();
-            g.detected_row.store(-1, std::memory_order_relaxed);
+            s.parked_at = std::chrono::steady_clock::now();
             g.qualify_count.store(0, std::memory_order_relaxed);
         }
         return;
     }
     if (!s.was_active) {
         s.was_active = true;
-        ResetScan();
+        // Keep the lock across a brief park. The driver disables us on every map
+        // transition, quiet window and battle, and re-sweeping on each resume is exactly
+        // what made the choice oscillate between rows 3 and 28 on Route 104.
+        const auto now = std::chrono::steady_clock::now();
+        if (s.locked_row < 0 || now - s.parked_at > kResumeGrace) {
+            ResetScan();
+        }
+        s.window_start = now;
+        s.clock_countdown = kClockCheckInterval;
     }
 
-    // Which way the world should swing for a given stick direction depends on the
-    // engine's handedness, which we cannot know without looking at the screen. Expose it
-    // rather than guess, so a wrong guess costs a menu tap instead of a rebuild.
     const int invert = g.invert.load(std::memory_order_relaxed);
     const float yaw_sign = (invert & kInvertYaw) ? -1.0f : 1.0f;
     const float pitch_sign = (invert & kInvertPitch) ? -1.0f : 1.0f;
@@ -369,167 +523,99 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     const bool transpose = g.transpose.load(std::memory_order_relaxed);
     const float radius = g.radius.load(std::memory_order_relaxed);
 
-    if (probe != s.last_probe) {
-        s.last_probe = probe;
-        s.locked_row = -1;
-        s.locked_miss = 0;
-    }
-
-    // Periodic full sweep: rebuild the candidate list and clear stability for anything
-    // that stopped qualifying.
-    if (++s.uploads_since_scan >= kRescanUploads) {
-        s.uploads_since_scan = 0;
-        s.candidate_count = 0;
-        s.total_qualifying = 0;
-        for (int r = 0; r <= kLastTriple; ++r) {
-            if (Qualifies(f, r)) {
-                ++s.total_qualifying;
-                if (s.candidate_count < kMaxCandidates) {
-                    s.candidates[s.candidate_count++] = r;
-                }
-            } else {
-                s.stable[r] = 0;
-                s.prev_valid[r] = false;
-            }
-        }
-    }
-
-    // Per-upload pass over the candidates only. The view matrix is the triple that stays
-    // byte-identical across uploads; per-object world-view matrices change every upload.
-    int lowest = -1;
-    int best = -1;
-    int best_stable = -1;
+    // --- Sweep every triple, every upload. No candidate list, no cap. ------------------
+    bool live_now[kNumTriples];
     int live = 0;
-    for (int ci = 0; ci < s.candidate_count; ++ci) {
-        const int r = s.candidates[ci];
+    for (int r = 0; r < kNumTriples; ++r) {
         if (!Qualifies(f, r)) {
-            s.candidate_live[ci] = false;
-            s.stable[r] = 0;
-            s.prev_valid[r] = false;
+            live_now[r] = false;
             continue;
         }
-        s.candidate_live[ci] = true;
+        live_now[r] = true;
         ++live;
+        ++s.hits[r];
         float cur[12];
         ReadTriple(f, r, cur);
-        if (s.prev_valid[r] && SameTriple(s.prev[r], cur)) {
-            if (s.stable[r] < 60000) {
-                ++s.stable[r];
-            }
-        } else {
-            s.stable[r] = 0;
+        // prev is deliberately kept across uploads where the row did not qualify, so a
+        // row that flickers out to a non-rigid value and back still counts as changing.
+        if (s.prev_valid[r] && !SameTriple(s.prev[r], cur)) {
+            ++s.changes[r];
         }
         std::memcpy(s.prev[r], cur, sizeof(cur));
         s.prev_valid[r] = true;
-        if (lowest < 0) {
-            lowest = r;
+    }
+
+    // --- Window bookkeeping ------------------------------------------------------------
+    ++s.window_uploads;
+    bool check_clock = s.window_uploads >= kWindowUploads;
+    if (!check_clock && --s.clock_countdown <= 0) {
+        s.clock_countdown = kClockCheckInterval;
+        check_clock = true;
+    }
+    if (check_clock) {
+        const auto now = std::chrono::steady_clock::now();
+        if (s.window_uploads >= kWindowUploads || now - s.window_start >= kWindowMaxTime) {
+            CloseWindow(now);
         }
-        if (static_cast<int>(s.stable[r]) > best_stable) {
-            best_stable = static_cast<int>(s.stable[r]);
-            best = r;
+        if (now - s.last_log >= std::chrono::seconds(1)) {
+            s.last_log = now;
+            LOG_INFO(Render,
+                     "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
+                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={}",
+                     s.locked_row, s.cold_windows, s.steady_rows, live, mode, probe, yaw_deg,
+                     pitch_deg, radius, transpose, invert);
+            LogCensus();
         }
     }
 
-    bool apply_all = false;
-    int source_row = -1;
-    int reported_row = -1;
-    if (mode >= 0 && mode <= kLastTriple) {
-        // Manual override: trust the user, no qualification test. This is the escape
-        // hatch that lets the row index be swept on device without a rebuild.
-        source_row = mode;
-        reported_row = mode;
-    } else if (mode == kRowModeAll) {
-        apply_all = true;
-        source_row = lowest;
-        reported_row = lowest;
-    } else {
-        // Auto, with a lock. Engines commonly upload a per-object world-view matrix at
-        // one fixed row, and some of those objects (billboards, UI quads) carry a matrix
-        // that is not orthonormal. Without the lock, such a draw would fall through to
-        // whatever other row happened to qualify and get rotated instead, shearing the
-        // frame apart. Locked and unrecognised means: leave this draw alone.
-        //
-        // The probe deliberately takes the lowest-index qualifying triple, so the
-        // experiment result is reproducible and easy to reason about.
-        const int pick = probe ? lowest : best;
-        if (s.locked_row >= 0 && Qualifies(f, s.locked_row)) {
-            s.locked_miss = 0;
-            source_row = s.locked_row;
-            if (!probe && pick >= 0 && pick != s.locked_row &&
-                static_cast<int>(s.stable[pick]) >
-                    static_cast<int>(s.stable[s.locked_row]) + kMigrateMargin) {
-                s.locked_row = pick;
-                source_row = pick;
-            }
-        } else if (s.locked_row >= 0 && ++s.locked_miss <= kLockMissLimit) {
-            source_row = -1;
-        } else {
-            s.locked_row = pick;
-            s.locked_miss = 0;
-            source_row = pick;
+    g.detected_row.store(s.locked_row, std::memory_order_relaxed);
+    g.qualify_count.store(live, std::memory_order_relaxed);
+
+    // --- Reference row: the single source of O ------------------------------------------
+    const int ref_row = (mode >= 0 && mode <= kLastTriple) ? mode : s.locked_row;
+    if (ref_row >= 0 && ref_row <= kLastTriple && live_now[ref_row]) {
+        const Common::Vec4f& m0 = f[static_cast<size_t>(ref_row)];
+        const Common::Vec4f& m1 = f[static_cast<size_t>(ref_row) + 1];
+        const Common::Vec4f& m2 = f[static_cast<size_t>(ref_row) + 2];
+        const float ux = transpose ? m1.x : m0.y;
+        const float uy = m1.y;
+        const float uz = transpose ? m1.z : m2.y;
+        if (std::isfinite(ux) && std::isfinite(uy) && std::isfinite(uz) &&
+            (ux * ux + uy * uy + uz * uz) > 0.25f) {
+            s.up[0] = ux;
+            s.up[1] = uy;
+            s.up[2] = uz;
+            s.up_valid = true;
         }
-        reported_row = s.locked_row;
     }
 
-    g.detected_row.store(reported_row, std::memory_order_relaxed);
-    g.qualify_count.store(s.total_qualifying, std::memory_order_relaxed);
-
-    const auto now = std::chrono::steady_clock::now();
-    if (now - s.last_log >= std::chrono::seconds(1)) {
-        s.last_log = now;
-        LOG_INFO(Render,
-                 "Hoenn GPU cam: row={} applying={} qualifying={} live={} stable={} mode={} "
-                 "probe={} yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={}",
-                 reported_row, source_row, s.total_qualifying, live, best_stable, mode, probe,
-                 yaw_deg, pitch_deg, radius, transpose, invert);
-    }
-
-    if (source_row < 0) {
-        return;
+    if (ref_row < 0 || !s.up_valid) {
+        return; // no trustworthy axis to rotate about yet
     }
     if (!probe && std::fabs(yaw_deg) < 0.01f && std::fabs(pitch_deg) < 0.01f) {
         return;
     }
 
-    // World-up in eye space, recovered from the source matrix. Row layout: column 1 of
-    // the 3x3, i.e. (m[0].y, m[1].y, m[2].y). Column layout: the second stored vector.
-    const Common::Vec4f& m0 = f[static_cast<size_t>(source_row)];
-    const Common::Vec4f& m1 = f[static_cast<size_t>(source_row) + 1];
-    const Common::Vec4f& m2 = f[static_cast<size_t>(source_row) + 2];
-    float ux, uy, uz;
-    if (transpose) {
-        ux = m1.x;
-        uy = m1.y;
-        uz = m1.z;
-    } else {
-        ux = m0.y;
-        uy = m1.y;
-        uz = m2.y;
-    }
-    if (!std::isfinite(ux) || !std::isfinite(uy) || !std::isfinite(uz) ||
-        (ux * ux + uy * uy + uz * uz) < 0.25f) {
-        ux = 0.0f;
-        uy = 1.0f;
-        uz = 0.0f;
-    }
-
     // Positive stick-right yaws the camera right, which means rotating the world left.
-    const Mat3 r_yaw = AxisAngle(ux, uy, uz, -yaw_deg * kDegToRad);
+    const Mat3 r_yaw = AxisAngle(s.up[0], s.up[1], s.up[2], -yaw_deg * kDegToRad);
     const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
     const Mat3 rot = Mul(r_pitch, r_yaw);
 
-    // Orbit about p = (0, 0, -d): trans = p - R*p.
+    // Orbit about p = (0, 0, -d): trans = p - R*p. With d == 0 this degenerates to a
+    // pure swivel about the eye, which cannot displace geometry however wrong the row is.
     const float tr[3] = {radius * rot.m[0][2], radius * rot.m[1][2],
                          radius * rot.m[2][2] - radius};
 
-    if (apply_all) {
+    if (mode >= 0 && mode <= kLastTriple) {
+        if (transpose) {
+            ApplyColumns(f, mode, rot);
+        } else {
+            ApplyRows(f, mode, rot, tr);
+        }
+    } else if (mode == kRowModeAll) {
         int next_free = 0;
-        for (int ci = 0; ci < s.candidate_count; ++ci) {
-            if (!s.candidate_live[ci]) {
-                continue; // did not qualify on this upload
-            }
-            const int r = s.candidates[ci];
-            if (r < next_free) {
+        for (int r = 0; r < kNumTriples; ++r) {
+            if (!live_now[r] || r < next_free) {
                 continue; // overlapping triples would be transformed twice
             }
             next_free = r + 3;
@@ -539,10 +625,12 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
                 ApplyRows(f, r, rot, tr);
             }
         }
-    } else if (transpose) {
-        ApplyColumns(f, source_row, rot);
-    } else {
-        ApplyRows(f, source_row, rot, tr);
+    } else if (live_now[ref_row]) {
+        if (transpose) {
+            ApplyColumns(f, ref_row, rot);
+        } else {
+            ApplyRows(f, ref_row, rot, tr);
+        }
     }
 }
 

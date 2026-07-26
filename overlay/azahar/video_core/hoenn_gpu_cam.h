@@ -27,7 +27,7 @@ namespace Hoenn::GpuCam {
 /// bridge needs exactly two native entry points instead of one per knob.
 /// Mirrored by HoennGpuCam.kt — keep the two in sync.
 enum Param : int {
-    ParamProbe = 0,        ///< rw  0/1 — discriminating experiment: fixed 12 deg yaw
+    ParamProbe = 0,        ///< rw  0/1 — substitute a fixed 12 deg yaw for the stick
     ParamRowMode = 1,      ///< rw  -1 auto, -2 all qualifying triples, >=0 fixed row
     ParamTranspose = 2,    ///< rw  0/1 — read the triple as columns rather than rows
     ParamRadius = 3,       ///< rw  orbit radius in world units
@@ -51,11 +51,15 @@ constexpr int kRowModeAll = -2;
 constexpr float kYawClampDeg = 40.0f;
 constexpr float kPitchClampDeg = 25.0f;
 
-/// Fixed angle used by the discriminating experiment.
+/// Fixed angle for A/B testing: substitutes a constant yaw for the stick so a change
+/// can be judged without also moving. It no longer forces the GPU path on where the
+/// memory camera owns the map — doing that made the camera flicker indoors.
 constexpr float kProbeYawDeg = 12.0f;
 
 /// Observed camera-to-player distance in the ORAS camera object (+0xA8): ~2000 in a
-/// house, ~2300 in a town. Tunable at runtime through ParamRadius.
+/// house, ~2300 in a town. Tunable at runtime through ParamRadius, where zero is a
+/// meaningful setting: it swivels about the eye rather than orbiting the player, which
+/// cannot displace geometry even if the wrong matrix is being transformed.
 constexpr float kDefaultRadius = 2300.0f;
 
 // --- Driver side (core, emulation thread) ------------------------------------------

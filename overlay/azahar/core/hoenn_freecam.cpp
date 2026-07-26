@@ -60,6 +60,15 @@ constexpr int ANDROID_STICK_C = 718;
 constexpr float GPU_YAW_STEP = 1.10f;
 constexpr float GPU_PITCH_STEP = 0.45f;
 
+// Collect cycles (COLLECT_INTERVAL / COLLECT_MISS_INTERVAL apart, so 150-450 ms each)
+// that must agree before the stick changes hands. Handover is deliberately slow and
+// reclaim is fast, because a wrong handover is visible and a late one is not. On a map
+// where the memory camera has already worked, handover is slower still: that is almost
+// certainly an interior having a bad collect cycle, not a town.
+constexpr int GPU_HANDOVER_CYCLES = 4;
+constexpr int GPU_HANDOVER_CYCLES_AFTER_GOLD = 12;
+constexpr int MEMORY_RECLAIM_CYCLES = 2;
+
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 constexpr u64 QUIET_AFTER_TRANSITION = 80'000'000;
 constexpr u64 COLLECT_INTERVAL = 40'000'000;
@@ -136,6 +145,48 @@ void FreeCam::StopGpuCam() {
     GpuCam::Disable();
 }
 
+// Called wherever the map identity changes: a new field module, a new camera object in
+// the BSS slot, a savestate. Everything we believed about who owns the camera is stale.
+void FreeCam::ResetPathOwnership() {
+    gpu_path = false;
+    map_had_gold = false;
+    gold_hit_cycles = 0;
+    gold_miss_cycles = 0;
+}
+
+// Run once per collect cycle, never per tick. live_count is a heuristic sampled on a
+// timer, so it dips to zero for reasons that have nothing to do with leaving a building.
+void FreeCam::UpdatePathOwnership() {
+    if (live_count > 0) {
+        map_had_gold = true;
+        ++gold_hit_cycles;
+        gold_miss_cycles = 0;
+    } else {
+        ++gold_miss_cycles;
+        gold_hit_cycles = 0;
+    }
+
+    const bool was_gpu = gpu_path;
+    if (gpu_path) {
+        if (gold_hit_cycles >= MEMORY_RECLAIM_CYCLES) {
+            gpu_path = false;
+        }
+    } else {
+        const int need = map_had_gold ? GPU_HANDOVER_CYCLES_AFTER_GOLD : GPU_HANDOVER_CYCLES;
+        if (gold_miss_cycles >= need) {
+            gpu_path = true;
+        }
+    }
+    if (was_gpu != gpu_path) {
+        LOG_INFO(Core, "Hoenn freelook path -> {} (live={} hit={} miss={} had_gold={})",
+                 gpu_path ? "GPU" : "memory", live_count, gold_hit_cycles, gold_miss_cycles,
+                 map_had_gold);
+        if (!gpu_path) {
+            StopGpuCam();
+        }
+    }
+}
+
 void FreeCam::OnCoreReconnect() {
     quiet_until = 1;
     in_battle = false;
@@ -144,6 +195,7 @@ void FreeCam::OnCoreReconnect() {
     last_collect_tick = 0;
     ResetYaw();
     StopGpuCam();
+    ResetPathOwnership();
 }
 
 void FreeCam::EnsureDevices() {
@@ -180,6 +232,7 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         live_count = 0;
         primary_cam = 0;
         StopGpuCam();
+        ResetPathOwnership();
     } else if (name == "DllField") {
         in_battle = false;
         quiet_until = 1;
@@ -188,6 +241,7 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         last_collect_tick = 0;
         ResetYaw();
         StopGpuCam();
+        ResetPathOwnership();
     }
 }
 
@@ -196,6 +250,7 @@ void FreeCam::OnModuleUnloaded(std::string_view name) {
         live_count = 0;
         primary_cam = 0;
         StopGpuCam();
+        ResetPathOwnership();
     } else if (name == "DllBattle") {
         in_battle = false;
     }
@@ -432,6 +487,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         last_collect_tick = 0;
         ResetYaw();
         StopGpuCam();
+        ResetPathOwnership();
     }
     if (HeapPtr(slot_cam)) {
         last_slot_cam = slot_cam;
@@ -449,6 +505,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (primary_cam && primary_cam != prev_pri) {
             SeedAnglesFromCam(mem, *process, primary_cam);
         }
+        UpdatePathOwnership();
     }
 
     // Zoom assist: pick any live gold as target; FOV may leave the discovery band.
@@ -515,15 +572,16 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         c_stick.reset();
     }
 
-    // Hybrid split. A live GOLD target means the game instantiated the interior camera
-    // controller, which does read our eulers — that path gives a real in-engine camera
-    // with correct culling, so it keeps ownership. With no live target the game is
-    // running a controller that ignores those fields entirely (towns, routes, caves,
-    // gyms), and the GPU view rotation takes over. The probe forces the GPU path on
-    // regardless, so the discriminating experiment can be run inside a house too.
-    const bool memory_path_live = live_count > 0;
-    const bool probe = GpuCam::IsProbeEnabled();
-    const bool use_gpu = probe || !memory_path_live;
+    // Hybrid split, on a latched decision from UpdatePathOwnership. A map where the
+    // memory camera has a live GOLD target is running the interior camera controller,
+    // which really does read our eulers, so that path keeps ownership: it moves the
+    // engine's own camera and culling stays correct. Only a map that has come up empty
+    // for several consecutive collect cycles is handed to the GPU view rotation.
+    //
+    // The probe no longer forces the GPU path on. That was there to let the original
+    // "does anything move at all" experiment run inside a house; the device run settled
+    // that, and forcing it meant the GPU camera engaged indoors, which flickered.
+    const bool use_gpu = gpu_path;
 
     if (use_gpu) {
         if (!gpu_active) {
@@ -553,10 +611,11 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         StopGpuCam();
     }
 
-    if (!memory_path_live) {
-        if ((diag++ % 300) == 0) {
-            LOG_INFO(Core, "Hoenn freelook GPU path y={:.1f} p={:.1f} row={}", gpu_yaw, gpu_pitch,
-                     static_cast<int>(GpuCam::GetParam(GpuCam::ParamDetectedRow)));
+    if (use_gpu || live_count == 0) {
+        if ((diag++ % 120) == 0) {
+            LOG_INFO(Core, "Hoenn freelook GPU path={} y={:.1f} p={:.1f} row={} live={}", use_gpu,
+                     gpu_yaw, gpu_pitch,
+                     static_cast<int>(GpuCam::GetParam(GpuCam::ParamDetectedRow)), live_count);
         }
         return;
     }

@@ -911,7 +911,7 @@ class EmulationFragment :
                     6 -> {
                         prefs.gpuCamProbe = false
                         prefs.gpuCamRowMode =
-                            org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
+                            org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
                         prefs.gpuCamTranspose = false
                         prefs.gpuCamRadius = 2300f
                         prefs.gpuCamInvert = 0

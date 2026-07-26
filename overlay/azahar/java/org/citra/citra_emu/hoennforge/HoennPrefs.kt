@@ -66,9 +66,10 @@ class HoennPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_GPUCAM_PROBE, false)
         set(value) = prefs.edit { putBoolean(KEY_GPUCAM_PROBE, value) }
 
-    /** Outdoor free look: -1 auto, -2 all qualifying triples, 0..93 a fixed row. */
+    /** Outdoor free look: -1 auto (locked row only), -2 all qualifying triples (the
+     *  default, since a scene's rigid transforms live at several rows), 0..93 fixed. */
     var gpuCamRowMode: Int
-        get() = prefs.getInt(KEY_GPUCAM_ROW, HoennGpuCam.ROW_MODE_AUTO)
+        get() = prefs.getInt(KEY_GPUCAM_ROW, HoennGpuCam.ROW_MODE_ALL)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_ROW, value) }
 
     /** Outdoor free look: read the uniform triple as columns rather than rows. */
