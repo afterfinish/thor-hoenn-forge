@@ -28,13 +28,16 @@ if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
     Copy-Item $ssSrc $ssDst -Force
     Write-Host "Applied savestate.cpp LoadState null-check"
 }
-# Hoenn free-look core + frame limiter reset (turbo after savestate)
+# Hoenn free-look core + GPU-path camera + frame limiter reset (turbo after savestate)
 foreach ($pair in @(
     @("core\hoenn_freecam.cpp", "src\core\hoenn_freecam.cpp"),
     @("core\hoenn_freecam.h", "src\core\hoenn_freecam.h"),
     @("core\cheats.cpp", "src\core\cheats\cheats.cpp"),
     @("core\perf_stats.h", "src\core\perf_stats.h"),
-    @("core\perf_stats.cpp", "src\core\perf_stats.cpp")
+    @("core\perf_stats.cpp", "src\core\perf_stats.cpp"),
+    @("video_core\hoenn_gpu_cam.cpp", "src\video_core\hoenn_gpu_cam.cpp"),
+    @("video_core\hoenn_gpu_cam.h", "src\video_core\hoenn_gpu_cam.h"),
+    @("video_core\shader\generator\shader_uniforms.cpp", "src\video_core\shader\generator\shader_uniforms.cpp")
 )) {
     $src = Join-Path $Overlay $pair[0]
     $dst = Join-Path $Azahar $pair[1]
@@ -123,6 +126,27 @@ if (Test-Path $coreCmake) {
         Write-Host "Patched core CMakeLists for hoenn_freecam"
     }
 }
+# video_core CMakeLists: register the GPU-path camera. Appended rather than spliced into
+# the source list so an upstream bump cannot break the patch.
+$vcCmake = Join-Path $Azahar "src\video_core\CMakeLists.txt"
+if (Test-Path $vcCmake) {
+    $vc = Get-Content $vcCmake -Raw -Encoding UTF8
+    if ($vc -notmatch "hoenn_gpu_cam\.cpp") {
+        $vc = $vc.TrimEnd() + @"
+
+
+# Hoenn Forge: GPU-path free look (view rotation in the PICA vertex-shader uniforms).
+target_sources(video_core PRIVATE
+    hoenn_gpu_cam.cpp
+    hoenn_gpu_cam.h
+)
+"@
+        [System.IO.File]::WriteAllText($vcCmake, $vc)
+        Write-Host "Patched video_core CMakeLists for hoenn_gpu_cam"
+    } else {
+        Write-Host "video_core CMakeLists hoenn_gpu_cam already present"
+    }
+}
 # NativeLibrary: freelook + zoom + pokedex capture only (strip retired RE/follower APIs)
 $nlPath = Join-Path $Android "app\src\main\java\org\citra\citra_emu\NativeLibrary.kt"
 if (Test-Path $nlPath) {
@@ -162,6 +186,16 @@ if (Test-Path $nlPath) {
     /** Hoenn Forge Pokédex: capture top 3DS screen. */
     external fun hoennCaptureTopScreen(resScale: Int): IntArray?
 "@
+    }
+    if ($nl -notmatch "hoennGpuCamSet") {
+        $nl = $nl -replace "(external fun hoennCaptureTopScreen\(resScale: Int\): IntArray\?)", @"
+`$1
+
+    /** Hoenn Forge: GPU-path free look knobs. Param ids mirror Hoenn::GpuCam::Param. */
+    external fun hoennGpuCamSet(param: Int, value: Float)
+    external fun hoennGpuCamGet(param: Int): Float
+"@
+        Write-Host "NativeLibrary.kt GPU cam JNI ensured"
     }
     [System.IO.File]::WriteAllText($nlPath, $nl)
     Write-Host "NativeLibrary.kt Hoenn camera JNI ensured (ship only)"
@@ -345,6 +379,33 @@ jintArray Java_org_citra_citra_1emu_NativeLibrary_hoennCaptureTopScreen(
         $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
         [System.IO.File]::WriteAllText($nativeCpp, $nc)
         Write-Host "Patched native.cpp hoennCaptureTopScreen JNI"
+    }
+    # GPU-path free look: one generic get/set pair so new knobs need no new JNI symbols
+    $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
+    if ($nc -notmatch "hoennGpuCamSet") {
+        if ($nc -notmatch "hoenn_gpu_cam\.h") {
+            $nc = $nc -replace '(#include "core/hoenn_freecam\.h")', "`$1`n#include `"video_core/hoenn_gpu_cam.h`""
+        }
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_hoennGpuCamSet([[maybe_unused]] JNIEnv* env,
+                                                            [[maybe_unused]] jobject obj,
+                                                            jint param, jfloat value) {
+    Hoenn::GpuCam::SetParam(static_cast<int>(param), static_cast<float>(value));
+}
+
+jfloat Java_org_citra_citra_1emu_NativeLibrary_hoennGpuCamGet([[maybe_unused]] JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jint param) {
+    return static_cast<jfloat>(Hoenn::GpuCam::GetParam(static_cast<int>(param)));
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp GPU cam JNI"
+    } else {
+        Write-Host "native.cpp GPU cam JNI already present"
     }
 }
 $Main = Join-Path $Android "app\src\main"
