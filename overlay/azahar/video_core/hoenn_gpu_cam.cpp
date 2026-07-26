@@ -588,6 +588,28 @@ float GetDolly() {
     return g.dolly.load(std::memory_order_relaxed);
 }
 
+void RotateStick(float& x, float& y) {
+    if (!g.active.load(std::memory_order_relaxed)) {
+        return; // interiors: the engine's own camera moved, so its mapping is already right
+    }
+    const float yaw = g.yaw.load(std::memory_order_relaxed);
+    if (std::fabs(yaw) < 0.5f) {
+        return;
+    }
+    // The view is rotated by -yaw about the vertical, so the camera reads as turned by
+    // +yaw; the stick has to travel the same way to keep "push up" meaning "away from the
+    // viewer". Bit 0 of the invert mask flips this along with the look direction, since a
+    // player who wants one reversed almost always wants the other to match.
+    const float sign = (g.invert.load(std::memory_order_relaxed) & kInvertYaw) ? -1.0f : 1.0f;
+    const float a = sign * yaw * kDegToRad;
+    const float c = std::cos(a);
+    const float sn = std::sin(a);
+    const float nx = x * c - y * sn;
+    const float ny = x * sn + y * c;
+    x = nx;
+    y = ny;
+}
+
 float WrapDeg(float deg) {
     if (!std::isfinite(deg)) {
         return 0.0f;

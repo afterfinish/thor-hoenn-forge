@@ -132,6 +132,18 @@ void Disable();
 void SetDolly(float units);
 float GetDolly();
 
+/// Turn a circle-pad vector into the frame the player is actually looking at.
+///
+/// ORAS maps walking directions relative to *its* camera, and this path never moves that
+/// camera -- it rotates what is drawn. So after swinging the view, pushing up still walks
+/// in the old direction, which on device reads as the character moving "as if the camera
+/// were still where it started". Indoors the problem does not arise, because the memory
+/// path moves the engine's own camera and the mapping follows it.
+///
+/// Rotating the stick by the same yaw before the game reads it puts the two back in
+/// agreement. No-op unless the GPU camera is driving.
+void RotateStick(float& x, float& y);
+
 /// Clamp on the dolly, as a multiple of the orbit distance.
 constexpr float kDollyRangeMul = 3.0f;
 

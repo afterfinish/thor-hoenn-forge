@@ -109,6 +109,36 @@ if (Test-Path $ldrRo) {
         [System.IO.File]::WriteAllText($ldrRo, $ldr)
     }
 }
+# HID: rotate the circle pad into the frame the player is looking at.
+# ORAS maps walking directions relative to its own camera, which the GPU free-look path
+# never moves - it rotates what is drawn. Without this, swinging the view outdoors leaves
+# the character walking as though the camera had not moved. Patched rather than overlaid:
+# hid.cpp is a large upstream file and forking it whole would silently revert upstream
+# fixes, which the four existing whole-file forks in this overlay already do.
+$hidCpp = Join-Path $Azahar "src\core\hle\service\hid\hid.cpp"
+if (Test-Path $hidCpp) {
+    $hid = Get-Content $hidCpp -Raw -Encoding UTF8
+    $hidDirty = $false
+    if ($hid -notmatch "hoenn_gpu_cam\.h") {
+        $hid = $hid -replace '(#include "core/hle/service/hid/hid\.h")', "`$1`r`n#include `"video_core/hoenn_gpu_cam.h`""
+        $hidDirty = $true
+    }
+    if ($hid -notmatch "Hoenn::GpuCam::RotateStick") {
+        $hid = $hid -replace `
+            '(std::tie\(circle_pad_x_f, circle_pad_y_f\) = circle_pad->GetStatus\(\);)', `
+            "`$1`r`n        Hoenn::GpuCam::RotateStick(circle_pad_x_f, circle_pad_y_f);"
+        $hidDirty = $true
+    }
+    if ($hidDirty) {
+        if ($hid -match "Hoenn::GpuCam::RotateStick") {
+            [System.IO.File]::WriteAllText($hidCpp, $hid)
+            Write-Host "Patched hid.cpp circle-pad rotation"
+        } else {
+            Write-Host "WARNING: could not patch hid.cpp circle-pad rotation"
+        }
+    }
+}
+
 # Ensure citra_core CMakeLists lists hoenn_freecam only (no follower)
 $coreCmake = Join-Path $Azahar "src\core\CMakeLists.txt"
 if (Test-Path $coreCmake) {
