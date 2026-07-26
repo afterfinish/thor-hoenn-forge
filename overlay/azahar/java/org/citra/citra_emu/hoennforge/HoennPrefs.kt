@@ -61,6 +61,26 @@ class HoennPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_FREELOOK, false)
         set(value) = prefs.edit { putBoolean(KEY_FREELOOK, value) }
 
+    /** Outdoor free look: fixed 12 deg yaw probe used to validate the row detector. */
+    var gpuCamProbe: Boolean
+        get() = prefs.getBoolean(KEY_GPUCAM_PROBE, false)
+        set(value) = prefs.edit { putBoolean(KEY_GPUCAM_PROBE, value) }
+
+    /** Outdoor free look: -1 auto, -2 all qualifying triples, 0..93 a fixed row. */
+    var gpuCamRowMode: Int
+        get() = prefs.getInt(KEY_GPUCAM_ROW, HoennGpuCam.ROW_MODE_AUTO)
+        set(value) = prefs.edit { putInt(KEY_GPUCAM_ROW, value) }
+
+    /** Outdoor free look: read the uniform triple as columns rather than rows. */
+    var gpuCamTranspose: Boolean
+        get() = prefs.getBoolean(KEY_GPUCAM_TRANSPOSE, false)
+        set(value) = prefs.edit { putBoolean(KEY_GPUCAM_TRANSPOSE, value) }
+
+    /** Outdoor free look: orbit radius in world units (camera object +0xA8 is ~2300). */
+    var gpuCamRadius: Float
+        get() = prefs.getFloat(KEY_GPUCAM_RADIUS, 2300f)
+        set(value) = prefs.edit { putFloat(KEY_GPUCAM_RADIUS, value) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -104,6 +124,10 @@ class HoennPrefs(context: Context) {
         private const val KEY_RANDOMIZER = "randomizer_json"
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
         private const val KEY_FREELOOK = "freelook_enabled"
+        private const val KEY_GPUCAM_PROBE = "gpucam_probe"
+        private const val KEY_GPUCAM_ROW = "gpucam_row_mode"
+        private const val KEY_GPUCAM_TRANSPOSE = "gpucam_transpose"
+        private const val KEY_GPUCAM_RADIUS = "gpucam_radius"
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }

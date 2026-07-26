@@ -558,6 +558,7 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val chipGame = view.findViewById<TextView>(R.id.chipGameTag)
         val chipFreelook = view.findViewById<TextView>(R.id.chipFreelookStatus)
+        val chipGpuCam = view.findViewById<TextView>(R.id.chipGpuCamStatus)
         val chipZoom = view.findViewById<TextView>(R.id.chipZoomStatus)
         val textSaveDesc = view.findViewById<TextView>(R.id.textSaveDesc)
         val textLoadDesc = view.findViewById<TextView>(R.id.textLoadDesc)
@@ -591,6 +592,25 @@ class EmulationFragment :
         fun refreshToggleChips() {
             paintToggleChip(chipFreelook, prefs.freelookEnabled)
             paintToggleChip(chipZoom, prefs.cameraZoomAssistEnabled)
+            // The advanced row is not a toggle: the chip reports the row-selection state
+            // so the detector result is visible without pulling logcat.
+            val cam = org.citra.citra_emu.hoennforge.HoennGpuCam
+            val probeOn = prefs.gpuCamProbe
+            chipGpuCam.text = if (probeOn) {
+                "PROBE " + cam.rowModeLabel(prefs.gpuCamRowMode)
+            } else {
+                cam.rowModeLabel(prefs.gpuCamRowMode) +
+                    (cam.detectedRow.takeIf { it >= 0 }?.let { " $it" } ?: "")
+            }
+            chipGpuCam.setBackgroundResource(
+                if (probeOn) R.drawable.hoenn_chip_on else R.drawable.hoenn_chip_muted,
+            )
+            chipGpuCam.setTextColor(
+                resources.getColor(
+                    if (probeOn) R.color.hoenn_accent_100 else R.color.hoenn_muted,
+                    requireContext().theme,
+                ),
+            )
         }
         fun refreshSlotDescs() {
             val savestates = NativeLibrary.getSavestateInfo()
@@ -641,6 +661,9 @@ class EmulationFragment :
         view.findViewById<View>(R.id.rowFreelook).setOnClickListener {
             toggleHoennFreelook()
             refreshToggleChips()
+        }
+        view.findViewById<View>(R.id.rowFreelookGpu).setOnClickListener {
+            showHoennGpuCamOptions { refreshToggleChips() }
         }
         view.findViewById<View>(R.id.rowZoom).setOnClickListener {
             toggleHoennZoomAssist()
@@ -775,6 +798,152 @@ class EmulationFragment :
         ).show()
     }
 
+    /**
+     * Advanced outdoor free-look controls.
+     *
+     * The outdoor camera finds the view matrix by scanning the 96 vertex-shader uniform
+     * rows for an orthonormal 3x3, which is a heuristic. This dialog exposes every input
+     * to that heuristic so a wrong guess can be corrected on device instead of costing a
+     * rebuild: arm the fixed-yaw probe, force a specific row, switch the matrix layout,
+     * or retune the orbit radius.
+     */
+    private fun showHoennGpuCamOptions(onChanged: () -> Unit) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(ctx)
+        val cam = org.citra.citra_emu.hoennforge.HoennGpuCam
+
+        val rowMode = prefs.gpuCamRowMode
+        val detected = cam.detectedRow
+        val qualifying = cam.qualifyingTriples
+        val items = arrayOf<CharSequence>(
+            getString(
+                R.string.hoenn_gpucam_probe_fmt,
+                getString(
+                    if (prefs.gpuCamProbe) R.string.hoenn_status_on else R.string.hoenn_status_off,
+                ),
+            ),
+            when (rowMode) {
+                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO ->
+                    getString(R.string.hoenn_gpucam_row_auto_fmt, detected, qualifying)
+                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL ->
+                    getString(R.string.hoenn_gpucam_row_all_fmt, qualifying)
+                else -> getString(R.string.hoenn_gpucam_row_fixed_fmt, rowMode)
+            },
+            getString(R.string.hoenn_gpucam_row_pick),
+            getString(
+                R.string.hoenn_gpucam_layout_fmt,
+                getString(
+                    if (prefs.gpuCamTranspose) {
+                        R.string.hoenn_gpucam_layout_cols
+                    } else {
+                        R.string.hoenn_gpucam_layout_rows
+                    },
+                ),
+            ),
+            getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
+            getString(R.string.hoenn_gpucam_reset),
+        )
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.hoenn_gpucam_title)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> {
+                        prefs.gpuCamProbe = !prefs.gpuCamProbe
+                        cam.probe = prefs.gpuCamProbe
+                    }
+                    // Cycle Auto -> All -> Auto. A fixed row is set through item 2.
+                    1 -> {
+                        val next =
+                            if (rowMode == org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
+                            ) {
+                                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
+                            } else {
+                                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
+                            }
+                        prefs.gpuCamRowMode = next
+                        cam.rowMode = next
+                    }
+                    2 -> {
+                        promptHoennGpuCamNumber(
+                            titleRes = R.string.hoenn_gpucam_row_pick,
+                            initial = if (rowMode >= 0) rowMode.toString() else "",
+                            decimal = false,
+                        ) { text ->
+                            val row = text.toIntOrNull()
+                            if (row != null) {
+                                val clamped = row.coerceIn(
+                                    0,
+                                    org.citra.citra_emu.hoennforge.HoennGpuCam.MAX_ROW,
+                                )
+                                prefs.gpuCamRowMode = clamped
+                                cam.rowMode = clamped
+                            }
+                            onChanged()
+                        }
+                    }
+                    3 -> {
+                        prefs.gpuCamTranspose = !prefs.gpuCamTranspose
+                        cam.transpose = prefs.gpuCamTranspose
+                    }
+                    4 -> {
+                        promptHoennGpuCamNumber(
+                            titleRes = R.string.hoenn_gpucam_radius_pick,
+                            initial = prefs.gpuCamRadius.toInt().toString(),
+                            decimal = true,
+                        ) { text ->
+                            val value = text.toFloatOrNull()
+                            if (value != null && value > 0f) {
+                                prefs.gpuCamRadius = value
+                                cam.radius = value
+                            }
+                            onChanged()
+                        }
+                    }
+                    5 -> {
+                        prefs.gpuCamProbe = false
+                        prefs.gpuCamRowMode =
+                            org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
+                        prefs.gpuCamTranspose = false
+                        prefs.gpuCamRadius = 2300f
+                        cam.restore(prefs)
+                    }
+                }
+                onChanged()
+            }
+            .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
+            .show()
+    }
+
+    private fun promptHoennGpuCamNumber(
+        titleRes: Int,
+        initial: String,
+        decimal: Boolean,
+        onValue: (String) -> Unit,
+    ) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        val input = android.widget.EditText(ctx).apply {
+            inputType = if (decimal) {
+                android.text.InputType.TYPE_CLASS_NUMBER or
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            } else {
+                android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            setText(initial)
+            setSelection(text.length)
+        }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(titleRes)
+            .setView(input)
+            .setPositiveButton(R.string.hoenn_gpucam_apply) { _, _ ->
+                onValue(input.text.toString().trim())
+            }
+            .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
+            .show()
+    }
+
     /** Re-apply camera tools after boot if the user left them on. */
     private fun applyHoennFreecamIfNeeded() {
         if (!::game.isInitialized || !NativeLibrary.isRunning()) return
@@ -786,6 +955,12 @@ class EmulationFragment :
         }
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(game.titleId)) return
+        // Native GPU-cam state is per-session, so push the persisted debug knobs back in.
+        try {
+            org.citra.citra_emu.hoennforge.HoennGpuCam.restore(prefs)
+        } catch (e: Exception) {
+            android.util.Log.w("HoennForge", "restore GPU cam prefs failed", e)
+        }
         if (prefs.cameraZoomAssistEnabled) {
             org.citra.citra_emu.hoennforge.HoennFreecam.applyZoomAssist(game.titleId, true)
         }
