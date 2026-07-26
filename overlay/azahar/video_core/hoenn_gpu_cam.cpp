@@ -1094,13 +1094,15 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     }
 
     // Positive stick-right yaws the camera right, which means rotating the world left.
-    // Prefer the axis recovered from the interior camera over the one read out of the view
-    // matrix's up column: it is the axis the engine demonstrably turns about, sign included.
-    const bool use_cal_axis = pivot_mode == kPivotCalibrated && s.cal_valid;
-    const float ax = use_cal_axis ? s.cal_axis[0] : s.up[0];
-    const float ay = use_cal_axis ? s.cal_axis[1] : s.up[1];
-    const float az = use_cal_axis ? s.cal_axis[2] : s.up[2];
-    const Mat3 r_yaw = AxisAngle(ax, ay, az, -yaw_deg * kDegToRad);
+    //
+    // The yaw axis is read live from the camera row's up column, not from the calibration.
+    // It is world-up expressed in eye space, and eye space turns with the camera, so the
+    // axis is a moving quantity rather than a constant: successive interior samples of the
+    // same physical vertical read (0, 1.00, 0.00) and then (0, 0.91, 0.42) purely because
+    // the camera had pitched between them. A learned average of those is stale the moment
+    // the pitch differs, and rotating about a stale axis is a roll — the diagonal drift.
+    // The column tracks the pitch for free.
+    const Mat3 r_yaw = AxisAngle(s.up[0], s.up[1], s.up[2], -yaw_deg * kDegToRad);
     const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
     const Mat3 rot = Mul(r_pitch, r_yaw);
 
@@ -1120,20 +1122,24 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     switch (pivot_mode) {
     case kPivotCalibrated:
         if (s.cal_valid) {
-            // Used exactly as learned. An earlier version rescaled this by the ratio of
-            // measured eye depths, on the theory that the orbit's size is a property of
-            // the map. That was wrong and would have thrown the fix away: the interior
-            // camera reports |p| ~165 while the per-object "eye depth" reads ~4950, so the
-            // ratio is about 30x. Those two numbers are not in the same space — the depth
-            // sample comes from per-object matrices that evidently carry a different scale
-            // — and feeding it in as a radius is precisely what sent the scene off screen.
-            // Eye space is eye space; the calibrated point needs no adjustment.
-            const float k = (radius_pref > 0.0f && s.cal_scale > 1.0e-3f)
-                                ? radius_pref / s.cal_scale
-                                : 1.0f;
-            p[0] = s.cal_pivot[0] * k;
-            p[1] = s.cal_pivot[1] * k;
-            p[2] = s.cal_pivot[2] * k;
+            // Straight ahead, at the learned distance.
+            //
+            // Only the distance is worth carrying over from the calibration. Its
+            // *direction* was recorded in eye space at one particular camera pitch, and
+            // eye space rotates with the camera: the clean samples read (0, 0, -225)
+            // while later ones, taken at a different pitch, read (0, 81, -173) for the
+            // same physical point. Baking one of those in makes the orbit centre drift as
+            // soon as the pitch differs, which it always does outdoors.
+            //
+            // In eye space the camera looks down -Z by construction and the player sits
+            // near the middle of the frame, so the orbit centre is (0, 0, -d) whatever the
+            // pitch happens to be. d is the one number the interior camera can tell us and
+            // nothing else can: 225 here, against the ~5000 the per-object matrices claim.
+            const float d = radius_pref > 0.0f ? radius_pref : s.cal_scale;
+            p[0] = 0.0f;
+            p[1] = 0.0f;
+            p[2] = -d;
+            break;
         }
         // No fallback to the measured point. It reads ~5000 where the interior camera
         // says ~165, and handing that to the orbit is exactly the "crazy camera": the
