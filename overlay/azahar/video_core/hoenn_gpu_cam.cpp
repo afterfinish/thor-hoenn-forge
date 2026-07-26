@@ -46,6 +46,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include "common/file_util.h"
 #include "common/logging/log.h"
 
 namespace Hoenn::GpuCam {
@@ -184,6 +185,7 @@ struct Scan {
     float cal_axis[3]{0.0f, 1.0f, 0.0f};
     float cal_scale = 0.0f;
     bool cal_valid = false;
+    bool cal_load_tried = false;
 };
 Scan s;
 
@@ -555,6 +557,48 @@ bool IsProbeEnabled() {
     return g.probe.load(std::memory_order_relaxed);
 }
 
+/// The calibration is worth more than a session. It costs the user a trip indoors and a
+/// swing of the stick, and it only lived in memory, so a relaunch silently threw it away
+/// and the camera came back wrong for reasons that had nothing to do with the transform.
+/// Seven floats next to the config is a cheap way to make one indoor visit permanent.
+std::string CalPath() {
+    return FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir) + "hoenn_gpucam_cal.bin";
+}
+
+void SaveCalibration() {
+    const float v[7] = {1.0f,           s.cal_pivot[0], s.cal_pivot[1], s.cal_pivot[2],
+                        s.cal_axis[0],  s.cal_axis[1],  s.cal_axis[2]};
+    FileUtil::IOFile file(CalPath(), "wb");
+    if (file.IsOpen()) {
+        file.WriteBytes(v, sizeof(v));
+    }
+}
+
+void LoadCalibration() {
+    float v[7]{};
+    FileUtil::IOFile file(CalPath(), "rb");
+    if (!file.IsOpen() || file.ReadBytes(v, sizeof(v)) != sizeof(v) || v[0] != 1.0f) {
+        return;
+    }
+    const float len = std::sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3]);
+    if (!std::isfinite(len) || len < 1.0f || len > kCalMaxPivot) {
+        return;
+    }
+    s.cal_pivot[0] = v[1];
+    s.cal_pivot[1] = v[2];
+    s.cal_pivot[2] = v[3];
+    s.cal_axis[0] = v[4];
+    s.cal_axis[1] = v[5];
+    s.cal_axis[2] = v[6];
+    s.cal_scale = len;
+    s.cal_valid = true;
+    g.calibrated.store(true, std::memory_order_relaxed);
+    LOG_INFO(Render,
+             "Hoenn GPU cam: restored calibration pivot=({:.0f}, {:.0f}, {:.0f}) |p|={:.0f} "
+             "axis=({:.2f}, {:.2f}, {:.2f})",
+             v[1], v[2], v[3], len, v[4], v[5], v[6]);
+}
+
 /// Recover what the engine did to the view transform between two samples of the same row,
 /// and reduce it to the two things the outdoor path needs: an axis and a point to turn
 /// about. Returns false when the samples are too close together to say anything.
@@ -650,6 +694,7 @@ bool SolveCalibration(const float ref[12], const float cur[12]) {
                             s.cal_pivot[2] * s.cal_pivot[2]);
     s.cal_valid = true;
     g.calibrated.store(true, std::memory_order_relaxed);
+    SaveCalibration();
     LOG_INFO(Render,
              "Hoenn GPU cam CALIBRATED from interior camera: pivot=({:.0f}, {:.0f}, {:.0f}) "
              "|p|={:.0f} axis=({:.3f}, {:.3f}, {:.3f}) angle={:.2f} deg",
@@ -744,6 +789,15 @@ float GetParam(int param) {
 }
 
 void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
+    // Pull a stored calibration in on first use. Doing it here rather than at static init
+    // keeps it off any path that runs before the user directory exists.
+    if (!s.cal_load_tried) {
+        s.cal_load_tried = true;
+        if (!s.cal_valid) {
+            LoadCalibration();
+        }
+    }
+
     const bool driving = g.active.load(std::memory_order_relaxed);
     // Indoors the memory camera owns the view and we only watch, to learn the pivot and
     // axis the engine itself uses. The detector runs either way, so by the time the GPU
@@ -967,11 +1021,13 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             p[0] = s.cal_pivot[0] * k;
             p[1] = s.cal_pivot[1] * k;
             p[2] = s.cal_pivot[2] * k;
-        } else if (s.last_pivot_valid) {
-            p[0] = s.last_pivot[0]; // not calibrated yet — measured point is the best guess
-            p[1] = s.last_pivot[1];
-            p[2] = s.last_pivot[2];
         }
+        // No fallback to the measured point. It reads ~5000 where the interior camera
+        // says ~165, and handing that to the orbit is exactly the "crazy camera": the
+        // scene is flung a full screen for a degree of stick. Uncalibrated, p stays zero,
+        // which is a pure swivel about the eye — visibly not an orbit, but coherent and
+        // incapable of displacing anything. Better a camera that under-delivers than one
+        // that throws the world away.
         break;
     case kPivotMeasured:
         if (s.last_pivot_valid) {
