@@ -9,7 +9,8 @@ You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS cor
 
 **Source:** [github.com/afterfinish/thor-hoenn-forge](https://github.com/afterfinish/thor-hoenn-forge)  
 **Package ID:** `dev.tzigdon.hoennforge`  
-**Latest release:** [alpha-0.1](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1)
+**Latest release:** [alpha-0.1](https://github.com/afterfinish/thor-hoenn-forge/releases/tag/alpha-0.1)  
+**Discord:** [discord.gg/v4qA5cA6D6](https://discord.gg/v4qA5cA6D6) — questions, bug reports, and dogfood feedback
 
 ---
 
