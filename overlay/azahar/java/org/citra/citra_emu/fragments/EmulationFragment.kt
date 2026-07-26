@@ -913,19 +913,21 @@ class EmulationFragment :
                         prefs.gpuCamRange = next
                         cam.range = next
                     }
+                    // Orbit distance, as a tap-through rather than a typed number.
+                    //
+                    // 225 comes from the interior calibration and is right indoors, but the
+                    // outdoor camera sits much further from the player, so the pivot lands
+                    // between the two and the character swings instead of holding still.
+                    // The distance cannot be calibrated outdoors -- that needs the game's
+                    // own camera to move, which is the whole reason this path exists -- so
+                    // it has to be found by eye, and finding it should take seconds.
+                    // 0 means "use the calibrated default".
                     6 -> {
-                        promptHoennGpuCamNumber(
-                            titleRes = R.string.hoenn_gpucam_radius_pick,
-                            initial = prefs.gpuCamRadius.toInt().toString(),
-                            decimal = true,
-                        ) { text ->
-                            val value = text.toFloatOrNull()
-                            if (value != null && value >= 0f) {
-                                prefs.gpuCamRadius = value
-                                cam.radius = value
-                            }
-                            onChanged()
-                        }
+                        val steps = floatArrayOf(0f, 150f, 225f, 350f, 500f, 750f, 1100f, 1600f)
+                        val idx = steps.indexOfFirst { it >= prefs.gpuCamRadius - 0.01f }
+                        val next = steps[if (idx < 0) 0 else (idx + 1) % steps.size]
+                        prefs.gpuCamRadius = next
+                        cam.radius = next
                     }
                     // none -> yaw -> pitch -> both -> none
                     7 -> {

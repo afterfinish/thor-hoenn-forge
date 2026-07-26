@@ -129,7 +129,7 @@
     <string name="hoenn_gpucam_layout_cols">columns</string>
     <string name="hoenn_gpucam_pivot_fmt">Orbit centre: %1$s</string>
     <string name="hoenn_gpucam_range_fmt">Look range: %1$s</string>
-    <string name="hoenn_gpucam_radius_fmt">Orbit radius: %1$.0f (0 = measured)</string>
+    <string name="hoenn_gpucam_radius_fmt">Orbit distance: %1$.0f (0 = default 225)</string>
     <string name="hoenn_gpucam_invert_fmt">Invert: %1$s</string>
     <string name="hoenn_gpucam_radius_pick">Orbit radius (world units)</string>
     <string name="hoenn_gpucam_reset">Reset to defaults</string>
