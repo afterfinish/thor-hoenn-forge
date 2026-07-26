@@ -47,6 +47,7 @@ Dual-screen (AYN Thor) and freelook angles from dogfood:
 - **Resume**
 - **Free look** — right stick pitch/yaw in houses and many interiors (OR/AS; outdoor towns not supported in this release)
 - **Camera zoom assist** — hold L to zoom out, R to zoom in
+- **60 FPS** *(experimental)* — a load-time code patch that renders every frame while game logic stays at normal speed, unlike the common "60 FPS" cheat codes that also double game speed. Applies on next launch; your dump is never modified. Offsets are currently known for Alpha Sapphire only, and are unverified against cart-dump builds — the toggle reports when a build has no patch
 - **Pokédex** — OCR the top screen, match a species, show an offline entry (prefers the bottom display on Thor)
 - **Save state / load state**
 
@@ -147,6 +148,13 @@ Azahar also vendors many native libraries (dynarmic, Crypto++, SDL lineage piece
 | Project | Role | License | Link |
 |---------|------|---------|------|
 | **[pk3DS](https://github.com/kwsch/pk3DS)** (Kaphotics / kwsch and contributors) | Algorithms and formats informing the on-device randomizer (not the Windows EXE dropped into the APK) | GPL | [github.com/kwsch/pk3DS](https://github.com/kwsch/pk3DS) |
+
+### Frame rate research
+
+| Source | Role | Link |
+|--------|------|------|
+| **Zetta_D** ([CTRPluginFramework](https://github.com/Zetta-D)) | Reverse engineered the ORAS per-frame function and showed that render rate and logic rate are separable in this engine — `update()` and `draw()` are independently gated calls. The 60 FPS patch here reproduces the counted-loop approach from that work | [GBAtemp writeup](https://gbatemp.net/threads/how-to-change-game-speed-independently-of-fps-example-with-pokemon-oras.680385/) |
+| **[Reshiban](https://github.com/Reshiban/60FPS-AR-CHEATS-3DS)** | 3DS 60 FPS cheat database, and the reference point for *why* a naive patch is not enough — its ORAS entries are annotated "Game runs faster" | [60FPS-AR-CHEATS-3DS](https://github.com/Reshiban/60FPS-AR-CHEATS-3DS) |
 
 ### Offline Pokédex
 | Project | Role | License / note | Link |

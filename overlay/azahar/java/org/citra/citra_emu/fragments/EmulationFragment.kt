@@ -559,6 +559,8 @@ class EmulationFragment :
         val chipGame = view.findViewById<TextView>(R.id.chipGameTag)
         val chipFreelook = view.findViewById<TextView>(R.id.chipFreelookStatus)
         val chipZoom = view.findViewById<TextView>(R.id.chipZoomStatus)
+        val chipSixtyFps = view.findViewById<TextView>(R.id.chipSixtyFpsStatus)
+        val textSixtyFpsDesc = view.findViewById<TextView>(R.id.textSixtyFpsDesc)
         val textSaveDesc = view.findViewById<TextView>(R.id.textSaveDesc)
         val textLoadDesc = view.findViewById<TextView>(R.id.textLoadDesc)
 
@@ -591,6 +593,21 @@ class EmulationFragment :
         fun refreshToggleChips() {
             paintToggleChip(chipFreelook, prefs.freelookEnabled)
             paintToggleChip(chipZoom, prefs.cameraZoomAssistEnabled)
+
+            // 60 FPS is a load-time code patch, so the chip tracks the saved intent while the
+            // subtitle says whether that intent is live yet.
+            val titleId = if (::game.isInitialized) game.titleId else 0L
+            val supported = org.citra.citra_emu.hoennforge.HoennSixtyFps.isSupportedTitle(titleId)
+            val wanted = supported && prefs.sixtyFpsEnabled
+            paintToggleChip(chipSixtyFps, wanted)
+            textSixtyFpsDesc.setText(
+                when {
+                    !supported -> R.string.hoenn_menu_fps_desc_unsupported
+                    wanted != org.citra.citra_emu.hoennforge.HoennSixtyFps
+                        .isActiveThisSession() -> R.string.hoenn_menu_fps_desc_pending
+                    else -> R.string.hoenn_menu_fps_desc
+                },
+            )
         }
         fun refreshSlotDescs() {
             val savestates = NativeLibrary.getSavestateInfo()
@@ -645,6 +662,9 @@ class EmulationFragment :
         view.findViewById<View>(R.id.rowZoom).setOnClickListener {
             toggleHoennZoomAssist()
             refreshToggleChips()
+        }
+        view.findViewById<View>(R.id.rowSixtyFps).setOnClickListener {
+            toggleHoennSixtyFps { refreshToggleChips() }
         }
         view.findViewById<View>(R.id.rowPokedex).setOnClickListener {
             closeMenu()
@@ -773,6 +793,74 @@ class EmulationFragment :
             },
             Toast.LENGTH_LONG,
         ).show()
+    }
+
+    /**
+     * Toggle the 60 FPS code patch.
+     *
+     * Unlike the camera tools this is not a live change: the patch is applied by the loader, so
+     * writing it only takes effect on the next launch. Enabling an unverified build's patch goes
+     * behind a confirmation, because wrong offsets can stop the game booting.
+     */
+    private fun toggleHoennSixtyFps(onChanged: () -> Unit) {
+        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
+        val titleId = if (::game.isInitialized) game.titleId else 0L
+        val sixtyFps = org.citra.citra_emu.hoennforge.HoennSixtyFps
+        if (!sixtyFps.isSupportedTitle(titleId)) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_fps_unsupported,
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+
+        val next = !prefs.sixtyFpsEnabled
+        // Turbo scales the whole emulated clock; stacking it on a 60 FPS patch gives 4x speed.
+        if (next && org.citra.citra_emu.utils.TurboHelper.isTurboSpeedEnabled()) {
+            Toast.makeText(
+                requireContext(),
+                R.string.hoenn_menu_fps_turbo_conflict,
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+
+        fun commit(enabled: Boolean) {
+            val ok = if (enabled) sixtyFps.apply(titleId) else sixtyFps.remove(titleId)
+            if (!ok) {
+                Toast.makeText(
+                    requireContext(),
+                    R.string.hoenn_menu_fps_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return
+            }
+            prefs.sixtyFpsEnabled = enabled
+            Toast.makeText(
+                requireContext(),
+                if (enabled) {
+                    R.string.hoenn_menu_fps_enabled_toast
+                } else {
+                    R.string.hoenn_menu_fps_disabled_toast
+                },
+                Toast.LENGTH_LONG,
+            ).show()
+            onChanged()
+        }
+
+        val experimental = sixtyFps.availability(titleId) ==
+            org.citra.citra_emu.hoennforge.HoennSixtyFps.Availability.EXPERIMENTAL
+        if (next && experimental) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.hoenn_menu_fps_warn_title)
+                .setMessage(R.string.hoenn_menu_fps_warn_body)
+                .setPositiveButton(R.string.hoenn_menu_fps_warn_confirm) { _, _ -> commit(true) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
+        commit(next)
     }
 
     /** Re-apply camera tools after boot if the user left them on. */

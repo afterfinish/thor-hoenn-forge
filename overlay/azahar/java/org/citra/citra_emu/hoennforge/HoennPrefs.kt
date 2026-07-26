@@ -61,6 +61,14 @@ class HoennPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_FREELOOK, false)
         set(value) = prefs.edit { putBoolean(KEY_FREELOOK, value) }
 
+    /**
+     * 60 FPS code patch (START menu). Applied as a load-time IPS, so this records the user's
+     * intent; [HoennSixtyFps.sync] reconciles it with what is actually on disk at launch.
+     */
+    var sixtyFpsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SIXTY_FPS, false)
+        set(value) = prefs.edit { putBoolean(KEY_SIXTY_FPS, value) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -104,6 +112,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_RANDOMIZER = "randomizer_json"
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
         private const val KEY_FREELOOK = "freelook_enabled"
+        private const val KEY_SIXTY_FPS = "sixty_fps_enabled"
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }

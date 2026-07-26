@@ -144,6 +144,19 @@ class EmulationActivity : AppCompatActivity() {
             return
         }
 
+        // Re-assert the 60 FPS code patch before the core loads the NCCH. The randomizer's
+        // clearMods() removes the whole load/mods/<title> tree, so a prepare run between
+        // launches would otherwise drop the patch without the user ever turning it off.
+        try {
+            val hoennPrefs = org.citra.citra_emu.hoennforge.HoennPrefs(this)
+            org.citra.citra_emu.hoennforge.HoennSixtyFps.sync(
+                game.titleId,
+                hoennPrefs.sixtyFpsEnabled,
+            )
+        } catch (e: Exception) {
+            Log.warning("[EmulationActivity] 60 FPS patch sync failed: ${e.message}")
+        }
+
         NativeLibrary.playTimeManagerStart(game.titleId)
     }
 
@@ -163,6 +176,15 @@ class EmulationActivity : AppCompatActivity() {
             BundleCompat.getParcelable(extras, "game", Game::class.java)
         }
         if (game != null) {
+            try {
+                val hoennPrefs = org.citra.citra_emu.hoennforge.HoennPrefs(this)
+                org.citra.citra_emu.hoennforge.HoennSixtyFps.sync(
+                    game.titleId,
+                    hoennPrefs.sixtyFpsEnabled,
+                )
+            } catch (e: Exception) {
+                Log.warning("[EmulationActivity] 60 FPS patch sync failed: ${e.message}")
+            }
             NativeLibrary.playTimeManagerStart(game.titleId)
         }
 

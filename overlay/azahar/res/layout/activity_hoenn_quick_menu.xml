@@ -172,7 +172,7 @@
                     android:focusable="true"
                     android:clickable="true"
                     android:nextFocusUp="@+id/rowFreelook"
-                    android:nextFocusDown="@+id/rowPokedex">
+                    android:nextFocusDown="@+id/rowSixtyFps">
                     <ImageView
                         android:layout_width="24dp"
                         android:layout_height="24dp"
@@ -213,6 +213,62 @@
                         android:focusable="false" />
                 </LinearLayout>
 
+                <!-- 60 FPS toggle (load-time code patch; applies on next launch) -->
+                <LinearLayout
+                    android:id="@+id/rowSixtyFps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/hoenn_row_menu"
+                    android:paddingHorizontal="16dp"
+                    android:focusable="true"
+                    android:clickable="true"
+                    android:nextFocusUp="@+id/rowZoom"
+                    android:nextFocusDown="@+id/rowPokedex">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/hoenn_ic_fps"
+                        android:contentDescription="@null"
+                        android:focusable="false" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical"
+                        android:focusable="false">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_fps"
+                            style="@style/Hoenn.Text.CardTitle"
+                            android:focusable="false" />
+                        <TextView
+                            android:id="@+id/textSixtyFpsDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/hoenn_menu_fps_desc"
+                            style="@style/Hoenn.Text.Muted"
+                            android:focusable="false" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/chipSixtyFpsStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/hoenn_chip_muted"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="5dp"
+                        android:text="@string/hoenn_status_off"
+                        android:fontFamily="@font/inter_medium"
+                        android:textColor="@color/hoenn_muted"
+                        android:textSize="12sp"
+                        android:focusable="false" />
+                </LinearLayout>
+
                 <!-- Pokédex -->
                 <LinearLayout
                     android:id="@+id/rowPokedex"
@@ -226,7 +282,7 @@
                     android:paddingHorizontal="16dp"
                     android:focusable="true"
                     android:clickable="true"
-                    android:nextFocusUp="@+id/rowZoom"
+                    android:nextFocusUp="@+id/rowSixtyFps"
                     android:nextFocusDown="@+id/rowSave">
                     <ImageView
                         android:layout_width="24dp"
