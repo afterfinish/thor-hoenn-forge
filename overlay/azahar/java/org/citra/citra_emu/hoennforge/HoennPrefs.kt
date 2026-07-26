@@ -77,9 +77,10 @@ class HoennPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_GPUCAM_TRANSPOSE, false)
         set(value) = prefs.edit { putBoolean(KEY_GPUCAM_TRANSPOSE, value) }
 
-    /** Outdoor free look: orbit radius in world units (camera object +0xA8 is ~2300). */
+    /** Outdoor free look: orbit radius in eye-space units. Zero swivels about the eye
+     *  instead of orbiting the player, which cannot displace geometry. */
     var gpuCamRadius: Float
-        get() = prefs.getFloat(KEY_GPUCAM_RADIUS, 2300f)
+        get() = prefs.getFloat(KEY_GPUCAM_RADIUS, 0f)
         set(value) = prefs.edit { putFloat(KEY_GPUCAM_RADIUS, value) }
 
     /** Outdoor free look: bitmask, 1 inverts yaw and 2 inverts pitch. */
@@ -135,11 +136,25 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_TRANSPOSE = "gpucam_transpose"
         private const val KEY_GPUCAM_RADIUS = "gpucam_radius"
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
+        private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
+        private const val GPUCAM_GEN = 2
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }
 
     init {
+        // Device testing disproved two of the outdoor camera's original defaults: the
+        // column-major matrix layout rotates the world about its origin, and an orbit
+        // radius taken from the game's camera object is on the wrong scale entirely and
+        // throws the scene off screen. Retire whatever the user was left holding, once.
+        if (prefs.getInt(KEY_GPUCAM_GEN, 0) < GPUCAM_GEN) {
+            prefs.edit {
+                putInt(KEY_GPUCAM_GEN, GPUCAM_GEN)
+                remove(KEY_GPUCAM_TRANSPOSE)
+                remove(KEY_GPUCAM_RADIUS)
+                remove(KEY_GPUCAM_ROW)
+            }
+        }
         // Migrate old freecam_enabled → camera zoom assist once
         if (prefs.contains(KEY_FREECAM_LEGACY) && !prefs.contains(KEY_CAM_ZOOM)) {
             prefs.edit {

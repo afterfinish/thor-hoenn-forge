@@ -56,11 +56,13 @@ constexpr float kPitchClampDeg = 25.0f;
 /// memory camera owns the map — doing that made the camera flicker indoors.
 constexpr float kProbeYawDeg = 12.0f;
 
-/// Observed camera-to-player distance in the ORAS camera object (+0xA8): ~2000 in a
-/// house, ~2300 in a town. Tunable at runtime through ParamRadius, where zero is a
-/// meaningful setting: it swivels about the eye rather than orbiting the player, which
-/// cannot displace geometry even if the wrong matrix is being transformed.
-constexpr float kDefaultRadius = 2300.0f;
+/// Orbit radius, in *eye-space* units. The ORAS camera object's own distance field
+/// (+0xA8, ~2000 in a house and ~2300 in a town) turned out to be on a completely
+/// different scale from the vertex data — using it shoved Route 104 about three screens
+/// off centre. The honest source is the eye-space depth of the per-object matrices,
+/// which the census now reports; until that is dialled in, the default is zero, which
+/// swivels about the eye instead of orbiting the player and so cannot displace anything.
+constexpr float kDefaultRadius = 0.0f;
 
 // --- Driver side (core, emulation thread) ------------------------------------------
 

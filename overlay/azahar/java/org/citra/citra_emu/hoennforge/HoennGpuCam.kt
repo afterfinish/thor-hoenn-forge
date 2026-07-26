@@ -66,7 +66,7 @@ object HoennGpuCam {
         set(value) = put(PARAM_TRANSPOSE, if (value) 1f else 0f)
 
     var radius: Float
-        get() = take(PARAM_RADIUS, 2300f)
+        get() = take(PARAM_RADIUS, 0f)
         set(value) = put(PARAM_RADIUS, value)
 
     /** Bitmask of [INVERT_YAW] / [INVERT_PITCH]. Which way is "right" depends on the

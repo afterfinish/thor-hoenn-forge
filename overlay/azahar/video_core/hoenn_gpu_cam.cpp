@@ -64,8 +64,7 @@ constexpr auto kWindowMaxTime = std::chrono::milliseconds(200);
 
 // Thresholds, as 1/256ths of the window's upload count.
 constexpr u32 kAcquireHitFrac = 128; // a candidate must appear in >= 50% of uploads
-constexpr u32 kColdHitFrac = 32;     // below 12.5% counts as cold
-constexpr int kColdWindowsToSwitch = 8;
+constexpr int kColdWindowsToSwitch = 4;
 
 // The driver parks the GPU camera on map transitions, quiet windows and battles.
 // Re-acquiring from scratch on every resume is what makes the choice oscillate, so a
@@ -99,17 +98,29 @@ struct Scan {
     // Current window.
     u32 hits[kNumTriples]{};
     u32 changes[kNumTriples]{};
+    u32 translated[kNumTriples]{}; // hits whose .w column was a real translation
     float prev[kNumTriples][12]{};
     bool prev_valid[kNumTriples]{};
     u32 window_uploads = 0;
+    // Eye-space distance of the objects being drawn, sampled from per-object matrices
+    // (the ones that change every upload). This is the only honest source for the orbit
+    // radius: the value in the game's camera object is in some other unit entirely.
+    double depth_sum = 0.0;
+    u32 depth_n = 0;
+    float depth_min = 0.0f;
+    float depth_max = 0.0f;
     int clock_countdown = kClockCheckInterval;
     std::chrono::steady_clock::time_point window_start{};
 
     // Last closed window. Selection and the census read only this.
     u32 last_hits[kNumTriples]{};
     u32 last_changes[kNumTriples]{};
+    u32 last_translated[kNumTriples]{};
     u32 last_uploads = 0;
     u32 steady_rows = 0;
+    float last_depth_mean = 0.0f;
+    float last_depth_min = 0.0f;
+    float last_depth_max = 0.0f;
 
     int locked_row = -1;
     int cold_windows = 0;
@@ -128,9 +139,15 @@ Scan s;
 void ResetScan() {
     std::memset(s.hits, 0, sizeof(s.hits));
     std::memset(s.changes, 0, sizeof(s.changes));
+    std::memset(s.translated, 0, sizeof(s.translated));
     std::memset(s.prev_valid, 0, sizeof(s.prev_valid));
     std::memset(s.last_hits, 0, sizeof(s.last_hits));
     std::memset(s.last_changes, 0, sizeof(s.last_changes));
+    std::memset(s.last_translated, 0, sizeof(s.last_translated));
+    s.depth_sum = 0.0;
+    s.depth_n = 0;
+    s.depth_min = 0.0f;
+    s.depth_max = 0.0f;
     s.last_uploads = 0;
     s.steady_rows = 0;
     s.window_uploads = 0;
@@ -306,9 +323,19 @@ bool SameTriple(const float a[12], const float b[12]) {
 void CloseWindow(std::chrono::steady_clock::time_point now) {
     std::memcpy(s.last_hits, s.hits, sizeof(s.hits));
     std::memcpy(s.last_changes, s.changes, sizeof(s.changes));
+    std::memcpy(s.last_translated, s.translated, sizeof(s.translated));
     s.last_uploads = s.window_uploads;
+    s.last_depth_mean =
+        s.depth_n ? static_cast<float>(s.depth_sum / static_cast<double>(s.depth_n)) : 0.0f;
+    s.last_depth_min = s.depth_min;
+    s.last_depth_max = s.depth_max;
     std::memset(s.hits, 0, sizeof(s.hits));
     std::memset(s.changes, 0, sizeof(s.changes));
+    std::memset(s.translated, 0, sizeof(s.translated));
+    s.depth_sum = 0.0;
+    s.depth_n = 0;
+    s.depth_min = 0.0f;
+    s.depth_max = 0.0f;
     s.window_uploads = 0;
     s.window_start = now;
 
@@ -317,10 +344,15 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
     }
 
     const u32 acquire_floor = (s.last_uploads * kAcquireHitFrac) / 256;
-    const u32 cold_floor = (s.last_uploads * kColdHitFrac) / 256;
 
+    // Rank: constant across the window first, then "carries a real translation", then
+    // raw hit count. The second key matters because a view matrix and the normal matrix
+    // derived from it are both perfectly constant and both orthonormal — they differ
+    // only in that the normal matrix has a zero .w column. Route 104 showed exactly that
+    // pair (rows 75 and 90, both 512 hits and 0 changes).
     int best = -1;
     u32 best_const = 0;
+    int best_translated = 0;
     u32 best_hits = 0;
     u32 steady = 0;
     for (int r = 0; r < kNumTriples; ++r) {
@@ -330,9 +362,15 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
         }
         ++steady;
         const u32 constant = h - std::min(h, s.last_changes[r]);
-        if (best < 0 || constant > best_const || (constant == best_const && h > best_hits)) {
+        const int translated = (s.last_translated[r] * 2 >= h) ? 1 : 0;
+        const bool better =
+            best < 0 || constant > best_const ||
+            (constant == best_const &&
+             (translated > best_translated || (translated == best_translated && h > best_hits)));
+        if (better) {
             best = r;
             best_const = constant;
+            best_translated = translated;
             best_hits = h;
         }
     }
@@ -348,16 +386,21 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
         return;
     }
 
-    // Sticky: the bar to displace an existing lock is far higher than the bar to acquire
-    // one. A row that merely dips below the threshold for a window keeps the lock.
-    if (s.last_hits[s.locked_row] < cold_floor) {
+    // Sticky, but not stubborn. The first attempt only dropped a lock once the row was
+    // nearly absent, which let a stale row acquired in another scene survive on a
+    // trickle of hits while three far better rows were ignored — Route 104 sat locked on
+    // row 28 while rows 75 and 90 were carried by every single draw. The locked row must
+    // now stay a legitimate acquisition candidate, and it gets several windows to.
+    if (s.last_hits[s.locked_row] < acquire_floor) {
         ++s.cold_windows;
     } else {
         s.cold_windows = 0;
     }
     if (s.cold_windows >= kColdWindowsToSwitch && best >= 0 && best != s.locked_row) {
-        LOG_INFO(Render, "Hoenn GPU cam: lock {} went cold for {} windows, switching to {}",
-                 s.locked_row, s.cold_windows, best);
+        LOG_INFO(Render,
+                 "Hoenn GPU cam: lock {} fell out of the steady set for {} windows, "
+                 "switching to {} ({} hits, {} constant, translated={})",
+                 s.locked_row, s.cold_windows, best, best_hits, best_const, best_translated);
         s.locked_row = best;
         s.cold_windows = 0;
         s.up_valid = false;
@@ -365,9 +408,10 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
 }
 
 /// One line naming every row that a meaningful share of draws carried in the last
-/// window, most-used first, as `row:hits/changes`. The view matrix is the row with many
-/// hits and zero changes; a per-object world-view matrix has many hits and almost as
-/// many changes. This is meant to be read straight off logcat instead of sweeping rows
+/// window, most-used first, as `row:hits/changes` with a trailing `T` when the row
+/// carries a real translation. The view matrix is the row with many hits, zero changes
+/// and a T; the same row without a T is the normal matrix derived from it. A per-object
+/// world-view matrix has many hits and almost as many changes. This is meant to be read straight off logcat instead of sweeping rows
 /// by hand. Destroys last_hits, which is rebuilt every window anyway.
 void LogCensus() {
     char buf[512];
@@ -391,9 +435,10 @@ void LogCensus() {
         if (pick < 0) {
             break;
         }
-        n += std::snprintf(buf + n, sizeof(buf) - static_cast<size_t>(n), "%s%d:%u/%u",
+        n += std::snprintf(buf + n, sizeof(buf) - static_cast<size_t>(n), "%s%d:%u/%u%s",
                            listed ? " " : "", pick, pick_hits,
-                           std::min(pick_hits, s.last_changes[pick]));
+                           std::min(pick_hits, s.last_changes[pick]),
+                           (s.last_translated[pick] * 2 >= pick_hits) ? "T" : "");
         s.last_hits[pick] = 0; // consumed
         ++listed;
     }
@@ -538,11 +583,31 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         ReadTriple(f, r, cur);
         // prev is deliberately kept across uploads where the row did not qualify, so a
         // row that flickers out to a non-rigid value and back still counts as changing.
-        if (s.prev_valid[r] && !SameTriple(s.prev[r], cur)) {
+        const bool changed = s.prev_valid[r] && !SameTriple(s.prev[r], cur);
+        if (changed) {
             ++s.changes[r];
         }
         std::memcpy(s.prev[r], cur, sizeof(cur));
         s.prev_valid[r] = true;
+
+        const float t2 = cur[3] * cur[3] + cur[7] * cur[7] + cur[11] * cur[11];
+        if (t2 > 1.0e-4f) {
+            ++s.translated[r];
+            // Only per-object matrices tell us how far away the things being drawn are;
+            // a view matrix's translation is the distance to the world origin, which is
+            // arbitrary. Sample the ones that change every upload.
+            if (changed) {
+                const float t = std::sqrt(t2);
+                s.depth_sum += static_cast<double>(t);
+                ++s.depth_n;
+                if (s.depth_min == 0.0f || t < s.depth_min) {
+                    s.depth_min = t;
+                }
+                if (t > s.depth_max) {
+                    s.depth_max = t;
+                }
+            }
+        }
     }
 
     // --- Window bookkeeping ------------------------------------------------------------
@@ -561,9 +626,11 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             s.last_log = now;
             LOG_INFO(Render,
                      "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
-                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={}",
+                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={} | eye depth "
+                     "mean={:.0f} min={:.0f} max={:.0f} (this is the scale d should be on)",
                      s.locked_row, s.cold_windows, s.steady_rows, live, mode, probe, yaw_deg,
-                     pitch_deg, radius, transpose, invert);
+                     pitch_deg, radius, transpose, invert, s.last_depth_mean, s.last_depth_min,
+                     s.last_depth_max);
             LogCensus();
         }
     }

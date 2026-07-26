@@ -106,6 +106,15 @@ Outcomes:
 | World rotates but around a distant point, not the player | Uniforms are column-major, or the radius is far off | Toggle **Matrix layout**, then retune **Orbit radius** |
 | Right stick swings the wrong way | Engine handedness guessed wrong | Cycle **Invert** (none / yaw / pitch / both) |
 
+## The right stick is fully wired
+
+The probe is not the feature — it is a mute switch. The C-Stick (`ANDROID_STICK_C = 718`)
+is read every freecam tick and integrates `gpu_yaw` / `gpu_pitch`, clamped to ±40° / ±25°,
+which are pushed straight to the GPU camera. With the probe **on**, those accumulated
+angles are computed and logged but a constant 12° yaw is substituted before the transform
+is built, so an A/B comparison is not confounded by hand movement. Turn the probe **off**
+and the stick drives the camera with no further work.
+
 ## Reading the census
 
 `adb logcat | grep "Hoenn GPU cam"` prints two lines a second:
@@ -118,10 +127,19 @@ Hoenn GPU cam census over 512 uploads, row:hits/changes = 28:512/0 3:498/497 6:2
 `row:hits/changes` is how many uniform uploads in the window carried a rigid transform at
 that row, and how many of those differed from the previous one.
 
-- **many hits, zero changes** — a view matrix. This is what the lock should hold.
+- **many hits, zero changes, trailing `T`** — a view matrix. This is what the lock should
+  hold. The `T` means the row carries a real translation.
+- **many hits, zero changes, no `T`** — the normal matrix derived from that view matrix.
+  Identical 3x3, zero translation. Ranking prefers the `T` row over this one.
 - **many hits, almost as many changes** — a per-object world-view matrix. Correct to
-  rotate (that is why All mode exists), but a bad lock target.
-- **few hits** — a transient prop or bone matrix.
+  rotate (that is why All mode exists), but a bad lock target. Rows at a regular 3-row
+  stride are a bone palette.
+- **few hits** — a transient prop matrix.
+
+The same line reports `eye depth mean/min/max`, sampled from the per-object matrices'
+translation columns. That is the scale the orbit radius has to be on. The game's own
+camera-object distance (~2300) is on a different scale entirely and throws the scene
+several screens off centre, which is why the radius now defaults to zero.
 
 If two rows both show high hits and zero changes, ORAS is running more than one shader
 family with the view at different rows; All mode covers that and Auto does not.
