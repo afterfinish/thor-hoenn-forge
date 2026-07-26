@@ -1,4 +1,4 @@
-# Build Hoenn Forge Android APK (Azahar core + Hoenn onboarding)
+﻿# Build Hoenn Forge Android APK (Azahar core + Hoenn onboarding)
 # Prerequisites: Android SDK, NDK 30+, JDK 17+, git clone of azahar under emulator/azahar
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -58,7 +58,7 @@ foreach ($dead in @(
 # After LoadState success: reset frame limiter so turbo limit applies immediately
 $coreCpp = Join-Path $Azahar "src\core\core.cpp"
 if (Test-Path $coreCpp) {
-    $cc = Get-Content $coreCpp -Raw
+    $cc = Get-Content $coreCpp -Raw -Encoding UTF8
     if ($cc -notmatch "frame_limiter\.Reset\(\)") {
         $cc = $cc -replace `
             '(System::LoadState\(slot\);\s*\r?\n\s*LOG_INFO\(Core, "Load completed"\);\s*\r?\n\s*\} catch \(const std::exception& e\) \{[\s\S]*?return ResultStatus::ErrorSavestate;\s*\r?\n\s*\}\s*\r?\n\s*)frame_limiter\.WaitOnce\(\);', `
@@ -76,7 +76,7 @@ if (Test-Path $coreCpp) {
 # Hook LDR CRO load/unload so freecam suspends in battle and re-applies on field return
 $ldrRo = Join-Path $Azahar "src\core\hle\service\ldr_ro\ldr_ro.cpp"
 if (Test-Path $ldrRo) {
-    $ldr = Get-Content $ldrRo -Raw
+    $ldr = Get-Content $ldrRo -Raw -Encoding UTF8
     $ldrDirty = $false
     # Strip retired follower hooks
     if ($ldr -match "hoenn_follower\.h|FollowerProbe") {
@@ -109,13 +109,13 @@ if (Test-Path $ldrRo) {
 # Ensure citra_core CMakeLists lists hoenn_freecam only (no follower)
 $coreCmake = Join-Path $Azahar "src\core\CMakeLists.txt"
 if (Test-Path $coreCmake) {
-    $cm = Get-Content $coreCmake -Raw
+    $cm = Get-Content $coreCmake -Raw -Encoding UTF8
     if ($cm -match "hoenn_follower") {
         $cm = $cm -replace '(?m)^\s*hoenn_follower\.cpp\r?\n', ''
         $cm = $cm -replace '(?m)^\s*hoenn_follower\.h\r?\n', ''
         [System.IO.File]::WriteAllText($coreCmake, $cm)
         Write-Host "Stripped hoenn_follower from core CMakeLists"
-        $cm = Get-Content $coreCmake -Raw
+        $cm = Get-Content $coreCmake -Raw -Encoding UTF8
     }
     if ($cm -notmatch "hoenn_freecam\.cpp") {
         $cm = $cm -replace "(cheats/gateway_cheat\.h\r?\n)", "`$1    hoenn_freecam.cpp`n    hoenn_freecam.h`n"
@@ -126,7 +126,7 @@ if (Test-Path $coreCmake) {
 # NativeLibrary: freelook + zoom + pokedex capture only (strip retired RE/follower APIs)
 $nlPath = Join-Path $Android "app\src\main\java\org\citra\citra_emu\NativeLibrary.kt"
 if (Test-Path $nlPath) {
-    $nl = Get-Content $nlPath -Raw
+    $nl = Get-Content $nlPath -Raw -Encoding UTF8
     # Strip retired experiment / cam probe / follower declarations if present
     foreach ($dead in @(
         'setHoennFreelookExperiment', 'getHoennFreelookExperiment', 'getHoennFreelookExperimentCount',
@@ -169,7 +169,7 @@ if (Test-Path $nlPath) {
 # native.cpp freelook + zoom only (no RE experiment / follower thrash)
 $nativeCpp = Join-Path $Android "app\src\main\jni\native.cpp"
 if (Test-Path $nativeCpp) {
-    $nc = Get-Content $nativeCpp -Raw
+    $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
     # Drop retired includes / APIs that call removed FreeCam methods
     $nc = $nc -replace '#include "core/hoenn_follower\.h"\r?\n', ''
     foreach ($fn in @(
@@ -232,10 +232,10 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
         Write-Host "Patched native.cpp zoom JNI"
     }
     [System.IO.File]::WriteAllText($nativeCpp, $nc)
-    $nc = Get-Content $nativeCpp -Raw
+    $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
     # L3 turbo: reset frame limiter when temporary limit is set (post-savestate lag)
     if ($nc -notmatch "setTemporaryFrameLimit[\s\S]*frame_limiter\.Reset") {
-        $nc = Get-Content $nativeCpp -Raw
+        $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
         $nc = $nc -replace `
             '(void Java_org_citra_citra_1emu_NativeLibrary_setTemporaryFrameLimit\(JNIEnv\* env, jobject obj,\s*\r?\n\s*jdouble speed\) \{\s*\r?\n\s*Settings::temporary_frame_limit = speed;\s*\r?\n\s*Settings::is_temporary_frame_limit = true;\s*\r?\n)(\})', `
             "`$1    Core::System::GetInstance().frame_limiter.Reset();`r`n`$2"
@@ -252,7 +252,7 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennZoomAssistEnabled(
         Write-Host "native.cpp temporary frame limit Reset already present"
     }
     # Pokédex: top-screen capture via RequestScreenshot + SingleFrameLayout
-    $nc = Get-Content $nativeCpp -Raw
+    $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
     if ($nc -notmatch "hoennCaptureTopScreen") {
         if ($nc -notmatch "framebuffer_layout\.h") {
             $nc = $nc -replace '(#include "core/core\.h")', @"
@@ -431,8 +431,8 @@ if (Test-Path (Join-Path $Overlay "app-build.gradle.kts")) {
 }
 # Ensure ML Kit is present even if overlay gradle was partial
 $gradleApp = Join-Path $Android "app\build.gradle.kts"
-if ((Test-Path $gradleApp) -and ((Get-Content $gradleApp -Raw) -notmatch "text-recognition")) {
-    $g = Get-Content $gradleApp -Raw
+if ((Test-Path $gradleApp) -and ((Get-Content $gradleApp -Raw -Encoding UTF8) -notmatch "text-recognition")) {
+    $g = Get-Content $gradleApp -Raw -Encoding UTF8
     $g = $g.Replace(
         'implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")',
         "implementation(`"org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2`")`r`n    implementation(`"com.google.mlkit:text-recognition:16.0.1`")")
@@ -456,7 +456,7 @@ if ((Test-Path $strings) -and (Test-Path $snippetPath)) {
         $text = $text.Replace('>Azahar</string>', '>Hoenn Forge</string>')
     }
     $snippet = (Get-Content $snippetPath -Raw -Encoding UTF8).TrimEnd()
-    # Lines with hoenn_* were already stripped above � always re-append the full snippet
+    # Lines with hoenn_* were already stripped above - always re-append the full snippet
     # so string value updates (not just new keys) ship on every build.
     $text = $text -replace '</resources>', ($snippet + "`n`n</resources>")
     [System.IO.File]::WriteAllText($strings, $text + "`n", [System.Text.UTF8Encoding]::new($false))
