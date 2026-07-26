@@ -178,6 +178,10 @@ struct Scan {
     float cal_ref[12]{};
     float cal_ref_yaw = 0.0f;
     bool cal_ref_valid = false;
+    /// Snapshot of every triple at the moment cal_ref_yaw was taken, so the row that
+    /// actually carries the camera can be found by correspondence rather than by guessing.
+    float cal_ref_rows[kNumTriples][12]{};
+    bool cal_ref_row_ok[kNumTriples]{};
     /// Pivot in eye space and rotation axis, both learned. cal_scale is the pivot's
     /// distance at calibration time, kept so the direction can be rescaled to a map whose
     /// camera sits at a different distance from the player.
@@ -599,6 +603,20 @@ void LoadCalibration() {
              v[1], v[2], v[3], len, v[4], v[5], v[6]);
 }
 
+/// Angle, in degrees, of the rotation taking `ref`'s basis to `cur`'s. Used to ask each
+/// candidate row "did you turn by the amount the camera turned?".
+float TripleTurnDeg(const float ref[12], const float cur[12]) {
+    // trace(Rc * Rr^T); both are orthonormal, so the transpose inverts and the trace gives
+    // 1 + 2cos(angle).
+    float tr = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        tr += cur[i * 4 + 0] * ref[i * 4 + 0] + cur[i * 4 + 1] * ref[i * 4 + 1] +
+              cur[i * 4 + 2] * ref[i * 4 + 2];
+    }
+    const float c = std::clamp((tr - 1.0f) * 0.5f, -1.0f, 1.0f);
+    return std::acos(c) * 180.0f / 3.14159265f;
+}
+
 /// Recover what the engine did to the view transform between two samples of the same row,
 /// and reduce it to the two things the outdoor path needs: an axis and a point to turn
 /// about. Returns false when the samples are too close together to say anything.
@@ -962,24 +980,67 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
                      ref_row, live, g.yaw.load(std::memory_order_relaxed), s.cal_ref_valid,
                      s.cal_ref_yaw, s.cal_valid);
         }
-        if (ref_row >= 0 && live_now[ref_row]) {
-            float cur[12];
-            ReadTriple(f, ref_row, cur);
-            const float yaw_now = g.yaw.load(std::memory_order_relaxed);
-            if (!s.cal_ref_valid) {
-                std::memcpy(s.cal_ref, cur, sizeof(cur));
-                s.cal_ref_yaw = yaw_now;
-                s.cal_ref_valid = true;
-            } else if (std::fabs(yaw_now - s.cal_ref_yaw) >= kCalMinYawDeg) {
-                // The engine has swung its own camera by a usable amount. Whatever it did
-                // to the view row over that interval is, by definition, a correct camera
-                // rotation for this game — so recover its fixed point and axis. Re-baseline
-                // either way: a solve that failed for being too small will not get better
-                // by being compared against an ever older reference.
-                SolveCalibration(s.cal_ref, cur);
-                std::memcpy(s.cal_ref, cur, sizeof(cur));
-                s.cal_ref_yaw = yaw_now;
+        // Find the camera row by correspondence, not by reputation.
+        //
+        // The previous detector ranked rows by how *constant* they were and calibrated
+        // against the winner. That is backwards: a view matrix turns when the camera
+        // turns, so ranking on constancy systematically picks rows that cannot be the
+        // camera. It settled on row 76, whose rotation is byte-identical across a full
+        // swing of the interior camera - the solve kept reporting sin=0.
+        //
+        // Indoors we know the ground truth, because we are the ones turning the camera.
+        // So snapshot every triple, wait for our own yaw to move a known amount, and pick
+        // the row that turned by that amount. Nothing about the uniform block has to be
+        // assumed.
+        const float yaw_now = g.yaw.load(std::memory_order_relaxed);
+        if (!s.cal_ref_valid) {
+            for (int r = 0; r < kNumTriples; ++r) {
+                s.cal_ref_row_ok[r] = live_now[r];
+                if (live_now[r]) {
+                    ReadTriple(f, r, s.cal_ref_rows[r]);
+                }
             }
+            s.cal_ref_yaw = yaw_now;
+            s.cal_ref_valid = true;
+        } else if (std::fabs(yaw_now - s.cal_ref_yaw) >= kCalMinYawDeg) {
+            const float want = std::fabs(yaw_now - s.cal_ref_yaw);
+            int best_row = -1;
+            float best_err = 1.0e9f;
+            float best_turn = 0.0f;
+            for (int r = 0; r < kNumTriples; ++r) {
+                if (!s.cal_ref_row_ok[r] || !live_now[r]) {
+                    continue;
+                }
+                float cur[12];
+                ReadTriple(f, r, cur);
+                const float turn = TripleTurnDeg(s.cal_ref_rows[r], cur);
+                if (!std::isfinite(turn) || turn < 0.5f) {
+                    continue; // did not move: not the camera
+                }
+                const float err = std::fabs(turn - want);
+                if (err < best_err) {
+                    best_err = err;
+                    best_row = r;
+                    best_turn = turn;
+                }
+            }
+            // Accept only a real match. A row that turned by some unrelated amount is a
+            // spinning prop, not the view.
+            if (best_row >= 0 && best_err <= std::max(1.5f, want * 0.35f)) {
+                float cur[12];
+                ReadTriple(f, best_row, cur);
+                LOG_INFO(Render,
+                         "Hoenn GPU cam: camera row is {} — it turned {:.1f} deg while the "
+                         "interior camera turned {:.1f}",
+                         best_row, best_turn, want);
+                SolveCalibration(s.cal_ref_rows[best_row], cur);
+            } else {
+                LOG_INFO(Render,
+                         "Hoenn GPU cam: no row matched a {:.1f} deg camera turn "
+                         "(closest row {} turned {:.1f})",
+                         want, best_row, best_turn);
+            }
+            s.cal_ref_valid = false; // take a fresh snapshot for the next comparison
         }
         return; // never write while the memory camera owns the view
     }

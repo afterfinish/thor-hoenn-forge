@@ -615,8 +615,10 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
             gpu_yaw = std::clamp(gpu_yaw + x * sensitivity * GPU_YAW_STEP,
                                  -GpuCam::kYawClampDeg, GpuCam::kYawClampDeg);
         }
+        // Pitch, like yaw, runs the other way here than on the memory path — same reason:
+        // the engine interprets the memory value, we apply the GPU one ourselves.
         if (std::fabs(sy) >= STICK_DEADZONE) {
-            const float y = invert_y ? sy : -sy;
+            const float y = invert_y ? -sy : sy;
             gpu_pitch = std::clamp(gpu_pitch + y * sensitivity * GPU_PITCH_STEP,
                                    -GpuCam::kPitchClampDeg, GpuCam::kPitchClampDeg);
         }
