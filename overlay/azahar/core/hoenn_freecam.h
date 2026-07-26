@@ -23,10 +23,14 @@ namespace Hoenn {
 
 /**
  * v1 ship camera tools:
- * - Free look (right stick): GOLD dual eulers — works in houses / many interiors
+ * - Free look (right stick): hybrid.
+ *     * Indoors, where the memory camera has a live GOLD target, we keep writing the
+ *       dual eulers. That is a real in-engine camera, so culling stays correct.
+ *     * Everywhere else — towns, routes, caves, gyms — the game's camera controller
+ *       never reads those fields, so the stick instead drives Hoenn::GpuCam, which
+ *       rotates the view transform in the vertex-shader uniforms. Zero guest writes.
  * - Zoom assist (L/R): FOV on primary GOLD
  *
- * Town freelook is out of scope for v1 (render ignores dual eulers outdoors).
  * No experiment menu, CRO patches, shadows, or RE thrash.
  */
 class FreeCam {
@@ -68,6 +72,21 @@ private:
     float yaw = 0.f;
     bool yaw_seeded = false;
 
+    // GPU-path free look (Hoenn::GpuCam). These are *deltas* applied on top of whatever
+    // camera the game itself computed, not absolute angles like the memory path above.
+    float gpu_yaw = 0.f;
+    float gpu_pitch = 0.f;
+    bool gpu_active = false;
+
+    // Which path owns the stick. Latched, never derived per tick: live_count is
+    // recomputed on a timer and zeroed on module load and slot-pointer change, so a
+    // single transient zero used to hand the camera to the GPU path for a frame or two
+    // and back, which flickered indoors and kept the row detector re-acquiring.
+    bool gpu_path = false;
+    bool map_had_gold = false;
+    int gold_hit_cycles = 0;
+    int gold_miss_cycles = 0;
+
     bool in_battle = false;
     u64 quiet_until = 0;
     u32 last_process_id = 0;
@@ -86,6 +105,11 @@ private:
 
     void EnsureDevices();
     void ResetYaw();
+    void StopGpuCam();
+    void ResetPathOwnership();
+    /// @param memory_viable the primary camera is running the interior controller, i.e.
+    ///        the one that actually reads the eulers the memory path writes.
+    void UpdatePathOwnership(bool memory_viable);
     void SeedAnglesFromCam(Memory::MemorySystem& mem, Kernel::Process& process, u32 cam);
     bool IsGoldLive(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     void CollectLiveTargets(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot_cam);

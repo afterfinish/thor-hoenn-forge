@@ -95,7 +95,7 @@
     <string name="hoenn_menu_back">Back</string>
     <string name="hoenn_menu_slot_empty">That slot is empty</string>
     <string name="hoenn_menu_freelook">Free look</string>
-    <string name="hoenn_menu_freelook_desc">Right stick pitch and yaw in houses</string>
+    <string name="hoenn_menu_freelook_desc">Right stick pitch and yaw</string>
     <string name="hoenn_menu_zoom">Camera zoom assist</string>
     <string name="hoenn_menu_zoom_desc">Hold L out, hold R in</string>
     <string name="hoenn_menu_pokedex_short">Pokédex</string>
@@ -114,7 +114,7 @@
     <string name="hoenn_menu_zoom_failed">Could not enable camera tool</string>
     <string name="hoenn_menu_freelook_on">Free look (right stick): On</string>
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
-    <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick pitch/yaw. Works in houses and many interiors. Town outdoors not supported in v1.</string>
+    <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick pitch/yaw. Indoors moves the real camera; outdoors the view is rotated in the renderer, so looking far can reveal unrendered space.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_pokedex">Pokédex (scan top screen)</string>

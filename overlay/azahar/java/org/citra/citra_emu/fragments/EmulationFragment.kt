@@ -775,6 +775,19 @@ class EmulationFragment :
         ).show()
     }
 
+    /**
+     * Advanced outdoor free-look controls.
+     *
+     * The outdoor camera finds the view matrix by scanning the 96 vertex-shader uniform
+     * rows for an orthonormal 3x3, which is a heuristic. This dialog exposes every input
+     * to that heuristic so a wrong guess can be corrected on device instead of costing a
+     * rebuild: arm the fixed-yaw probe, force a specific row, switch the matrix layout,
+     * or retune the orbit radius.
+     */
+    /**
+     * Let the Thor's face buttons drive a plain AlertDialog: A selects, B backs out.
+     * Without this the list is touch-only, because BUTTON_A is not DPAD_CENTER.
+     */
     /** Re-apply camera tools after boot if the user left them on. */
     private fun applyHoennFreecamIfNeeded() {
         if (!::game.isInitialized || !NativeLibrary.isRunning()) return
@@ -786,6 +799,12 @@ class EmulationFragment :
         }
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         if (!org.citra.citra_emu.hoennforge.HoennFreecam.isSupportedTitle(game.titleId)) return
+        // Native GPU-cam state is per-session, so push the persisted debug knobs back in.
+        try {
+            org.citra.citra_emu.hoennforge.HoennGpuCam.restore(prefs)
+        } catch (e: Exception) {
+            android.util.Log.w("HoennForge", "restore GPU cam prefs failed", e)
+        }
         if (prefs.cameraZoomAssistEnabled) {
             org.citra.citra_emu.hoennforge.HoennFreecam.applyZoomAssist(game.titleId, true)
         }

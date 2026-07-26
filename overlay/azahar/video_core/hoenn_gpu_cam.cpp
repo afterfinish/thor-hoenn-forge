@@ -1,0 +1,1359 @@
+// Copyright Hoenn Forge — GPU-path free look for ORAS (research proposal P1)
+//
+// See hoenn_gpu_cam.h for why this lives in the graphics pipeline rather than in guest
+// memory. Summary of the maths:
+//
+//   The PICA200 has no fixed-function T&L, so the world->eye transform must be present
+//   somewhere in the 96 vertex-shader float uniform rows. A 3x4 row-major transform
+//   occupies three consecutive rows, each holding (a, b, c | t). Its 3x3 part is
+//   orthonormal exactly when the transform is rigid, which a view (or world-view)
+//   matrix is and a projection or MVP matrix is not — that is the detector.
+//
+//   Given such a matrix M we do NOT replace it. We left-multiply:
+//
+//       M' = O * M          O = T(p) * R * T(-p),  p = (0, 0, -d)
+//
+//   O acts purely in eye space, so it orbits the camera around the point d units in
+//   front of it — the player — and it is correct whether M is a pure view matrix or a
+//   per-object world-view matrix, because the view part is a left factor of both.
+//
+//   The yaw axis is world-up expressed in eye space, recovered from the reference
+//   matrix (column 1 of its 3x3). Yawing about the raw eye-space Y axis would roll the
+//   horizon, because the game camera is pitched down. Pitch is about eye-space X, which
+//   is screen-horizontal by construction.
+//
+// All of the above is confirmed on device: a fixed 12-degree yaw visibly transforms real
+// Route 104 geometry. What the first device run also proved is that *coherence* is the
+// whole remaining problem, so three rules now govern this file.
+//
+//   1. O must be identical for every draw in a frame. It is built from a cached up-axis
+//      belonging to one locked reference row, never from whichever row happens to
+//      qualify on the current upload. The first version rebuilt O per upload from a
+//      flapping row, which is why Route 104 came apart: draws in the same frame received
+//      different rotations, and the terrain was flung off screen while the props stayed.
+//   2. Nothing may be capped. The first version tracked at most 12 candidate rows while
+//      21 qualified, so a changing subset of the scene was transformed and the rest was
+//      not. All 94 triples are now swept on every upload.
+//   3. Selection is decided over a window of draws, not per upload, and the lock is
+//      sticky. A row wins because most draws in the window carried it *and* it never
+//      changed; it is only displaced after being cold for many consecutive windows.
+
+#include "video_core/hoenn_gpu_cam.h"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include "common/file_util.h"
+#include "common/logging/log.h"
+
+namespace Hoenn::GpuCam {
+namespace {
+
+constexpr int kRows = 96;
+constexpr int kLastTriple = kRows - 3; // valid triple starts are 0..93
+constexpr int kNumTriples = kLastTriple + 1;
+
+// A "window" stands in for one frame's worth of draws: SetFromRegs has no frame boundary
+// to hook, so the window closes after this many uniform uploads or after kWindowMaxTime,
+// whichever comes first. Scores are ratios, so only the order of magnitude matters.
+constexpr u32 kWindowUploads = 512;
+constexpr int kClockCheckInterval = 64;
+constexpr auto kWindowMaxTime = std::chrono::milliseconds(200);
+
+// Thresholds, as 1/256ths of the window's upload count.
+constexpr u32 kAcquireHitFrac = 128; // a candidate must appear in >= 50% of uploads
+constexpr int kColdWindowsToSwitch = 4;
+
+// The driver parks the GPU camera on map transitions, quiet windows and battles.
+// Re-acquiring from scratch on every resume is what makes the choice oscillate, so a
+// park shorter than this keeps the lock and the window statistics.
+constexpr auto kResumeGrace = std::chrono::seconds(8);
+
+/// How far the interior camera must have turned before its motion is worth decomposing.
+/// Small enough that a normal flick of the stick calibrates, large enough that the
+/// recovered axis is not dominated by rounding in the uniform floats.
+constexpr float kCalMinYawDeg = 4.0f;
+
+/// Sanity bounds on a recovered sample. A camera cut or map transition decomposes into a
+/// huge angle and an implausible pivot; honest interior samples sit at a few degrees with
+/// |p| of roughly 165 eye-space units.
+constexpr float kCalMaxAngleDeg = 30.0f;
+constexpr float kCalMaxPivot = 2000.0f;
+
+/// A yaw turns about the world vertical. Once canonicalised into the upper hemisphere, a
+/// genuine yaw sample sits close to +Y; anything flatter is a pitch or a diagonal flick
+/// and would drag the learned axis towards a roll.
+constexpr float kCalMinAxisUp = 0.80f;
+
+// Orthonormality tolerances. Generous enough for f24 -> f32 rounding.
+constexpr float kLenSqTol = 0.04f;
+constexpr float kDotTol = 0.02f;
+constexpr float kMinAbsDet = 0.90f;
+
+constexpr float kDegToRad = 0.017453292519943295f;
+
+struct Shared {
+    std::atomic<bool> active{false};
+    std::atomic<bool> probe{false};
+    std::atomic<int> row_mode{kRowModeAll};
+    std::atomic<bool> transpose{false};
+    std::atomic<float> radius{kDefaultRadius};
+    std::atomic<float> yaw{0.0f};
+    std::atomic<float> pitch{0.0f};
+    std::atomic<int> detected_row{-1};
+    std::atomic<int> qualify_count{0};
+    std::atomic<int> invert{0};
+    std::atomic<int> pivot_mode{kPivotCalibrated};
+    std::atomic<float> range{kDefaultRange};
+    std::atomic<float> dolly{0.0f};
+    std::atomic<float> pivot_y{kDefaultPivotY};
+    /// Set while the interior memory camera owns the view: sample, do not drive.
+    std::atomic<bool> observing{false};
+    std::atomic<bool> calibrated{false};
+};
+Shared g;
+
+// Scan state. Touched only from the thread that issues draws (Azahar has no separate GPU
+// thread — the rasterizer runs on the emulation thread), so no locking here.
+struct Scan {
+    // Current window.
+    u32 hits[kNumTriples]{};
+    u32 changes[kNumTriples]{};
+    u32 translated[kNumTriples]{}; // hits whose .w column was a real translation
+    float prev[kNumTriples][12]{};
+    bool prev_valid[kNumTriples]{};
+    u32 window_uploads = 0;
+    // Eye-space distance of the objects being drawn, sampled from per-object matrices
+    // (the ones that change every upload). This is the only honest source for the orbit
+    // radius: the value in the game's camera object is in some other unit entirely.
+    double depth_sum = 0.0;
+    u32 depth_n = 0;
+    float depth_min = 0.0f;
+    float depth_max = 0.0f;
+    /// Mean eye-space translation *vector* of those same matrices. The magnitude alone is
+    /// not enough to place a pivot: ORAS looks down at the world from a tilted overhead
+    /// camera, so the things being drawn sit forward *and* below the eye. A pivot at
+    /// (0, 0, +-|t|) is therefore thousands of units above the player, and orbiting about
+    /// it swings the player out of frame whichever sign is used. The direction is the
+    /// missing half of the answer.
+    double pivot_sum[3]{};
+    int clock_countdown = kClockCheckInterval;
+    std::chrono::steady_clock::time_point window_start{};
+
+    // Last closed window. Selection and the census read only this.
+    u32 last_hits[kNumTriples]{};
+    u32 last_changes[kNumTriples]{};
+    u32 last_translated[kNumTriples]{};
+    u32 last_uploads = 0;
+    u32 steady_rows = 0;
+    float last_depth_mean = 0.0f;
+    float last_depth_min = 0.0f;
+    float last_depth_max = 0.0f;
+    float last_pivot[3]{};
+    bool last_pivot_valid = false;
+
+    int locked_row = -1;
+    int cold_windows = 0;
+
+    /// Rows that "all qualifying triples" mode transforms, decided once per window from
+    /// last_hits rather than per upload.
+    ///
+    /// Deciding per upload tore the player model apart. Rows 37..70 on a 3-stride are the
+    /// character's bone palette, and each only passes the orthonormality test on roughly
+    /// 200-230 of 512 uploads — a bone in a scaled or degenerate pose fails it. So every
+    /// frame a different subset of bones was rotated and the rest stayed put, and the mesh
+    /// stretched between them. Rotating *all* the bones rigidly rotates the character,
+    /// which is correct; rotating a varying subset is what breaks it. Membership therefore
+    /// has to be a property of the row over time, not of the row this instant.
+    bool apply_set[kNumTriples]{};
+
+    // World-up in eye space, taken from the locked row. Held across uploads where that
+    // row does not qualify, so O stays identical for every draw in the frame.
+    float up[3]{0.0f, 1.0f, 0.0f};
+    bool up_valid = false;
+
+    bool was_active = false;
+    std::chrono::steady_clock::time_point parked_at{};
+    std::chrono::steady_clock::time_point last_log{};
+
+    // --- Interior calibration ---------------------------------------------------------
+    // A reference sample of the view row taken while the memory camera was driving, and
+    // the driver's yaw at that moment. Compared against a later sample to recover what the
+    // engine actually does to the view transform for a known change in angle.
+    float cal_ref[12]{};
+    float cal_ref_yaw = 0.0f;
+    bool cal_ref_valid = false;
+    /// Snapshot of every triple at the moment cal_ref_yaw was taken, so the row that
+    /// actually carries the camera can be found by correspondence rather than by guessing.
+    float cal_ref_rows[kNumTriples][12]{};
+    bool cal_ref_row_ok[kNumTriples]{};
+    /// Pivot in eye space and rotation axis, both learned. cal_scale is the pivot's
+    /// distance at calibration time, kept so the direction can be rescaled to a map whose
+    /// camera sits at a different distance from the player.
+    float cal_pivot[3]{};
+    float cal_axis[3]{0.0f, 1.0f, 0.0f};
+    float cal_scale = 0.0f;
+    /// The row correspondence proved is the camera, or -1. This outranks the statistical
+    /// detector: it was established by turning the camera and watching which row followed,
+    /// where the detector only ever infers from hit counts.
+    int cal_row = -1;
+    /// How many times each row has been confirmed by correspondence. Needed because more
+    /// than one row turns with the camera: anything rigidly carried in the camera's frame
+    /// turns by the same angle. Route 104 alternated between 90 and 3 on successive
+    /// interior visits, and pinning whichever was seen last made free look work on every
+    /// other trip. Votes accumulate; the most-confirmed row wins.
+    u32 cal_row_votes[kNumTriples]{};
+    bool cal_valid = false;
+    bool cal_load_tried = false;
+};
+Scan s;
+
+void ResetScan() {
+    std::memset(s.hits, 0, sizeof(s.hits));
+    std::memset(s.changes, 0, sizeof(s.changes));
+    std::memset(s.translated, 0, sizeof(s.translated));
+    std::memset(s.prev_valid, 0, sizeof(s.prev_valid));
+    std::memset(s.last_hits, 0, sizeof(s.last_hits));
+    std::memset(s.last_changes, 0, sizeof(s.last_changes));
+    std::memset(s.last_translated, 0, sizeof(s.last_translated));
+    std::memset(s.apply_set, 0, sizeof(s.apply_set));
+    s.depth_sum = 0.0;
+    s.depth_n = 0;
+    s.depth_min = 0.0f;
+    s.depth_max = 0.0f;
+    s.pivot_sum[0] = s.pivot_sum[1] = s.pivot_sum[2] = 0.0;
+    s.last_pivot[0] = s.last_pivot[1] = s.last_pivot[2] = 0.0f;
+    s.last_pivot_valid = false;
+    s.last_uploads = 0;
+    s.steady_rows = 0;
+    s.window_uploads = 0;
+    s.clock_countdown = kClockCheckInterval;
+    s.locked_row = -1;
+    s.cold_windows = 0;
+    s.up_valid = false;
+    s.up[0] = 0.0f;
+    s.up[1] = 1.0f;
+    s.up[2] = 0.0f;
+}
+
+bool Finite3(const Common::Vec4f& v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
+           std::isfinite(v.w);
+}
+
+/// True for identity, mirrors and 90-degree screen rotations: every element sits on
+/// {-1, 0, 1}. Those are orthonormal but are never a field camera, and they show up in
+/// 2D layout and texture-coordinate transforms. Rejecting them keeps the detector off
+/// the bottom screen and the HUD without needing the render target here.
+bool IsAxisAligned(const Common::Vec4f& a, const Common::Vec4f& b, const Common::Vec4f& c) {
+    const float e[9] = {a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z};
+    for (const float v : e) {
+        const float av = std::fabs(v);
+        if (av > 0.03f && av < 0.97f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Ordered so the cheapest test that rejects most rows runs first: this now runs for all
+/// 94 triples on every uniform upload, on data that is already in L1.
+bool Qualifies(const std::array<Common::Vec4f, kRows>& f, int r) {
+    const Common::Vec4f& a = f[static_cast<size_t>(r)];
+    const float la = a.x * a.x + a.y * a.y + a.z * a.z;
+    if (!(std::fabs(la - 1.0f) <= kLenSqTol)) {
+        return false; // inverted comparison, so NaN falls out here too
+    }
+    const Common::Vec4f& b = f[static_cast<size_t>(r) + 1];
+    const float lb = b.x * b.x + b.y * b.y + b.z * b.z;
+    if (!(std::fabs(lb - 1.0f) <= kLenSqTol)) {
+        return false;
+    }
+    const Common::Vec4f& c = f[static_cast<size_t>(r) + 2];
+    const float lc = c.x * c.x + c.y * c.y + c.z * c.z;
+    if (!(std::fabs(lc - 1.0f) <= kLenSqTol)) {
+        return false;
+    }
+    if (!Finite3(a) || !Finite3(b) || !Finite3(c)) {
+        return false;
+    }
+
+    if (std::fabs(a.x * b.x + a.y * b.y + a.z * b.z) > kDotTol) {
+        return false;
+    }
+    if (std::fabs(a.x * c.x + a.y * c.y + a.z * c.z) > kDotTol) {
+        return false;
+    }
+    if (std::fabs(b.x * c.x + b.y * c.y + b.z * c.z) > kDotTol) {
+        return false;
+    }
+
+    // |det| == 1 for any orthonormal 3x3; accept either handedness.
+    const float det = a.x * (b.y * c.z - b.z * c.y) - a.y * (b.x * c.z - b.z * c.x) +
+                      a.z * (b.x * c.y - b.y * c.x);
+    if (std::fabs(det) < kMinAbsDet) {
+        return false;
+    }
+
+    return !IsAxisAligned(a, b, c);
+}
+
+struct Mat3 {
+    float m[3][3];
+};
+
+constexpr Mat3 kIdentity3{{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+
+Mat3 AxisAngle(float ax, float ay, float az, float rad) {
+    const float len = std::sqrt(ax * ax + ay * ay + az * az);
+    if (!(len > 1.0e-5f) || !std::isfinite(len)) {
+        return kIdentity3;
+    }
+    ax /= len;
+    ay /= len;
+    az /= len;
+    const float c = std::cos(rad);
+    const float sn = std::sin(rad);
+    const float t = 1.0f - c;
+    Mat3 r{};
+    r.m[0][0] = t * ax * ax + c;
+    r.m[0][1] = t * ax * ay - sn * az;
+    r.m[0][2] = t * ax * az + sn * ay;
+    r.m[1][0] = t * ax * ay + sn * az;
+    r.m[1][1] = t * ay * ay + c;
+    r.m[1][2] = t * ay * az - sn * ax;
+    r.m[2][0] = t * ax * az - sn * ay;
+    r.m[2][1] = t * ay * az + sn * ax;
+    r.m[2][2] = t * az * az + c;
+    return r;
+}
+
+Mat3 Mul(const Mat3& a, const Mat3& b) {
+    Mat3 o{};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            o.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+        }
+    }
+    return o;
+}
+
+/// f[r..r+2] hold the rows of a 3x4 world->eye transform, translation in .w.
+/// M' = O * M, so new_row_i = sum_k R[i][k] * old_row_k, then .w += trans[i].
+void ApplyRows(std::array<Common::Vec4f, kRows>& f, int r, const Mat3& rot, const float tr[3]) {
+    const Common::Vec4f r0 = f[static_cast<size_t>(r)];
+    const Common::Vec4f r1 = f[static_cast<size_t>(r) + 1];
+    const Common::Vec4f r2 = f[static_cast<size_t>(r) + 2];
+    for (int i = 0; i < 3; ++i) {
+        Common::Vec4f out;
+        out.x = rot.m[i][0] * r0.x + rot.m[i][1] * r1.x + rot.m[i][2] * r2.x;
+        out.y = rot.m[i][0] * r0.y + rot.m[i][1] * r1.y + rot.m[i][2] * r2.y;
+        out.z = rot.m[i][0] * r0.z + rot.m[i][1] * r1.z + rot.m[i][2] * r2.z;
+        out.w = rot.m[i][0] * r0.w + rot.m[i][1] * r1.w + rot.m[i][2] * r2.w + tr[i];
+        f[static_cast<size_t>(r + i)] = out;
+    }
+}
+
+/// Diagnostic layout: f[r..r+2] hold the columns of the 3x3, so M' = O * M is just
+/// v_i' = R * v_i. Where the translation lives in this layout is shader-specific, so we
+/// leave .w alone — the result rotates the world about its origin instead of orbiting
+/// the player, which is still plainly visible and tells us the layout guess was wrong.
+void ApplyColumns(std::array<Common::Vec4f, kRows>& f, int r, const Mat3& rot) {
+    for (int i = 0; i < 3; ++i) {
+        Common::Vec4f v = f[static_cast<size_t>(r + i)];
+        const float x = v.x;
+        const float y = v.y;
+        const float z = v.z;
+        v.x = rot.m[0][0] * x + rot.m[0][1] * y + rot.m[0][2] * z;
+        v.y = rot.m[1][0] * x + rot.m[1][1] * y + rot.m[1][2] * z;
+        v.z = rot.m[2][0] * x + rot.m[2][1] * y + rot.m[2][2] * z;
+        f[static_cast<size_t>(r + i)] = v;
+    }
+}
+
+void ReadTriple(const std::array<Common::Vec4f, kRows>& f, int r, float out[12]) {
+    for (int i = 0; i < 3; ++i) {
+        const Common::Vec4f& v = f[static_cast<size_t>(r + i)];
+        out[i * 4 + 0] = v.x;
+        out[i * 4 + 1] = v.y;
+        out[i * 4 + 2] = v.z;
+        out[i * 4 + 3] = v.w;
+    }
+}
+
+bool SameTriple(const float a[12], const float b[12]) {
+    for (int i = 0; i < 12; ++i) {
+        if (std::fabs(a[i] - b[i]) > 1.0e-6f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Close the window: promote the accumulators, then re-run selection.
+///
+/// The view matrix is the triple that (a) most draws in the window carried and (b) never
+/// changed while they did. Ranking on "constant hits" separates it from a per-object
+/// world-view matrix, which scores just as many hits but changes on nearly every one,
+/// and from a transient bone or prop matrix, which fails the hit threshold outright.
+void CloseWindow(std::chrono::steady_clock::time_point now) {
+    std::memcpy(s.last_hits, s.hits, sizeof(s.hits));
+    std::memcpy(s.last_changes, s.changes, sizeof(s.changes));
+    std::memcpy(s.last_translated, s.translated, sizeof(s.translated));
+    s.last_uploads = s.window_uploads;
+    s.last_depth_mean =
+        s.depth_n ? static_cast<float>(s.depth_sum / static_cast<double>(s.depth_n)) : 0.0f;
+    s.last_depth_min = s.depth_min;
+    s.last_depth_max = s.depth_max;
+    if (s.depth_n) {
+        const double n = static_cast<double>(s.depth_n);
+        s.last_pivot[0] = static_cast<float>(s.pivot_sum[0] / n);
+        s.last_pivot[1] = static_cast<float>(s.pivot_sum[1] / n);
+        s.last_pivot[2] = static_cast<float>(s.pivot_sum[2] / n);
+        s.last_pivot_valid = true;
+    }
+    s.pivot_sum[0] = s.pivot_sum[1] = s.pivot_sum[2] = 0.0;
+    std::memset(s.hits, 0, sizeof(s.hits));
+    std::memset(s.changes, 0, sizeof(s.changes));
+    std::memset(s.translated, 0, sizeof(s.translated));
+    s.depth_sum = 0.0;
+    s.depth_n = 0;
+    s.depth_min = 0.0f;
+    s.depth_max = 0.0f;
+    s.window_uploads = 0;
+    s.window_start = now;
+
+    if (s.last_uploads == 0) {
+        return;
+    }
+
+    const u32 acquire_floor = (s.last_uploads * kAcquireHitFrac) / 256;
+
+    // Membership for "all qualifying triples", fixed for the coming window. The bar is
+    // deliberately low: a bone that qualified on 40% of uploads is a real transform that
+    // happens to fail the rigidity test in some poses, and it must be rotated together
+    // with its siblings or the mesh tears. A genuine one-off — a prop drawn for a single
+    // frame — sits far below this and stays out.
+    const u32 member_floor = std::max<u32>(1, s.last_uploads / 8);
+    for (int r = 0; r < kNumTriples; ++r) {
+        s.apply_set[r] = s.last_hits[r] >= member_floor;
+    }
+
+    // Rank: constant across the window first, then "carries a real translation", then
+    // raw hit count. The second key matters because a view matrix and the normal matrix
+    // derived from it are both perfectly constant and both orthonormal — they differ
+    // only in that the normal matrix has a zero .w column. Route 104 showed exactly that
+    // pair (rows 75 and 90, both 512 hits and 0 changes).
+    int best = -1;
+    u32 best_const = 0;
+    int best_translated = 0;
+    u32 best_hits = 0;
+    u32 steady = 0;
+    for (int r = 0; r < kNumTriples; ++r) {
+        const u32 h = s.last_hits[r];
+        if (h == 0 || h < acquire_floor) {
+            continue;
+        }
+        ++steady;
+        const u32 constant = h - std::min(h, s.last_changes[r]);
+        const int translated = (s.last_translated[r] * 2 >= h) ? 1 : 0;
+        const bool better =
+            best < 0 || constant > best_const ||
+            (constant == best_const &&
+             (translated > best_translated || (translated == best_translated && h > best_hits)));
+        if (better) {
+            best = r;
+            best_const = constant;
+            best_translated = translated;
+            best_hits = h;
+        }
+    }
+    s.steady_rows = steady;
+
+    // Correspondence outranks statistics. Row 90 was identified as the camera by turning
+    // the interior camera and seeing which row turned with it; the detector then dropped it
+    // after a Pokemon Center transition briefly pushed its hit count under the floor, and
+    // wandered to 28 and then 76. Row 76 provably does not turn with the camera, so free
+    // look silently stopped working and the NPCs drawn through that row were stretched into
+    // strings. A heuristic must not be allowed to overrule a measurement.
+    if (s.cal_row >= 0 && s.cal_row <= kLastTriple && s.last_hits[s.cal_row] > 0) {
+        if (s.locked_row != s.cal_row) {
+            LOG_INFO(Render, "Hoenn GPU cam: pinning lock to the identified camera row {}",
+                     s.cal_row);
+        }
+        s.locked_row = s.cal_row;
+        s.cold_windows = 0;
+        return;
+    }
+
+    if (s.locked_row < 0) {
+        s.locked_row = best;
+        s.cold_windows = 0;
+        if (best >= 0) {
+            LOG_INFO(Render, "Hoenn GPU cam: locked row {} ({} hits, {} constant, of {} uploads)",
+                     best, best_hits, best_const, s.last_uploads);
+        }
+        return;
+    }
+
+    // Sticky, but not stubborn. The first attempt only dropped a lock once the row was
+    // nearly absent, which let a stale row acquired in another scene survive on a
+    // trickle of hits while three far better rows were ignored — Route 104 sat locked on
+    // row 28 while rows 75 and 90 were carried by every single draw. The locked row must
+    // now stay a legitimate acquisition candidate, and it gets several windows to.
+    //
+    // Staying above the floor is still not enough on its own. Route 104 then sat locked on
+    // row 61 — a bone, 323 hits with 30 changes — while row 90 was carried by all 512
+    // uploads and never changed once. 61 cleared the floor, so it never went cold and the
+    // view matrix could never take over: the camera rotated a single bone of each
+    // character into a spike and left the world alone. A lock must also yield to a row
+    // that is decisively better, not merely survive.
+    const u32 locked_hits = s.last_hits[s.locked_row];
+    const u32 locked_const =
+        locked_hits - std::min(locked_hits, s.last_changes[s.locked_row]);
+    const bool outclassed =
+        best >= 0 && best != s.locked_row && best_const > locked_const * 3 / 2;
+    if (locked_hits < acquire_floor || outclassed) {
+        ++s.cold_windows;
+    } else {
+        s.cold_windows = 0;
+    }
+    if (s.cold_windows >= kColdWindowsToSwitch && best >= 0 && best != s.locked_row) {
+        LOG_INFO(Render,
+                 "Hoenn GPU cam: lock {} fell out of the steady set for {} windows, "
+                 "switching to {} ({} hits, {} constant, translated={})",
+                 s.locked_row, s.cold_windows, best, best_hits, best_const, best_translated);
+        s.locked_row = best;
+        s.cold_windows = 0;
+        s.up_valid = false;
+    }
+}
+
+/// One line naming every row that a meaningful share of draws carried in the last
+/// window, most-used first, as `row:hits/changes` with a trailing `T` when the row
+/// carries a real translation. The view matrix is the row with many hits, zero changes
+/// and a T; the same row without a T is the normal matrix derived from it. A per-object
+/// world-view matrix has many hits and almost as many changes. This is meant to be read straight off logcat instead of sweeping rows
+/// by hand. Destroys last_hits, which is rebuilt every window anyway.
+void LogCensus() {
+    char buf[512];
+    int n = 0;
+    int listed = 0;
+    const u32 floor = (s.last_uploads * 24) / 256; // carried by >= ~9% of draws
+
+    while (listed < 16 && n < static_cast<int>(sizeof(buf)) - 32) {
+        int pick = -1;
+        u32 pick_hits = 0;
+        for (int r = 0; r < kNumTriples; ++r) {
+            const u32 h = s.last_hits[r];
+            if (h == 0 || h <= floor) {
+                continue;
+            }
+            if (pick < 0 || h > pick_hits) {
+                pick = r;
+                pick_hits = h;
+            }
+        }
+        if (pick < 0) {
+            break;
+        }
+        n += std::snprintf(buf + n, sizeof(buf) - static_cast<size_t>(n), "%s%d:%u/%u%s",
+                           listed ? " " : "", pick, pick_hits,
+                           std::min(pick_hits, s.last_changes[pick]),
+                           (s.last_translated[pick] * 2 >= pick_hits) ? "T" : "");
+        s.last_hits[pick] = 0; // consumed
+        ++listed;
+    }
+    if (listed == 0) {
+        std::snprintf(buf, sizeof(buf), "(none)");
+    }
+    LOG_INFO(Render, "Hoenn GPU cam census over {} uploads, row:hits/changes = {}",
+             s.last_uploads, buf);
+}
+
+} // namespace
+
+void SetDolly(float units) {
+    // Bound to the orbit distance so the knob stays in the same world as the camera; with
+    // no calibration there is no scale to reason about, so nothing moves.
+    const float pref = g.radius.load(std::memory_order_relaxed);
+    const float d = pref > 0.0f ? pref : kDefaultOrbitDistance;
+    const float lim = d * kDollyRangeMul;
+    g.dolly.store(std::clamp(units, -lim, lim), std::memory_order_relaxed);
+}
+
+float GetDolly() {
+    return g.dolly.load(std::memory_order_relaxed);
+}
+
+void RotateStick(float& x, float& y) {
+    if (!g.active.load(std::memory_order_relaxed)) {
+        return; // interiors: the engine's own camera moved, so its mapping is already right
+    }
+    const float yaw = g.yaw.load(std::memory_order_relaxed);
+    if (std::fabs(yaw) < 0.5f) {
+        return;
+    }
+    // The view is rotated by -yaw about the vertical, so the camera reads as turned by
+    // +yaw; the stick has to travel the same way to keep "push up" meaning "away from the
+    // viewer". Bit 0 of the invert mask flips this along with the look direction, since a
+    // player who wants one reversed almost always wants the other to match.
+    const float sign = (g.invert.load(std::memory_order_relaxed) & kInvertYaw) ? -1.0f : 1.0f;
+    const float a = sign * yaw * kDegToRad;
+    const float c = std::cos(a);
+    const float sn = std::sin(a);
+    const float nx = x * c - y * sn;
+    const float ny = x * sn + y * c;
+    x = nx;
+    y = ny;
+}
+
+float WrapDeg(float deg) {
+    if (!std::isfinite(deg)) {
+        return 0.0f;
+    }
+    while (deg > 180.0f) {
+        deg -= 360.0f;
+    }
+    while (deg < -180.0f) {
+        deg += 360.0f;
+    }
+    return deg;
+}
+
+float PitchClampDeg() {
+    return std::min(kPitchClampCeilDeg,
+                    kPitchClampBaseDeg * g.range.load(std::memory_order_relaxed));
+}
+
+void SetActive(bool active, float yaw_deg, float pitch_deg) {
+    // Yaw wraps rather than clamping: a full turn about the vertical is well defined and
+    // is what "look around" means. Pitch still clamps, because past vertical the up vector
+    // and the view direction align and the yaw axis stops existing.
+    const float pc = PitchClampDeg();
+    g.yaw.store(WrapDeg(yaw_deg), std::memory_order_relaxed);
+    g.pitch.store(std::clamp(pitch_deg, -pc, pc), std::memory_order_relaxed);
+    g.observing.store(false, std::memory_order_relaxed);
+    g.active.store(active, std::memory_order_relaxed);
+}
+
+void Disable() {
+    g.yaw.store(0.0f, std::memory_order_relaxed);
+    g.pitch.store(0.0f, std::memory_order_relaxed);
+    g.active.store(false, std::memory_order_relaxed);
+    g.observing.store(false, std::memory_order_relaxed);
+    g.dolly.store(0.0f, std::memory_order_relaxed);
+}
+
+bool IsProbeEnabled() {
+    return g.probe.load(std::memory_order_relaxed);
+}
+
+/// The calibration is worth more than a session. It costs the user a trip indoors and a
+/// swing of the stick, and it only lived in memory, so a relaunch silently threw it away
+/// and the camera came back wrong for reasons that had nothing to do with the transform.
+/// Seven floats next to the config is a cheap way to make one indoor visit permanent.
+std::string CalPath() {
+    return FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir) + "hoenn_gpucam_cal.bin";
+}
+
+void SaveCalibration() {
+    const float v[8] = {1.0f,          s.cal_pivot[0], s.cal_pivot[1],
+                        s.cal_pivot[2], s.cal_axis[0],  s.cal_axis[1],
+                        s.cal_axis[2],  static_cast<float>(s.cal_row)};
+    FileUtil::IOFile file(CalPath(), "wb");
+    if (file.IsOpen()) {
+        file.WriteBytes(v, sizeof(v));
+    }
+}
+
+void LoadCalibration() {
+    float v[8]{};
+    FileUtil::IOFile file(CalPath(), "rb");
+    if (!file.IsOpen() || file.ReadBytes(v, sizeof(v)) != sizeof(v) || v[0] != 1.0f) {
+        return;
+    }
+    const float len = std::sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3]);
+    if (!std::isfinite(len) || len < 1.0f || len > kCalMaxPivot) {
+        return;
+    }
+    // Hold a restored axis to the same standard as a fresh one. Files written before the
+    // sign of the axis was canonicalised contain averages of +Y and -Y samples that
+    // cancelled into something close to a roll; loading one would silently reinstate the
+    // diagonal drift that the canonicalisation exists to prevent.
+    if (!(v[5] >= kCalMinAxisUp)) {
+        LOG_INFO(Render,
+                 "Hoenn GPU cam: discarding stored calibration, axis=({:.2f}, {:.2f}, {:.2f}) "
+                 "is not a yaw — recalibrate indoors",
+                 v[4], v[5], v[6]);
+        return;
+    }
+    s.cal_pivot[0] = v[1];
+    s.cal_pivot[1] = v[2];
+    s.cal_pivot[2] = v[3];
+    s.cal_axis[0] = v[4];
+    s.cal_axis[1] = v[5];
+    s.cal_axis[2] = v[6];
+    s.cal_scale = len;
+    const int row = static_cast<int>(v[7]);
+    s.cal_row = (row >= 0 && row <= kLastTriple) ? row : -1;
+    if (s.cal_row >= 0) {
+        s.cal_row_votes[s.cal_row] = 1; // a stored row is evidence, not gospel
+    }
+    s.cal_valid = true;
+    g.calibrated.store(true, std::memory_order_relaxed);
+    LOG_INFO(Render,
+             "Hoenn GPU cam: restored calibration pivot=({:.0f}, {:.0f}, {:.0f}) |p|={:.0f} "
+             "axis=({:.2f}, {:.2f}, {:.2f})",
+             v[1], v[2], v[3], len, v[4], v[5], v[6]);
+}
+
+/// Angle, in degrees, of the rotation taking `ref`'s basis to `cur`'s. Used to ask each
+/// candidate row "did you turn by the amount the camera turned?".
+float TripleTurnDeg(const float ref[12], const float cur[12]) {
+    // trace(Rc * Rr^T); both are orthonormal, so the transpose inverts and the trace gives
+    // 1 + 2cos(angle).
+    float tr = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        tr += cur[i * 4 + 0] * ref[i * 4 + 0] + cur[i * 4 + 1] * ref[i * 4 + 1] +
+              cur[i * 4 + 2] * ref[i * 4 + 2];
+    }
+    const float c = std::clamp((tr - 1.0f) * 0.5f, -1.0f, 1.0f);
+    return std::acos(c) * 180.0f / 3.14159265f;
+}
+
+/// Recover what the engine did to the view transform between two samples of the same row,
+/// and reduce it to the two things the outdoor path needs: an axis and a point to turn
+/// about. Returns false when the samples are too close together to say anything.
+///
+/// D = cur * ref^-1 for rigid [R|t] matrices. Its fixed point p satisfies (I - R)p = t.
+/// (I - R) is singular along the rotation axis — turning about the axis leaves it alone —
+/// so the system is solved in the plane perpendicular to the axis, where it is well posed.
+bool SolveCalibration(const float ref[12], const float cur[12]) {
+    // Rotation between the two: Rd = Rc * Rr^T (Rr orthonormal, so transpose inverts).
+    float rd[3][3];
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            rd[i][j] = cur[i * 4 + 0] * ref[j * 4 + 0] + cur[i * 4 + 1] * ref[j * 4 + 1] +
+                       cur[i * 4 + 2] * ref[j * 4 + 2];
+        }
+    }
+    // td = tc - Rd * tr
+    const float tr[3] = {ref[3], ref[7], ref[11]};
+    const float td[3] = {
+        cur[3] - (rd[0][0] * tr[0] + rd[0][1] * tr[1] + rd[0][2] * tr[2]),
+        cur[7] - (rd[1][0] * tr[0] + rd[1][1] * tr[1] + rd[1][2] * tr[2]),
+        cur[11] - (rd[2][0] * tr[0] + rd[2][1] * tr[1] + rd[2][2] * tr[2]),
+    };
+
+    // Axis and angle from the rotation. The axis is the antisymmetric part; its length is
+    // sin(angle), which doubles as the "did anything actually turn" test.
+    float axis[3] = {rd[2][1] - rd[1][2], rd[0][2] - rd[2][0], rd[1][0] - rd[0][1]};
+    const float sin2 = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (sin2 < 1.0e-3f) {
+        LOG_INFO(Render, "Hoenn GPU cam calibration rejected: no rotation between samples "
+                         "(sin={:.5f}) — the view row did not turn",
+                 sin2);
+        return false;
+    }
+    axis[0] /= sin2;
+    axis[1] /= sin2;
+    axis[2] /= sin2;
+
+    // Solve (I - R)p = t restricted to the plane normal to the axis. Project t into that
+    // plane, then apply the closed form for a planar rotation by the recovered angle:
+    // p_perp = ((I - R)^T t) / |I - R|^2 is ill-conditioned near zero angle, so use the
+    // standard identity p = (t_perp + axis x t_perp * cot(angle/2) ) / 2 instead.
+    const float cos_a = std::clamp((rd[0][0] + rd[1][1] + rd[2][2] - 1.0f) * 0.5f, -1.0f, 1.0f);
+    const float angle = std::atan2(sin2 * 0.5f, cos_a);
+    const float half = angle * 0.5f;
+    if (std::fabs(std::sin(half)) < 1.0e-4f) {
+        return false;
+    }
+    const float cot_half = std::cos(half) / std::sin(half);
+
+    const float t_dot_a = td[0] * axis[0] + td[1] * axis[1] + td[2] * axis[2];
+    const float tp[3] = {td[0] - t_dot_a * axis[0], td[1] - t_dot_a * axis[1],
+                         td[2] - t_dot_a * axis[2]};
+    const float cross[3] = {axis[1] * tp[2] - axis[2] * tp[1], axis[2] * tp[0] - axis[0] * tp[2],
+                            axis[0] * tp[1] - axis[1] * tp[0]};
+    const float p[3] = {0.5f * (tp[0] + cot_half * cross[0]), 0.5f * (tp[1] + cot_half * cross[1]),
+                        0.5f * (tp[2] + cot_half * cross[2])};
+    if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) {
+        return false;
+    }
+
+    // Reject nonsense before it poisons the average. A camera cut, a map transition or a
+    // scripted pan shows up as a huge "rotation" between two consecutive samples: one
+    // observed sample read 101 degrees with |p|=315 while the honest ones sat at 4-8
+    // degrees and |p|~165. Neither bound is tuned finely; they only have to separate a
+    // stick nudge from a teleport.
+    const float p_len = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+    const float angle_deg = std::fabs(angle) * 180.0f / 3.14159265f;
+    if (angle_deg > kCalMaxAngleDeg || p_len > kCalMaxPivot || p_len < 1.0f) {
+        // Rejections were silent, which meant an indoor visit that taught it nothing was
+        // indistinguishable from one that never happened. Say which bound failed: too
+        // large an angle is a camera cut, a tiny |p| means the row rotated about the eye
+        // and carries no orbit centre to learn (a normal matrix does exactly that).
+        LOG_INFO(Render,
+                 "Hoenn GPU cam calibration rejected: angle={:.1f} deg |p|={:.0f} "
+                 "pivot=({:.0f}, {:.0f}, {:.0f}) [limits: angle<={:.0f}, 1<=|p|<={:.0f}]",
+                 angle_deg, p_len, p[0], p[1], p[2], kCalMaxAngleDeg, kCalMaxPivot);
+        return false;
+    }
+
+    // Canonicalise the axis before it is averaged with anything.
+    //
+    // The axis recovered from a rotation flips sign with the direction of travel: turning
+    // the camera left yields -Y and turning it right yields +Y, both describing the same
+    // physical vertical. Averaging those cancels them out. Observed samples ran +0.997,
+    // +0.945, -0.663, -0.910 in Y and smoothed to (0.23, -0.07, -0.97) — very nearly pure
+    // -Z, which is a *roll* axis. Rolling where a yaw was asked for is what read on device
+    // as the camera moving diagonally.
+    //
+    // A yaw is a turn about the world vertical, so pin every sample to the same
+    // hemisphere. Samples that are not predominantly vertical are not yaws at all — a
+    // pitch, or a diagonal flick that mixed the two — and teach the yaw axis nothing.
+    if (axis[1] < 0.0f) {
+        axis[0] = -axis[0];
+        axis[1] = -axis[1];
+        axis[2] = -axis[2];
+    }
+    if (axis[1] < kCalMinAxisUp) {
+        LOG_INFO(Render,
+                 "Hoenn GPU cam calibration rejected: axis=({:.2f}, {:.2f}, {:.2f}) is not a "
+                 "yaw — move the stick left and right, not diagonally",
+                 axis[0], axis[1], axis[2]);
+        return false;
+    }
+
+    // Smooth across samples: each one is a two-frame difference of floats read out of a
+    // uniform block, so individually they are noisy — the axis wandered between -0.11 and
+    // -0.37 in X across five good samples — while their mean is stable.
+    if (s.cal_valid) {
+        constexpr float a = 0.25f;
+        for (int i = 0; i < 3; ++i) {
+            s.cal_axis[i] = s.cal_axis[i] * (1.0f - a) + axis[i] * a;
+            s.cal_pivot[i] = s.cal_pivot[i] * (1.0f - a) + p[i] * a;
+        }
+        const float n = std::sqrt(s.cal_axis[0] * s.cal_axis[0] + s.cal_axis[1] * s.cal_axis[1] +
+                                  s.cal_axis[2] * s.cal_axis[2]);
+        if (n > 1.0e-3f) {
+            s.cal_axis[0] /= n;
+            s.cal_axis[1] /= n;
+            s.cal_axis[2] /= n;
+        }
+    } else {
+        for (int i = 0; i < 3; ++i) {
+            s.cal_axis[i] = axis[i];
+            s.cal_pivot[i] = p[i];
+        }
+    }
+    s.cal_scale = std::sqrt(s.cal_pivot[0] * s.cal_pivot[0] + s.cal_pivot[1] * s.cal_pivot[1] +
+                            s.cal_pivot[2] * s.cal_pivot[2]);
+    s.cal_valid = true;
+    g.calibrated.store(true, std::memory_order_relaxed);
+    SaveCalibration();
+    LOG_INFO(Render,
+             "Hoenn GPU cam CALIBRATED from interior camera: pivot=({:.0f}, {:.0f}, {:.0f}) "
+             "|p|={:.0f} axis=({:.3f}, {:.3f}, {:.3f}) angle={:.2f} deg",
+             p[0], p[1], p[2], s.cal_scale, axis[0], axis[1], axis[2], angle * 180.0f / 3.14159265f);
+    return true;
+}
+
+void Observe(float yaw_deg, float /*pitch_deg*/) {
+    g.observing.store(true, std::memory_order_relaxed);
+    g.yaw.store(yaw_deg, std::memory_order_relaxed);
+}
+
+bool IsCalibrated() {
+    return g.calibrated.load(std::memory_order_relaxed);
+}
+
+void SetParam(int param, float value) {
+    switch (param) {
+    case ParamProbe:
+        g.probe.store(value != 0.0f, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: probe={}", value != 0.0f);
+        break;
+    case ParamRowMode: {
+        int mode = static_cast<int>(value);
+        if (mode < kRowModeAll) {
+            mode = kRowModeAll;
+        }
+        if (mode > kLastTriple) {
+            mode = kLastTriple;
+        }
+        g.row_mode.store(mode, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: row mode={}", mode);
+        break;
+    }
+    case ParamTranspose:
+        g.transpose.store(value != 0.0f, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: transpose={}", value != 0.0f);
+        break;
+    case ParamRadius:
+        // Zero is meaningful and safe: it swivels about the eye instead of orbiting the
+        // player, so no amount of picking the wrong matrix can fling geometry away.
+        g.radius.store(std::clamp(value, 0.0f, 100000.0f), std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: radius={}", value);
+        break;
+    case ParamInvert: {
+        const int bits = static_cast<int>(value) & (kInvertYaw | kInvertPitch);
+        g.invert.store(bits, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: invert={}", bits);
+        break;
+    }
+    case ParamPivotY:
+        g.pivot_y.store(std::clamp(value, -2000.0f, 2000.0f), std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: pivot height={:.0f}", value);
+        break;
+    case ParamRange:
+        g.range.store(std::clamp(value, 0.25f, 4.5f), std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: range={:.2f}x (yaw 360, pitch +-{:.0f})", value,
+                 PitchClampDeg());
+        break;
+    case ParamPivotMode: {
+        int mode = static_cast<int>(value);
+        if (mode < 0 || mode >= kPivotModeCount) {
+            mode = kPivotMeasured;
+        }
+        g.pivot_mode.store(mode, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: pivot mode={}", mode);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+float GetParam(int param) {
+    switch (param) {
+    case ParamProbe:
+        return g.probe.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+    case ParamRowMode:
+        return static_cast<float>(g.row_mode.load(std::memory_order_relaxed));
+    case ParamTranspose:
+        return g.transpose.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+    case ParamRadius:
+        return g.radius.load(std::memory_order_relaxed);
+    case ParamDetectedRow:
+        return static_cast<float>(g.detected_row.load(std::memory_order_relaxed));
+    case ParamQualifyCount:
+        return static_cast<float>(g.qualify_count.load(std::memory_order_relaxed));
+    case ParamActive:
+        return g.active.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+    case ParamYaw:
+        return g.yaw.load(std::memory_order_relaxed);
+    case ParamPitch:
+        return g.pitch.load(std::memory_order_relaxed);
+    case ParamPivotMode:
+        return static_cast<float>(g.pivot_mode.load(std::memory_order_relaxed));
+    case ParamRange:
+        return g.range.load(std::memory_order_relaxed);
+    case ParamPivotY:
+        return g.pivot_y.load(std::memory_order_relaxed);
+    case ParamInvert:
+        return static_cast<float>(g.invert.load(std::memory_order_relaxed));
+    default:
+        return 0.0f;
+    }
+}
+
+void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
+    // Pull a stored calibration in on first use. Doing it here rather than at static init
+    // keeps it off any path that runs before the user directory exists.
+    if (!s.cal_load_tried) {
+        s.cal_load_tried = true;
+        if (!s.cal_valid) {
+            LoadCalibration();
+        }
+    }
+
+    const bool driving = g.active.load(std::memory_order_relaxed);
+    // Indoors the memory camera owns the view and we only watch, to learn the pivot and
+    // axis the engine itself uses. The detector runs either way, so by the time the GPU
+    // path takes over outdoors the row is already locked and calibrated.
+    const bool watching = !driving && g.observing.load(std::memory_order_relaxed);
+    if (!driving && !watching) {
+        if (s.was_active) {
+            s.was_active = false;
+            s.parked_at = std::chrono::steady_clock::now();
+            g.qualify_count.store(0, std::memory_order_relaxed);
+        }
+        return;
+    }
+    if (!s.was_active) {
+        s.was_active = true;
+        // Keep the lock across a brief park. The driver disables us on every map
+        // transition, quiet window and battle, and re-sweeping on each resume is exactly
+        // what made the choice oscillate between rows 3 and 28 on Route 104.
+        const auto now = std::chrono::steady_clock::now();
+        if (s.locked_row < 0 || now - s.parked_at > kResumeGrace) {
+            ResetScan();
+        }
+        s.window_start = now;
+        s.clock_countdown = kClockCheckInterval;
+    }
+
+    const int invert = g.invert.load(std::memory_order_relaxed);
+    const float yaw_sign = (invert & kInvertYaw) ? -1.0f : 1.0f;
+    const float pitch_sign = (invert & kInvertPitch) ? -1.0f : 1.0f;
+
+    const bool probe = g.probe.load(std::memory_order_relaxed);
+    const float yaw_deg =
+        yaw_sign * (probe ? kProbeYawDeg : g.yaw.load(std::memory_order_relaxed));
+    const float pitch_deg = probe ? 0.0f : pitch_sign * g.pitch.load(std::memory_order_relaxed);
+    const int mode = g.row_mode.load(std::memory_order_relaxed);
+    const int pivot_mode = g.pivot_mode.load(std::memory_order_relaxed);
+    const bool transpose = g.transpose.load(std::memory_order_relaxed);
+
+    // Radius <= 0 means "measure it". The camera object's own distance field (+0xA8) is on
+    // a different scale entirely from the vertex data — using its ~2300 threw Route 104
+    // about three screens off centre. The eye-space depth of the per-object matrices is the
+    // honest source, and it is already being sampled every window: Petalburg Woods reports
+    // mean 4943 (min 4926, max 5165). Reading it live also tracks maps with a different
+    // camera distance instead of baking in one map's number as the next wrong constant.
+    const float radius_pref = g.radius.load(std::memory_order_relaxed);
+    const float radius = radius_pref > 0.0f ? radius_pref : s.last_depth_mean;
+
+    // --- Sweep every triple, every upload. No candidate list, no cap. ------------------
+    bool live_now[kNumTriples];
+    int live = 0;
+    for (int r = 0; r < kNumTriples; ++r) {
+        if (!Qualifies(f, r)) {
+            live_now[r] = false;
+            continue;
+        }
+        live_now[r] = true;
+        ++live;
+        ++s.hits[r];
+        float cur[12];
+        ReadTriple(f, r, cur);
+        // prev is deliberately kept across uploads where the row did not qualify, so a
+        // row that flickers out to a non-rigid value and back still counts as changing.
+        const bool changed = s.prev_valid[r] && !SameTriple(s.prev[r], cur);
+        if (changed) {
+            ++s.changes[r];
+        }
+        std::memcpy(s.prev[r], cur, sizeof(cur));
+        s.prev_valid[r] = true;
+
+        const float t2 = cur[3] * cur[3] + cur[7] * cur[7] + cur[11] * cur[11];
+        if (t2 > 1.0e-4f) {
+            ++s.translated[r];
+            // Only per-object matrices tell us how far away the things being drawn are;
+            // a view matrix's translation is the distance to the world origin, which is
+            // arbitrary. Sample the ones that change every upload.
+            if (changed) {
+                const float t = std::sqrt(t2);
+                s.depth_sum += static_cast<double>(t);
+                s.pivot_sum[0] += static_cast<double>(cur[3]);
+                s.pivot_sum[1] += static_cast<double>(cur[7]);
+                s.pivot_sum[2] += static_cast<double>(cur[11]);
+                ++s.depth_n;
+                if (s.depth_min == 0.0f || t < s.depth_min) {
+                    s.depth_min = t;
+                }
+                if (t > s.depth_max) {
+                    s.depth_max = t;
+                }
+            }
+        }
+    }
+
+    // --- Window bookkeeping ------------------------------------------------------------
+    ++s.window_uploads;
+    bool check_clock = s.window_uploads >= kWindowUploads;
+    if (!check_clock && --s.clock_countdown <= 0) {
+        s.clock_countdown = kClockCheckInterval;
+        check_clock = true;
+    }
+    if (check_clock) {
+        const auto now = std::chrono::steady_clock::now();
+        if (s.window_uploads >= kWindowUploads || now - s.window_start >= kWindowMaxTime) {
+            CloseWindow(now);
+        }
+        if (now - s.last_log >= std::chrono::seconds(1)) {
+            s.last_log = now;
+            LOG_INFO(Render,
+                     "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
+                     "yaw={:.1f} pitch={:.1f} transpose={} invert={} | pivotmode={} "
+                     "cal={} calpivot=({:.0f}, {:.0f}, {:.0f}) |p|={:.0f} "
+                     "calaxis=({:.2f}, {:.2f}, {:.2f}) | measured=({:.0f}, {:.0f}, {:.0f}) "
+                     "depth={:.0f}",
+                     s.locked_row, s.cold_windows, s.steady_rows, live, mode, probe, yaw_deg,
+                     pitch_deg, transpose, invert, pivot_mode, s.cal_valid, s.cal_pivot[0],
+                     s.cal_pivot[1], s.cal_pivot[2], s.cal_scale, s.cal_axis[0], s.cal_axis[1],
+                     s.cal_axis[2], s.last_pivot[0], s.last_pivot[1], s.last_pivot[2],
+                     s.last_depth_mean);
+            LogCensus();
+        }
+    }
+
+    g.detected_row.store(s.locked_row, std::memory_order_relaxed);
+    g.qualify_count.store(live, std::memory_order_relaxed);
+
+    // --- Reference row: the single source of O ------------------------------------------
+    const int ref_row = (mode >= 0 && mode <= kLastTriple) ? mode : s.locked_row;
+    if (ref_row >= 0 && ref_row <= kLastTriple && live_now[ref_row]) {
+        const Common::Vec4f& m0 = f[static_cast<size_t>(ref_row)];
+        const Common::Vec4f& m1 = f[static_cast<size_t>(ref_row) + 1];
+        const Common::Vec4f& m2 = f[static_cast<size_t>(ref_row) + 2];
+        const float ux = transpose ? m1.x : m0.y;
+        const float uy = m1.y;
+        const float uz = transpose ? m1.z : m2.y;
+        if (std::isfinite(ux) && std::isfinite(uy) && std::isfinite(uz) &&
+            (ux * ux + uy * uy + uz * uz) > 0.25f) {
+            s.up[0] = ux;
+            s.up[1] = uy;
+            s.up[2] = uz;
+            s.up_valid = true;
+        }
+    }
+
+    // --- Calibration: learn from the interior camera rather than guess ------------------
+    if (watching) {
+        const auto now_w = std::chrono::steady_clock::now();
+        if (now_w - s.last_log >= std::chrono::seconds(1)) {
+            s.last_log = now_w;
+            LOG_INFO(Render,
+                     "Hoenn GPU cam WATCHING interior camera: row={} live={} yaw={:.1f} "
+                     "ref={} refyaw={:.1f} calibrated={} (swing the stick indoors to teach it)",
+                     ref_row, live, g.yaw.load(std::memory_order_relaxed), s.cal_ref_valid,
+                     s.cal_ref_yaw, s.cal_valid);
+        }
+        // Find the camera row by correspondence, not by reputation.
+        //
+        // The previous detector ranked rows by how *constant* they were and calibrated
+        // against the winner. That is backwards: a view matrix turns when the camera
+        // turns, so ranking on constancy systematically picks rows that cannot be the
+        // camera. It settled on row 76, whose rotation is byte-identical across a full
+        // swing of the interior camera - the solve kept reporting sin=0.
+        //
+        // Indoors we know the ground truth, because we are the ones turning the camera.
+        // So snapshot every triple, wait for our own yaw to move a known amount, and pick
+        // the row that turned by that amount. Nothing about the uniform block has to be
+        // assumed.
+        const float yaw_now = g.yaw.load(std::memory_order_relaxed);
+        if (!s.cal_ref_valid) {
+            for (int r = 0; r < kNumTriples; ++r) {
+                s.cal_ref_row_ok[r] = live_now[r];
+                if (live_now[r]) {
+                    ReadTriple(f, r, s.cal_ref_rows[r]);
+                }
+            }
+            s.cal_ref_yaw = yaw_now;
+            s.cal_ref_valid = true;
+        } else if (std::fabs(yaw_now - s.cal_ref_yaw) >= kCalMinYawDeg) {
+            const float want = std::fabs(yaw_now - s.cal_ref_yaw);
+            int best_row = -1;
+            float best_err = 1.0e9f;
+            float best_turn = 0.0f;
+            for (int r = 0; r < kNumTriples; ++r) {
+                if (!s.cal_ref_row_ok[r] || !live_now[r]) {
+                    continue;
+                }
+                float cur[12];
+                ReadTriple(f, r, cur);
+                const float turn = TripleTurnDeg(s.cal_ref_rows[r], cur);
+                if (!std::isfinite(turn) || turn < 0.5f) {
+                    continue; // did not move: not the camera
+                }
+                const float err = std::fabs(turn - want);
+                if (err < best_err) {
+                    best_err = err;
+                    best_row = r;
+                    best_turn = turn;
+                }
+            }
+            // Accept only a real match. A row that turned by some unrelated amount is a
+            // spinning prop, not the view.
+            if (best_row >= 0 && best_err <= std::max(1.5f, want * 0.35f)) {
+                float cur[12];
+                ReadTriple(f, best_row, cur);
+                // Several rows turn with the camera; only one *is* the camera. The view
+                // matrix is carried by essentially every 3D draw, while a row riding in
+                // the camera's frame is carried by far fewer — 512 of 512 uploads against
+                // 329 on Route 104. Reject a match that is not near the top of that
+                // distribution before it can earn a vote.
+                u32 busiest = 0;
+                for (int r = 0; r < kNumTriples; ++r) {
+                    busiest = std::max(busiest, s.last_hits[r]);
+                }
+                const u32 row_hits = s.last_hits[best_row];
+                if (busiest > 0 && row_hits * 10 < busiest * 9) {
+                    LOG_INFO(Render,
+                             "Hoenn GPU cam: row {} turned with the camera but only {} of "
+                             "{} draws carry it — riding in the camera's frame, not the "
+                             "camera",
+                             best_row, row_hits, busiest);
+                } else {
+                    ++s.cal_row_votes[best_row];
+                    int win = best_row;
+                    for (int r = 0; r < kNumTriples; ++r) {
+                        if (s.cal_row_votes[r] > s.cal_row_votes[win] ||
+                            (s.cal_row_votes[r] == s.cal_row_votes[win] &&
+                             s.last_hits[r] > s.last_hits[win])) {
+                            win = r;
+                        }
+                    }
+                    if (s.cal_row != win) {
+                        LOG_INFO(Render,
+                                 "Hoenn GPU cam: camera row is {} ({} votes) — it turned "
+                                 "{:.1f} deg while the interior camera turned {:.1f}",
+                                 win, s.cal_row_votes[win], best_turn, want);
+                    }
+                    s.cal_row = win;
+                    SolveCalibration(s.cal_ref_rows[best_row], cur);
+                }
+            } else {
+                LOG_INFO(Render,
+                         "Hoenn GPU cam: no row matched a {:.1f} deg camera turn "
+                         "(closest row {} turned {:.1f})",
+                         want, best_row, best_turn);
+            }
+            s.cal_ref_valid = false; // take a fresh snapshot for the next comparison
+        }
+        return; // never write while the memory camera owns the view
+    }
+
+    if (ref_row < 0 || !s.up_valid) {
+        return; // no trustworthy axis to rotate about yet
+    }
+    if (!probe && std::fabs(yaw_deg) < 0.01f && std::fabs(pitch_deg) < 0.01f) {
+        return;
+    }
+
+    // Positive stick-right yaws the camera right, which means rotating the world left.
+    //
+    // The yaw axis is read live from the camera row's up column, not from the calibration.
+    // It is world-up expressed in eye space, and eye space turns with the camera, so the
+    // axis is a moving quantity rather than a constant: successive interior samples of the
+    // same physical vertical read (0, 1.00, 0.00) and then (0, 0.91, 0.42) purely because
+    // the camera had pitched between them. A learned average of those is stale the moment
+    // the pitch differs, and rotating about a stale axis is a roll — the diagonal drift.
+    // The column tracks the pitch for free.
+    const Mat3 r_yaw = AxisAngle(s.up[0], s.up[1], s.up[2], -yaw_deg * kDegToRad);
+    const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
+    const Mat3 rot = Mul(r_pitch, r_yaw);
+
+    // Orbit about the pivot p, as trans = p - R*p. p == 0 degenerates to a pure swivel
+    // about the eye, which cannot displace geometry however wrong everything else is.
+    //
+    // Where p goes is a convention that cannot be read off the uniforms, and both
+    // (0, 0, -d) and (0, 0, +d) were wrong on device: at d ~4950 a 12 deg yaw threw the
+    // whole scene off screen either way. The reason is that d is a *distance* while a
+    // pivot is a *point*. ORAS looks down from a tilted overhead camera, so the drawn
+    // objects sit forward and below the eye — roughly (0, -3500, -3500) for |t| ~4950 —
+    // and a pivot on the Z axis at that distance is thousands of units above the player.
+    // PivotMeasured uses the sampled mean translation vector instead, which carries the
+    // direction as well as the distance. The axis modes are kept so the convention can
+    // still be falsified by hand.
+    float p[3]{};
+    switch (pivot_mode) {
+    case kPivotCalibrated:
+        if (s.cal_valid) {
+            // Straight ahead, at the learned distance.
+            //
+            // Only the distance is worth carrying over from the calibration. Its
+            // *direction* was recorded in eye space at one particular camera pitch, and
+            // eye space rotates with the camera: the clean samples read (0, 0, -225)
+            // while later ones, taken at a different pitch, read (0, 81, -173) for the
+            // same physical point. Baking one of those in makes the orbit centre drift as
+            // soon as the pitch differs, which it always does outdoors.
+            //
+            // In eye space the camera looks down -Z by construction and the player sits
+            // near the middle of the frame, so the orbit centre is (0, 0, -d) whatever the
+            // pitch happens to be. d is the one number the interior camera can tell us and
+            // nothing else can: 225 here, against the ~5000 the per-object matrices claim.
+            const float d = radius_pref > 0.0f ? radius_pref : kDefaultOrbitDistance;
+            p[0] = 0.0f;
+            p[1] = g.pivot_y.load(std::memory_order_relaxed);
+            p[2] = -d;
+            break;
+        }
+        // No fallback to the measured point. It reads ~5000 where the interior camera
+        // says ~165, and handing that to the orbit is exactly the "crazy camera": the
+        // scene is flung a full screen for a degree of stick. Uncalibrated, p stays zero,
+        // which is a pure swivel about the eye — visibly not an orbit, but coherent and
+        // incapable of displacing anything. Better a camera that under-delivers than one
+        // that throws the world away.
+        break;
+    case kPivotMeasured:
+        if (s.last_pivot_valid) {
+            const float len = std::sqrt(s.last_pivot[0] * s.last_pivot[0] +
+                                        s.last_pivot[1] * s.last_pivot[1] +
+                                        s.last_pivot[2] * s.last_pivot[2]);
+            // A positive radius rescales the measured direction, so the knob stays a
+            // magnitude override rather than becoming a second, conflicting pivot.
+            const float k = (radius_pref > 0.0f && len > 1.0e-3f) ? radius_pref / len : 1.0f;
+            p[0] = s.last_pivot[0] * k;
+            p[1] = s.last_pivot[1] * k;
+            p[2] = s.last_pivot[2] * k;
+        }
+        break;
+    case kPivotForwardPos:
+        p[2] = radius;
+        break;
+    case kPivotForwardNeg:
+        p[2] = -radius;
+        break;
+    case kPivotNone:
+    default:
+        break;
+    }
+
+    // Dolly rides on top of the orbit: the camera looks down -Z, so pushing the world
+    // further along -Z is the same as pulling the camera back.
+    const float dolly = g.dolly.load(std::memory_order_relaxed);
+    const float tr[3] = {
+        p[0] - (rot.m[0][0] * p[0] + rot.m[0][1] * p[1] + rot.m[0][2] * p[2]),
+        p[1] - (rot.m[1][0] * p[0] + rot.m[1][1] * p[1] + rot.m[1][2] * p[2]),
+        p[2] - (rot.m[2][0] * p[0] + rot.m[2][1] * p[1] + rot.m[2][2] * p[2]) - dolly,
+    };
+
+    if (mode >= 0 && mode <= kLastTriple) {
+        if (transpose) {
+            ApplyColumns(f, mode, rot);
+        } else {
+            ApplyRows(f, mode, rot, tr);
+        }
+    } else if (mode == kRowModeAll) {
+        int next_free = 0;
+        for (int r = 0; r < kNumTriples; ++r) {
+            // Membership comes from the closed window, not from live_now. Gating on
+            // whether the row happens to qualify *this* upload is what tore the player
+            // model into a spike: the bone palette only passes orthonormality on ~40% of
+            // uploads, so a different subset of bones moved each frame. Until the first
+            // window closes apply_set is empty, so fall back to live_now to stay useful.
+            const bool member = s.last_uploads ? s.apply_set[r] : live_now[r];
+            if (!member || r < next_free) {
+                continue; // overlapping triples would be transformed twice
+            }
+            // Still refuse to write over anything non-finite — cheap, and membership says
+            // nothing about what this particular upload put in the row.
+            if (!Finite3(f[static_cast<size_t>(r)]) || !Finite3(f[static_cast<size_t>(r) + 1]) ||
+                !Finite3(f[static_cast<size_t>(r) + 2])) {
+                continue;
+            }
+            next_free = r + 3;
+            if (transpose) {
+                ApplyColumns(f, r, rot);
+            } else {
+                ApplyRows(f, r, rot, tr);
+            }
+        }
+    } else if (live_now[ref_row]) {
+        if (transpose) {
+            ApplyColumns(f, ref_row, rot);
+        } else {
+            ApplyRows(f, ref_row, rot, tr);
+        }
+    }
+}
+
+} // namespace Hoenn::GpuCam
