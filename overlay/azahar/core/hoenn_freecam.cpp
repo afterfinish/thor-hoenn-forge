@@ -1,8 +1,15 @@
-// Copyright Hoenn Forge — ORAS free look (houses) + L/R zoom assist
+// Copyright Hoenn Forge — ORAS free look + L/R zoom assist
 //
-// Ship path only: GOLD dual pitch/yaw (+0x98/+0x9C and mirrors +0x54/+0x58).
+// Memory path (interiors): GOLD dual pitch/yaw (+0x98/+0x9C and mirrors +0x54/+0x58).
 // No mode unlock, CRO patch, shadows, matrix thrash, or RE experiment menu.
 // Those caused black screens, freezes, and poison after map transitions.
+//
+// GPU path (everywhere else): ORAS selects a camera controller type at construction.
+// Interiors get one that reads the euler fields above; towns, routes, caves and gyms get
+// one that derives eye and look-at from map geometry and never reads them, which is why
+// our writes stick in RAM outdoors yet nothing moves on screen. So outdoors we stop
+// writing guest memory entirely and rotate the view transform in the vertex-shader
+// uniforms instead — see video_core/hoenn_gpu_cam.h.
 
 #include "core/hoenn_freecam.h"
 
@@ -17,6 +24,9 @@
 #include "core/core_timing.h"
 #include "core/hle/kernel/process.h"
 #include "core/memory.h"
+#include "video_core/gpu.h"
+#include "video_core/hoenn_gpu_cam.h"
+#include "video_core/pica/pica_core.h"
 
 namespace Hoenn {
 
@@ -44,6 +54,23 @@ constexpr float FOV_STEP = 10.f;
 constexpr u32 OFF_FOV_ALT = 0x6C;
 constexpr float STICK_DEADZONE = 0.18f;
 constexpr int ANDROID_STICK_C = 718;
+
+// GPU-path steps. Slightly larger than the memory-path steps because these are eye-space
+// degrees, and the clamp (±40 yaw / ±25 pitch) is much tighter than the memory camera's.
+constexpr float GPU_YAW_STEP = 1.10f;
+constexpr float GPU_PITCH_STEP = 0.45f;
+// Eye-space units per tick of held L/R. Sized against the ~225-unit orbit distance the
+// interior calibration reports, so a second of holding covers a useful fraction of it.
+constexpr float GPU_DOLLY_STEP = 8.0f;
+
+// Collect cycles (COLLECT_INTERVAL / COLLECT_MISS_INTERVAL apart, so 150-450 ms each)
+// that must agree before the stick changes hands. Handover is deliberately slow and
+// reclaim is fast, because a wrong handover is visible and a late one is not. On a map
+// where the memory camera has already worked, handover is slower still: that is almost
+// certainly an interior having a bad collect cycle, not a town.
+constexpr int GPU_HANDOVER_CYCLES = 4;
+constexpr int GPU_HANDOVER_CYCLES_AFTER_GOLD = 12;
+constexpr int MEMORY_RECLAIM_CYCLES = 2;
 
 constexpr u64 QUIET_AFTER_FIELD = 200'000'000;
 constexpr u64 QUIET_AFTER_TRANSITION = 80'000'000;
@@ -111,6 +138,59 @@ void FreeCam::ResetYaw() {
     yaw = 0.f;
 }
 
+// Park the GPU camera at identity. Cheap and idempotent, so every early return in Tick()
+// can call it: if the driver stops running for any reason the view snaps back to the
+// game's own camera rather than staying rotated.
+void FreeCam::StopGpuCam() {
+    gpu_active = false;
+    gpu_yaw = 0.f;
+    gpu_pitch = 0.f;
+    GpuCam::Disable();
+}
+
+// Called wherever the map identity changes: a new field module, a new camera object in
+// the BSS slot, a savestate. Everything we believed about who owns the camera is stale.
+void FreeCam::ResetPathOwnership() {
+    gpu_path = false;
+    map_had_gold = false;
+    gold_hit_cycles = 0;
+    gold_miss_cycles = 0;
+}
+
+// Run once per collect cycle, never per tick. live_count is a heuristic sampled on a
+// timer, so it dips to zero for reasons that have nothing to do with leaving a building.
+void FreeCam::UpdatePathOwnership(bool memory_viable) {
+    if (memory_viable) {
+        map_had_gold = true;
+        ++gold_hit_cycles;
+        gold_miss_cycles = 0;
+    } else {
+        ++gold_miss_cycles;
+        gold_hit_cycles = 0;
+    }
+
+    const bool was_gpu = gpu_path;
+    if (gpu_path) {
+        if (gold_hit_cycles >= MEMORY_RECLAIM_CYCLES) {
+            gpu_path = false;
+        }
+    } else {
+        const int need = map_had_gold ? GPU_HANDOVER_CYCLES_AFTER_GOLD : GPU_HANDOVER_CYCLES;
+        if (gold_miss_cycles >= need) {
+            gpu_path = true;
+        }
+    }
+    if (was_gpu != gpu_path) {
+        LOG_INFO(Core,
+                 "Hoenn freelook path -> {} (viable={} live={} hit={} miss={} had_gold={})",
+                 gpu_path ? "GPU" : "memory", memory_viable, live_count, gold_hit_cycles,
+                 gold_miss_cycles, map_had_gold);
+        if (!gpu_path) {
+            StopGpuCam();
+        }
+    }
+}
+
 void FreeCam::OnCoreReconnect() {
     quiet_until = 1;
     in_battle = false;
@@ -118,6 +198,8 @@ void FreeCam::OnCoreReconnect() {
     primary_cam = 0;
     last_collect_tick = 0;
     ResetYaw();
+    StopGpuCam();
+    ResetPathOwnership();
 }
 
 void FreeCam::EnsureDevices() {
@@ -153,13 +235,21 @@ void FreeCam::OnModuleLoaded(std::string_view name, u32 /*load_address*/) {
         in_battle = true;
         live_count = 0;
         primary_cam = 0;
+        StopGpuCam();
+        ResetPathOwnership();
     } else if (name == "DllField") {
         in_battle = false;
         quiet_until = 1;
         live_count = 0;
         primary_cam = 0;
+        // Also drop the remembered target. CollectLiveTargets reconsiders last_good_cam
+        // and brute-scans around it, so a house camera kept being rediscovered in stale
+        // heap after stepping outside.
+        last_good_cam = 0;
         last_collect_tick = 0;
         ResetYaw();
+        StopGpuCam();
+        ResetPathOwnership();
     }
 }
 
@@ -167,6 +257,8 @@ void FreeCam::OnModuleUnloaded(std::string_view name) {
     if (name == "DllField") {
         live_count = 0;
         primary_cam = 0;
+        StopGpuCam();
+        ResetPathOwnership();
     } else if (name == "DllBattle") {
         in_battle = false;
     }
@@ -180,8 +272,11 @@ void FreeCam::SetFreelookEnabled(bool e) {
     c_stick.reset();
     if (freelook) {
         ResetYaw();
-        LOG_WARNING(Core, "Hoenn freelook ON (houses/interiors — dual GOLD eulers)");
+        StopGpuCam();
+        LOG_WARNING(Core, "Hoenn freelook ON (memory eulers indoors, GPU view rotation "
+                          "everywhere else)");
     } else {
+        StopGpuCam();
         LOG_INFO(Core, "Hoenn freelook OFF");
     }
 }
@@ -371,9 +466,11 @@ void FreeCam::WriteZoomFov(Memory::MemorySystem& mem, Kernel::Process& process, 
 
 void FreeCam::Tick(Core::System& system, u32 process_id) {
     if (!freelook && !zoom_assist) {
+        StopGpuCam();
         return;
     }
     if (!system.IsPoweredOn() || in_battle) {
+        StopGpuCam();
         return;
     }
 
@@ -397,11 +494,14 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         primary_cam = 0;
         last_collect_tick = 0;
         ResetYaw();
+        StopGpuCam();
+        ResetPathOwnership();
     }
     if (HeapPtr(slot_cam)) {
         last_slot_cam = slot_cam;
     }
     if (now < quiet_until) {
+        StopGpuCam();
         return;
     }
 
@@ -413,6 +513,19 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         if (primary_cam && primary_cam != prev_pri) {
             SeedAnglesFromCam(mem, *process, primary_cam);
         }
+        // Ownership turns on the controller *type*, not on whether a camera-shaped object
+        // exists. The GOLD test is a heuristic — flag 0x0F plus an FOV in range — and heap
+        // left over from a building keeps satisfying it after the map changes, which
+        // stranded the driver on the memory path outdoors with a stale target at
+        // 082D4898: writes that go nowhere, a dead stick, and no way to hand over.
+        //
+        // The mode word is the real signal. ORAS records the controller it constructed
+        // there: 0x00020001 for the interior camera that reads our eulers, 0x000D0001 for
+        // the town/route one that derives eye and look-at from map geometry and ignores
+        // them. Only the former is worth owning.
+        const bool memory_viable =
+            primary_cam != 0 && mem.Read32(*process, primary_cam + OFF_MODE) == MODE_FREELOOK;
+        UpdatePathOwnership(memory_viable);
     }
 
     // Zoom assist: pick any live gold as target; FOV may leave the discovery band.
@@ -466,9 +579,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     if (!freelook) {
-        return;
-    }
-    if (live_count == 0) {
+        StopGpuCam();
         return;
     }
 
@@ -479,6 +590,91 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
         }
     } catch (...) {
         c_stick.reset();
+    }
+
+    // Hybrid split, on a latched decision from UpdatePathOwnership. A map where the
+    // memory camera has a live GOLD target is running the interior camera controller,
+    // which really does read our eulers, so that path keeps ownership: it moves the
+    // engine's own camera and culling stays correct. Only a map that has come up empty
+    // for several consecutive collect cycles is handed to the GPU view rotation.
+    //
+    // The probe no longer forces the GPU path on. That was there to let the original
+    // "does anything move at all" experiment run inside a house; the device run settled
+    // that, and forcing it meant the GPU camera engaged indoors, which flickered.
+    const bool use_gpu = gpu_path;
+
+    if (use_gpu) {
+        if (!gpu_active) {
+            gpu_active = true;
+            gpu_yaw = 0.f;
+            gpu_pitch = 0.f;
+        }
+        // Yaw runs the other way on the GPU path than it does on the memory one. There the
+        // value is handed to the engine, which decides what it means; here we rotate the
+        // view transform ourselves, so the sign is ours to get right. Device testing says
+        // it is the opposite of invert_x.
+        if (std::fabs(sx) >= STICK_DEADZONE) {
+            const float x = invert_x ? sx : -sx;
+            // Wraps, so a sustained push keeps turning all the way round instead of
+            // stopping at an arbitrary limit.
+            gpu_yaw = GpuCam::WrapDeg(gpu_yaw + x * sensitivity * GPU_YAW_STEP);
+        }
+        // Pitch, like yaw, runs the other way here than on the memory path — same reason:
+        // the engine interprets the memory value, we apply the GPU one ourselves.
+        if (std::fabs(sy) >= STICK_DEADZONE) {
+            const float y = invert_y ? -sy : sy;
+            gpu_pitch = std::clamp(gpu_pitch + y * sensitivity * GPU_PITCH_STEP,
+                                   -GpuCam::PitchClampDeg(), GpuCam::PitchClampDeg());
+        }
+        // L/R zoom, outdoors. The memory path writes an FOV that the town controller
+        // re-derives every frame and ignores, so here it becomes a dolly along the view
+        // axis instead: not a lens change, but the camera really does move, and it costs
+        // no guest memory. Gated on the same toggle as indoors so the control is one
+        // feature rather than two that happen to share buttons.
+        if (zoom_assist) {
+            bool l = false, r = false;
+            try {
+                if (btn_l) {
+                    l = btn_l->GetStatus();
+                }
+                if (btn_r) {
+                    r = btn_r->GetStatus();
+                }
+            } catch (...) {
+                btn_l.reset();
+                btn_r.reset();
+            }
+            if (l != r) {
+                GpuCam::SetDolly(GpuCam::GetDolly() + (l ? GPU_DOLLY_STEP : -GPU_DOLLY_STEP));
+            }
+        }
+        GpuCam::SetActive(true, gpu_yaw, gpu_pitch);
+        // RasterizerOpenGL/Vulkan::UploadUniforms only re-uploads the PICA float block
+        // when pica.vs_setup.uniforms_dirty is set. A game that uploads a per-object
+        // matrix every draw keeps it set for us, but one that uploads a single view
+        // matrix and reuses it would freeze the angle at whatever was last sent, so
+        // force a refresh. Same thread as the command processor, so this is a plain
+        // store, not a race.
+        system.GPU().PicaCore().vs_setup.uniforms_dirty = true;
+    } else {
+        if (gpu_active) {
+            StopGpuCam();
+        }
+        // The memory camera owns this map, which means the engine is about to move its own
+        // camera correctly — the one thing the GPU path cannot do by reasoning. Publish our
+        // yaw so the hook can watch the view row change against a known angle and recover
+        // the pivot and axis the engine actually uses. Costs a sweep per upload indoors and
+        // writes nothing; see GpuCam::Observe.
+        GpuCam::Observe(yaw, pitch);
+    }
+
+    if (use_gpu || live_count == 0) {
+        if ((diag++ % 120) == 0) {
+            LOG_INFO(Core, "Hoenn freelook GPU path={} y={:.1f} p={:.1f} row={} live={}", use_gpu,
+                     gpu_yaw, gpu_pitch,
+                     static_cast<int>(GpuCam::GetParam(GpuCam::ParamDetectedRow)), live_count);
+        }
+        return;
     }
 
     if (std::fabs(sy) >= STICK_DEADZONE) {
