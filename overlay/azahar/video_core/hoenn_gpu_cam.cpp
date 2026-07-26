@@ -628,7 +628,10 @@ bool SolveCalibration(const float ref[12], const float cur[12]) {
     float axis[3] = {rd[2][1] - rd[1][2], rd[0][2] - rd[2][0], rd[1][0] - rd[0][1]};
     const float sin2 = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
     if (sin2 < 1.0e-3f) {
-        return false; // too small a turn to decompose reliably
+        LOG_INFO(Render, "Hoenn GPU cam calibration rejected: no rotation between samples "
+                         "(sin={:.5f}) — the view row did not turn",
+                 sin2);
+        return false;
     }
     axis[0] /= sin2;
     axis[1] /= sin2;
@@ -665,6 +668,14 @@ bool SolveCalibration(const float ref[12], const float cur[12]) {
     const float p_len = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
     const float angle_deg = std::fabs(angle) * 180.0f / 3.14159265f;
     if (angle_deg > kCalMaxAngleDeg || p_len > kCalMaxPivot || p_len < 1.0f) {
+        // Rejections were silent, which meant an indoor visit that taught it nothing was
+        // indistinguishable from one that never happened. Say which bound failed: too
+        // large an angle is a camera cut, a tiny |p| means the row rotated about the eye
+        // and carries no orbit centre to learn (a normal matrix does exactly that).
+        LOG_INFO(Render,
+                 "Hoenn GPU cam calibration rejected: angle={:.1f} deg |p|={:.0f} "
+                 "pivot=({:.0f}, {:.0f}, {:.0f}) [limits: angle<={:.0f}, 1<=|p|<={:.0f}]",
+                 angle_deg, p_len, p[0], p[1], p[2], kCalMaxAngleDeg, kCalMaxPivot);
         return false;
     }
 

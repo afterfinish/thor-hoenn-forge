@@ -606,8 +606,12 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
             gpu_yaw = 0.f;
             gpu_pitch = 0.f;
         }
+        // Yaw runs the other way on the GPU path than it does on the memory one. There the
+        // value is handed to the engine, which decides what it means; here we rotate the
+        // view transform ourselves, so the sign is ours to get right. Device testing says
+        // it is the opposite of invert_x.
         if (std::fabs(sx) >= STICK_DEADZONE) {
-            const float x = invert_x ? -sx : sx;
+            const float x = invert_x ? sx : -sx;
             gpu_yaw = std::clamp(gpu_yaw + x * sensitivity * GPU_YAW_STEP,
                                  -GpuCam::kYawClampDeg, GpuCam::kYawClampDeg);
         }

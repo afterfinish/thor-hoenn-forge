@@ -69,7 +69,7 @@ class HoennPrefs(context: Context) {
     /** Outdoor free look: -1 auto (locked row only), -2 all qualifying triples (the
      *  default, since a scene's rigid transforms live at several rows), 0..93 fixed. */
     var gpuCamRowMode: Int
-        get() = prefs.getInt(KEY_GPUCAM_ROW, HoennGpuCam.ROW_MODE_ALL)
+        get() = prefs.getInt(KEY_GPUCAM_ROW, HoennGpuCam.ROW_MODE_AUTO)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_ROW, value) }
 
     /** Outdoor free look: read the uniform triple as columns rather than rows. */
@@ -143,7 +143,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
         private const val KEY_GPUCAM_PIVOT = "gpucam_pivot_mode"
         private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
-        private const val GPUCAM_GEN = 6
+        private const val GPUCAM_GEN = 7
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }
@@ -163,6 +163,7 @@ class HoennPrefs(context: Context) {
                 remove(KEY_GPUCAM_RADIUS)
                 remove(KEY_GPUCAM_ROW)
                 remove(KEY_GPUCAM_PIVOT)
+                remove(KEY_GPUCAM_INVERT)
             }
         }
         // Migrate old freecam_enabled → camera zoom assist once
