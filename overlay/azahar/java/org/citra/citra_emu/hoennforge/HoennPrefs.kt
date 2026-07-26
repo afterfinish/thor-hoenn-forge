@@ -88,6 +88,11 @@ class HoennPrefs(context: Context) {
         get() = prefs.getInt(KEY_GPUCAM_INVERT, 0)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_INVERT, value) }
 
+    /** Where the orbit centre sits — see [HoennGpuCam.PIVOT_MEASURED]. */
+    var gpuCamPivotMode: Int
+        get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_MEASURED)
+        set(value) = prefs.edit { putInt(KEY_GPUCAM_PIVOT, value) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -136,23 +141,28 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_TRANSPOSE = "gpucam_transpose"
         private const val KEY_GPUCAM_RADIUS = "gpucam_radius"
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
+        private const val KEY_GPUCAM_PIVOT = "gpucam_pivot_mode"
         private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
-        private const val GPUCAM_GEN = 2
+        private const val GPUCAM_GEN = 3
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }
 
     init {
-        // Device testing disproved two of the outdoor camera's original defaults: the
-        // column-major matrix layout rotates the world about its origin, and an orbit
-        // radius taken from the game's camera object is on the wrong scale entirely and
-        // throws the scene off screen. Retire whatever the user was left holding, once.
+        // Device testing disproved several of the outdoor camera's original defaults: the
+        // column-major matrix layout rotates the world about its origin, an orbit radius
+        // taken from the game's camera object is on the wrong scale entirely, and putting
+        // the orbit centre on the Z axis at the measured distance throws the scene off
+        // screen whichever sign is used, because that distance describes a point forward
+        // *and below* the eye. Retire whatever the user was left holding, once per
+        // generation, so a stale knob cannot masquerade as a broken fix.
         if (prefs.getInt(KEY_GPUCAM_GEN, 0) < GPUCAM_GEN) {
             prefs.edit {
                 putInt(KEY_GPUCAM_GEN, GPUCAM_GEN)
                 remove(KEY_GPUCAM_TRANSPOSE)
                 remove(KEY_GPUCAM_RADIUS)
                 remove(KEY_GPUCAM_ROW)
+                remove(KEY_GPUCAM_PIVOT)
             }
         }
         // Migrate old freecam_enabled → camera zoom assist once

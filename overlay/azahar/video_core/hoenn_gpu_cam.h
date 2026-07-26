@@ -37,6 +37,22 @@ enum Param : int {
     ParamYaw = 7,          ///< r   current yaw in degrees
     ParamPitch = 8,        ///< r   current pitch in degrees
     ParamInvert = 9,       ///< rw  bit 0 inverts yaw, bit 1 inverts pitch
+    ParamPivotMode = 10,   ///< rw  where the orbit centre sits — see kPivot* below
+};
+
+/// Where to put the point the camera orbits around.
+///
+/// This is a convention that cannot be read off the uniforms, so it is a knob rather than
+/// a constant. Both axis modes were tried on device and both threw the scene off screen,
+/// because a distance is not a point: ORAS's tilted overhead camera puts the drawn objects
+/// forward *and below* the eye, so a pivot on the Z axis at the measured distance sits
+/// thousands of units above the player.
+enum PivotMode : int {
+    kPivotMeasured = 0,   ///< mean eye-space translation of the per-object matrices
+    kPivotForwardPos = 1, ///< (0, 0, +radius)
+    kPivotForwardNeg = 2, ///< (0, 0, -radius)
+    kPivotNone = 3,       ///< swivel about the eye; cannot displace geometry
+    kPivotModeCount = 4,
 };
 
 constexpr int kInvertYaw = 1;

@@ -27,6 +27,15 @@ object HoennGpuCam {
     const val PARAM_YAW = 7
     const val PARAM_PITCH = 8
     const val PARAM_INVERT = 9
+    const val PARAM_PIVOT_MODE = 10
+
+    /** Mean eye-space translation of the per-object matrices — carries direction, not just
+     *  distance, which the axis modes below do not. */
+    const val PIVOT_MEASURED = 0
+    const val PIVOT_FORWARD_POS = 1
+    const val PIVOT_FORWARD_NEG = 2
+    const val PIVOT_NONE = 3
+    const val PIVOT_MODE_COUNT = 4
 
     const val INVERT_YAW = 1
     const val INVERT_PITCH = 2
@@ -75,6 +84,11 @@ object HoennGpuCam {
         get() = take(PARAM_INVERT).toInt()
         set(value) = put(PARAM_INVERT, value.toFloat())
 
+    /** Where the orbit centre sits. See [PIVOT_MEASURED] and friends. */
+    var pivotMode: Int
+        get() = take(PARAM_PIVOT_MODE, PIVOT_MEASURED.toFloat()).toInt()
+        set(value) = put(PARAM_PIVOT_MODE, value.toFloat())
+
     val detectedRow: Int
         get() = take(PARAM_DETECTED_ROW, -1f).toInt()
 
@@ -91,12 +105,20 @@ object HoennGpuCam {
         transpose = prefs.gpuCamTranspose
         radius = prefs.gpuCamRadius
         invert = prefs.gpuCamInvert
+        pivotMode = prefs.gpuCamPivotMode
     }
 
     fun rowModeLabel(mode: Int): String = when (mode) {
         ROW_MODE_AUTO -> "Auto"
         ROW_MODE_ALL -> "All"
         else -> "Row $mode"
+    }
+
+    fun pivotModeLabel(mode: Int): String = when (mode) {
+        PIVOT_MEASURED -> "Measured point"
+        PIVOT_FORWARD_POS -> "Forward +Z"
+        PIVOT_FORWARD_NEG -> "Forward -Z"
+        else -> "None (swivel)"
     }
 
     fun invertLabel(bits: Int): String = when (bits and (INVERT_YAW or INVERT_PITCH)) {

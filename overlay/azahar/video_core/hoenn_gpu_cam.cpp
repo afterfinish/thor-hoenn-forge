@@ -89,6 +89,7 @@ struct Shared {
     std::atomic<int> detected_row{-1};
     std::atomic<int> qualify_count{0};
     std::atomic<int> invert{0};
+    std::atomic<int> pivot_mode{kPivotMeasured};
 };
 Shared g;
 
@@ -109,6 +110,13 @@ struct Scan {
     u32 depth_n = 0;
     float depth_min = 0.0f;
     float depth_max = 0.0f;
+    /// Mean eye-space translation *vector* of those same matrices. The magnitude alone is
+    /// not enough to place a pivot: ORAS looks down at the world from a tilted overhead
+    /// camera, so the things being drawn sit forward *and* below the eye. A pivot at
+    /// (0, 0, +-|t|) is therefore thousands of units above the player, and orbiting about
+    /// it swings the player out of frame whichever sign is used. The direction is the
+    /// missing half of the answer.
+    double pivot_sum[3]{};
     int clock_countdown = kClockCheckInterval;
     std::chrono::steady_clock::time_point window_start{};
 
@@ -121,6 +129,8 @@ struct Scan {
     float last_depth_mean = 0.0f;
     float last_depth_min = 0.0f;
     float last_depth_max = 0.0f;
+    float last_pivot[3]{};
+    bool last_pivot_valid = false;
 
     int locked_row = -1;
     int cold_windows = 0;
@@ -161,6 +171,9 @@ void ResetScan() {
     s.depth_n = 0;
     s.depth_min = 0.0f;
     s.depth_max = 0.0f;
+    s.pivot_sum[0] = s.pivot_sum[1] = s.pivot_sum[2] = 0.0;
+    s.last_pivot[0] = s.last_pivot[1] = s.last_pivot[2] = 0.0f;
+    s.last_pivot_valid = false;
     s.last_uploads = 0;
     s.steady_rows = 0;
     s.window_uploads = 0;
@@ -342,6 +355,14 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
         s.depth_n ? static_cast<float>(s.depth_sum / static_cast<double>(s.depth_n)) : 0.0f;
     s.last_depth_min = s.depth_min;
     s.last_depth_max = s.depth_max;
+    if (s.depth_n) {
+        const double n = static_cast<double>(s.depth_n);
+        s.last_pivot[0] = static_cast<float>(s.pivot_sum[0] / n);
+        s.last_pivot[1] = static_cast<float>(s.pivot_sum[1] / n);
+        s.last_pivot[2] = static_cast<float>(s.pivot_sum[2] / n);
+        s.last_pivot_valid = true;
+    }
+    s.pivot_sum[0] = s.pivot_sum[1] = s.pivot_sum[2] = 0.0;
     std::memset(s.hits, 0, sizeof(s.hits));
     std::memset(s.changes, 0, sizeof(s.changes));
     std::memset(s.translated, 0, sizeof(s.translated));
@@ -525,6 +546,15 @@ void SetParam(int param, float value) {
         LOG_INFO(Render, "Hoenn GPU cam: invert={}", bits);
         break;
     }
+    case ParamPivotMode: {
+        int mode = static_cast<int>(value);
+        if (mode < 0 || mode >= kPivotModeCount) {
+            mode = kPivotMeasured;
+        }
+        g.pivot_mode.store(mode, std::memory_order_relaxed);
+        LOG_INFO(Render, "Hoenn GPU cam: pivot mode={}", mode);
+        break;
+    }
     default:
         break;
     }
@@ -550,6 +580,8 @@ float GetParam(int param) {
         return g.yaw.load(std::memory_order_relaxed);
     case ParamPitch:
         return g.pitch.load(std::memory_order_relaxed);
+    case ParamPivotMode:
+        return static_cast<float>(g.pivot_mode.load(std::memory_order_relaxed));
     case ParamInvert:
         return static_cast<float>(g.invert.load(std::memory_order_relaxed));
     default:
@@ -630,6 +662,9 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             if (changed) {
                 const float t = std::sqrt(t2);
                 s.depth_sum += static_cast<double>(t);
+                s.pivot_sum[0] += static_cast<double>(cur[3]);
+                s.pivot_sum[1] += static_cast<double>(cur[7]);
+                s.pivot_sum[2] += static_cast<double>(cur[11]);
                 ++s.depth_n;
                 if (s.depth_min == 0.0f || t < s.depth_min) {
                     s.depth_min = t;
@@ -657,10 +692,13 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             s.last_log = now;
             LOG_INFO(Render,
                      "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
-                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={} | eye depth "
-                     "mean={:.0f} min={:.0f} max={:.0f} (this is the scale d should be on)",
+                     "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={} invert={} | pivotmode={} "
+                     "pivot=({:.0f}, {:.0f}, {:.0f}) | eye depth mean={:.0f} min={:.0f} "
+                     "max={:.0f}",
                      s.locked_row, s.cold_windows, s.steady_rows, live, mode, probe, yaw_deg,
-                     pitch_deg, radius, transpose, invert, s.last_depth_mean, s.last_depth_min,
+                     pitch_deg, radius, transpose, invert,
+                     g.pivot_mode.load(std::memory_order_relaxed), s.last_pivot[0],
+                     s.last_pivot[1], s.last_pivot[2], s.last_depth_mean, s.last_depth_min,
                      s.last_depth_max);
             LogCensus();
         }
@@ -699,17 +737,49 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
     const Mat3 rot = Mul(r_pitch, r_yaw);
 
-    // Orbit about the pivot p, as trans = p - R*p. With d == 0 this degenerates to a pure
-    // swivel about the eye, which cannot displace geometry however wrong the row is.
+    // Orbit about the pivot p, as trans = p - R*p. p == 0 degenerates to a pure swivel
+    // about the eye, which cannot displace geometry however wrong everything else is.
     //
-    // p = (0, 0, +d), i.e. forward is +Z in this eye space. The original -Z (OpenGL
-    // convention) put the pivot *behind* the camera, so the rotation and the translation
-    // added instead of cancelling: at the measured d=4936 a 5.6 deg yaw threw the view
-    // ~480 units sideways and left the submitted geometry as an island in a black screen.
-    // A wrong sign here does not shear anything, it just doubles the swing rather than
-    // removing it, which is exactly the symptom that was observed.
-    const float tr[3] = {-radius * rot.m[0][2], -radius * rot.m[1][2],
-                         radius - radius * rot.m[2][2]};
+    // Where p goes is a convention that cannot be read off the uniforms, and both
+    // (0, 0, -d) and (0, 0, +d) were wrong on device: at d ~4950 a 12 deg yaw threw the
+    // whole scene off screen either way. The reason is that d is a *distance* while a
+    // pivot is a *point*. ORAS looks down from a tilted overhead camera, so the drawn
+    // objects sit forward and below the eye — roughly (0, -3500, -3500) for |t| ~4950 —
+    // and a pivot on the Z axis at that distance is thousands of units above the player.
+    // PivotMeasured uses the sampled mean translation vector instead, which carries the
+    // direction as well as the distance. The axis modes are kept so the convention can
+    // still be falsified by hand.
+    float p[3]{};
+    switch (g.pivot_mode.load(std::memory_order_relaxed)) {
+    case kPivotMeasured:
+        if (s.last_pivot_valid) {
+            const float len = std::sqrt(s.last_pivot[0] * s.last_pivot[0] +
+                                        s.last_pivot[1] * s.last_pivot[1] +
+                                        s.last_pivot[2] * s.last_pivot[2]);
+            // A positive radius rescales the measured direction, so the knob stays a
+            // magnitude override rather than becoming a second, conflicting pivot.
+            const float k = (radius_pref > 0.0f && len > 1.0e-3f) ? radius_pref / len : 1.0f;
+            p[0] = s.last_pivot[0] * k;
+            p[1] = s.last_pivot[1] * k;
+            p[2] = s.last_pivot[2] * k;
+        }
+        break;
+    case kPivotForwardPos:
+        p[2] = radius;
+        break;
+    case kPivotForwardNeg:
+        p[2] = -radius;
+        break;
+    case kPivotNone:
+    default:
+        break;
+    }
+
+    const float tr[3] = {
+        p[0] - (rot.m[0][0] * p[0] + rot.m[0][1] * p[1] + rot.m[0][2] * p[2]),
+        p[1] - (rot.m[1][0] * p[0] + rot.m[1][1] * p[1] + rot.m[1][2] * p[2]),
+        p[2] - (rot.m[2][0] * p[0] + rot.m[2][1] * p[1] + rot.m[2][2] * p[2]),
+    };
 
     if (mode >= 0 && mode <= kLastTriple) {
         if (transpose) {

@@ -841,6 +841,10 @@ class EmulationFragment :
                     },
                 ),
             ),
+            getString(
+                R.string.hoenn_gpucam_pivot_fmt,
+                cam.pivotModeLabel(prefs.gpuCamPivotMode),
+            ),
             getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
             getString(R.string.hoenn_gpucam_invert_fmt, cam.invertLabel(prefs.gpuCamInvert)),
             getString(R.string.hoenn_gpucam_reset),
@@ -888,14 +892,24 @@ class EmulationFragment :
                         prefs.gpuCamTranspose = !prefs.gpuCamTranspose
                         cam.transpose = prefs.gpuCamTranspose
                     }
+                    // Measured point -> Forward +Z -> Forward -Z -> None -> Measured point.
+                    // Both axis modes put the pivot on the Z axis at the measured distance,
+                    // which is wrong for ORAS's tilted overhead view but is kept so the
+                    // convention can be falsified by eye rather than argued about.
                     4 -> {
+                        val next = (prefs.gpuCamPivotMode + 1) %
+                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_MODE_COUNT
+                        prefs.gpuCamPivotMode = next
+                        cam.pivotMode = next
+                    }
+                    5 -> {
                         promptHoennGpuCamNumber(
                             titleRes = R.string.hoenn_gpucam_radius_pick,
                             initial = prefs.gpuCamRadius.toInt().toString(),
                             decimal = true,
                         ) { text ->
                             val value = text.toFloatOrNull()
-                            if (value != null && value > 0f) {
+                            if (value != null && value >= 0f) {
                                 prefs.gpuCamRadius = value
                                 cam.radius = value
                             }
@@ -903,18 +917,20 @@ class EmulationFragment :
                         }
                     }
                     // none -> yaw -> pitch -> both -> none
-                    5 -> {
+                    6 -> {
                         val next = (prefs.gpuCamInvert + 1) and 3
                         prefs.gpuCamInvert = next
                         cam.invert = next
                     }
-                    6 -> {
+                    7 -> {
                         prefs.gpuCamProbe = false
                         prefs.gpuCamRowMode =
                             org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
                         prefs.gpuCamTranspose = false
                         prefs.gpuCamRadius = 0f
                         prefs.gpuCamInvert = 0
+                        prefs.gpuCamPivotMode =
+                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_MEASURED
                         cam.restore(prefs)
                     }
                 }
