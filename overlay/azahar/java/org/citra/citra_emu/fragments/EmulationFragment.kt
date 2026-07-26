@@ -913,7 +913,31 @@ class EmulationFragment :
                 onChanged()
             }
             .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
+            .create()
+            .also { attachHoennPadKeys(it) }
             .show()
+    }
+
+    /**
+     * Let the Thor's face buttons drive a plain AlertDialog: A selects, B backs out.
+     * Without this the list is touch-only, because BUTTON_A is not DPAD_CENTER.
+     */
+    private fun attachHoennPadKeys(dialog: androidx.appcompat.app.AlertDialog) {
+        dialog.setOnKeyListener { d, keyCode, event ->
+            when (keyCode) {
+                KeyEvent.KEYCODE_BUTTON_B -> {
+                    if (event.action == KeyEvent.ACTION_UP) d.dismiss()
+                    true
+                }
+                KeyEvent.KEYCODE_BUTTON_A -> {
+                    dialog.window?.decorView?.dispatchKeyEvent(
+                        KeyEvent(event.action, KeyEvent.KEYCODE_DPAD_CENTER),
+                    )
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun promptHoennGpuCamNumber(
@@ -941,6 +965,8 @@ class EmulationFragment :
                 onValue(input.text.toString().trim())
             }
             .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
+            .create()
+            .also { attachHoennPadKeys(it) }
             .show()
     }
 

@@ -66,14 +66,27 @@ Shared g;
 
 // Scan state. Touched only from the thread that issues draws (Azahar has no separate
 // GPU thread — the rasterizer runs on the emulation thread), so no locking here.
+/// How many consecutive uploads the locked row may fail to qualify before we go looking
+/// for a different one. Roughly a frame's worth of draws, so a handful of billboard or
+/// UI draws that happen to reuse the same row cannot make the selection oscillate.
+constexpr int kLockMissLimit = 128;
+
+/// Migration hysteresis: a rival row has to be this much more stable than the locked one
+/// before we switch, so the choice cannot flip back and forth within a scene.
+constexpr int kMigrateMargin = 240;
+
 struct Scan {
     int candidates[kMaxCandidates]{};
+    bool candidate_live[kMaxCandidates]{};
     int candidate_count = 0;
     int total_qualifying = 0;
     float prev[kLastTriple + 1][12]{};
     bool prev_valid[kLastTriple + 1]{};
     u16 stable[kLastTriple + 1]{};
     int uploads_since_scan = kRescanUploads;
+    int locked_row = -1;
+    int locked_miss = 0;
+    bool last_probe = false;
     bool was_active = false;
     std::chrono::steady_clock::time_point last_log{};
 };
@@ -85,6 +98,8 @@ void ResetScan() {
     std::memset(s.prev_valid, 0, sizeof(s.prev_valid));
     std::memset(s.stable, 0, sizeof(s.stable));
     s.uploads_since_scan = kRescanUploads;
+    s.locked_row = -1;
+    s.locked_miss = 0;
 }
 
 bool Finite3(const Common::Vec4f& v) {
@@ -337,6 +352,12 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     const bool transpose = g.transpose.load(std::memory_order_relaxed);
     const float radius = g.radius.load(std::memory_order_relaxed);
 
+    if (probe != s.last_probe) {
+        s.last_probe = probe;
+        s.locked_row = -1;
+        s.locked_miss = 0;
+    }
+
     // Periodic full sweep: rebuild the candidate list and clear stability for anything
     // that stopped qualifying.
     if (++s.uploads_since_scan >= kRescanUploads) {
@@ -365,10 +386,12 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     for (int ci = 0; ci < s.candidate_count; ++ci) {
         const int r = s.candidates[ci];
         if (!Qualifies(f, r)) {
+            s.candidate_live[ci] = false;
             s.stable[r] = 0;
             s.prev_valid[r] = false;
             continue;
         }
+        s.candidate_live[ci] = true;
         ++live;
         float cur[12];
         ReadTriple(f, r, cur);
@@ -392,30 +415,56 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
 
     bool apply_all = false;
     int source_row = -1;
+    int reported_row = -1;
     if (mode >= 0 && mode <= kLastTriple) {
         // Manual override: trust the user, no qualification test. This is the escape
         // hatch that lets the row index be swept on device without a rebuild.
         source_row = mode;
+        reported_row = mode;
     } else if (mode == kRowModeAll) {
         apply_all = true;
         source_row = lowest;
+        reported_row = lowest;
     } else {
-        // Auto. The probe deliberately takes the lowest-index qualifying triple so the
+        // Auto, with a lock. Engines commonly upload a per-object world-view matrix at
+        // one fixed row, and some of those objects (billboards, UI quads) carry a matrix
+        // that is not orthonormal. Without the lock, such a draw would fall through to
+        // whatever other row happened to qualify and get rotated instead, shearing the
+        // frame apart. Locked and unrecognised means: leave this draw alone.
+        //
+        // The probe deliberately takes the lowest-index qualifying triple, so the
         // experiment result is reproducible and easy to reason about.
-        source_row = probe ? lowest : best;
+        const int pick = probe ? lowest : best;
+        if (s.locked_row >= 0 && Qualifies(f, s.locked_row)) {
+            s.locked_miss = 0;
+            source_row = s.locked_row;
+            if (!probe && pick >= 0 && pick != s.locked_row &&
+                static_cast<int>(s.stable[pick]) >
+                    static_cast<int>(s.stable[s.locked_row]) + kMigrateMargin) {
+                s.locked_row = pick;
+                source_row = pick;
+            }
+        } else if (s.locked_row >= 0 && ++s.locked_miss <= kLockMissLimit) {
+            source_row = -1;
+        } else {
+            s.locked_row = pick;
+            s.locked_miss = 0;
+            source_row = pick;
+        }
+        reported_row = s.locked_row;
     }
 
-    g.detected_row.store(source_row, std::memory_order_relaxed);
+    g.detected_row.store(reported_row, std::memory_order_relaxed);
     g.qualify_count.store(s.total_qualifying, std::memory_order_relaxed);
 
     const auto now = std::chrono::steady_clock::now();
     if (now - s.last_log >= std::chrono::seconds(1)) {
         s.last_log = now;
         LOG_INFO(Render,
-                 "Hoenn GPU cam: row={} qualifying={} live={} stable={} mode={} probe={} "
-                 "yaw={:.1f} pitch={:.1f} d={:.0f} transpose={}",
-                 source_row, s.total_qualifying, live, best_stable, mode, probe, yaw_deg,
-                 pitch_deg, radius, transpose);
+                 "Hoenn GPU cam: row={} applying={} qualifying={} live={} stable={} mode={} "
+                 "probe={} yaw={:.1f} pitch={:.1f} d={:.0f} transpose={}",
+                 reported_row, source_row, s.total_qualifying, live, best_stable, mode, probe,
+                 yaw_deg, pitch_deg, radius, transpose);
     }
 
     if (source_row < 0) {
@@ -459,6 +508,9 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     if (apply_all) {
         int next_free = 0;
         for (int ci = 0; ci < s.candidate_count; ++ci) {
+            if (!s.candidate_live[ci]) {
+                continue; // did not qualify on this upload
+            }
             const int r = s.candidates[ci];
             if (r < next_free) {
                 continue; // overlapping triples would be transformed twice
