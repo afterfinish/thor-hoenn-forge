@@ -96,8 +96,6 @@
     <string name="hoenn_menu_slot_empty">That slot is empty</string>
     <string name="hoenn_menu_freelook">Free look</string>
     <string name="hoenn_menu_freelook_desc">Right stick pitch and yaw</string>
-    <string name="hoenn_menu_gpucam">Outdoor look (advanced)</string>
-    <string name="hoenn_menu_gpucam_desc">Probe, matrix row, orbit radius</string>
     <string name="hoenn_menu_zoom">Camera zoom assist</string>
     <string name="hoenn_menu_zoom_desc">Hold L out, hold R in</string>
     <string name="hoenn_menu_pokedex_short">Pokédex</string>
@@ -118,24 +116,6 @@
     <string name="hoenn_menu_freelook_off">Free look (right stick): Off</string>
     <string name="hoenn_menu_freelook_enabled_toast">Free look on - right stick pitch/yaw. Indoors moves the real camera; outdoors the view is rotated in the renderer, so looking far can reveal unrendered space.</string>
     <string name="hoenn_menu_freelook_disabled_toast">Free look off</string>
-    <string name="hoenn_gpucam_title">Outdoor free look</string>
-    <string name="hoenn_gpucam_probe_fmt">Probe (fixed 12° yaw): %1$s</string>
-    <string name="hoenn_gpucam_row_auto_fmt">Row: Auto (detected %1$d of %2$d)</string>
-    <string name="hoenn_gpucam_row_all_fmt">Row: All qualifying triples (%1$d)</string>
-    <string name="hoenn_gpucam_row_fixed_fmt">Row: fixed %1$d</string>
-    <string name="hoenn_gpucam_row_pick">Pick a row number (0-93)…</string>
-    <string name="hoenn_gpucam_layout_fmt">Matrix layout: %1$s</string>
-    <string name="hoenn_gpucam_layout_rows">rows</string>
-    <string name="hoenn_gpucam_layout_cols">columns</string>
-    <string name="hoenn_gpucam_pivot_fmt">Orbit centre: %1$s</string>
-    <string name="hoenn_gpucam_pivoty_fmt">Orbit height: %1$.0f (0 = frame centre)</string>
-    <string name="hoenn_gpucam_range_fmt">Look range: %1$s</string>
-    <string name="hoenn_gpucam_radius_fmt">Orbit distance: %1$.0f (0 = default 225)</string>
-    <string name="hoenn_gpucam_invert_fmt">Invert: %1$s</string>
-    <string name="hoenn_gpucam_radius_pick">Orbit radius (world units)</string>
-    <string name="hoenn_gpucam_reset">Reset to defaults</string>
-    <string name="hoenn_gpucam_apply">Set</string>
-    <string name="hoenn_gpucam_cancel">Cancel</string>
     <string name="hoenn_menu_camera_unsupported">Camera tools only work in Omega Ruby / Alpha Sapphire</string>
     <string name="hoenn_menu_pokedex">Pokédex (scan top screen)</string>
     <string name="hoenn_pokedex_scanning">Scanning top screen...</string>

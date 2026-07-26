@@ -95,7 +95,7 @@ object HoennGpuCam {
 
     /** Eye-space height of the orbit centre. Negative is down, toward the player. */
     var pivotY: Float
-        get() = take(PARAM_PIVOT_Y, 0f)
+        get() = take(PARAM_PIVOT_Y, 60f)
         set(value) = put(PARAM_PIVOT_Y, value)
 
     /** Where the orbit centre sits. See [PIVOT_MEASURED] and friends. */

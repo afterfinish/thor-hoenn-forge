@@ -2,7 +2,7 @@
 
 **Modern Pokémon Omega Ruby / Alpha Sapphire on Android** — especially the [AYN Thor](https://www.ayntec.com/) — as a single APK.
 
-You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS core, Thor-tuned defaults, optional on-device randomizer, free look in houses, save states, turbo, and an offline Pokédex helper.
+You bring a dump of a game you own. Hoenn Forge packages an Azahar-based 3DS core, Thor-tuned defaults, optional on-device randomizer, free look everywhere, save states, turbo, and an offline Pokédex helper.
 
 > **Unofficial fan project.** Not affiliated with Nintendo, Creatures Inc., GAME FREAK, or The Pokémon Company.  
 > **This repository and the distributed app do not include any game ROMs, decryption keys, or copyrighted game binaries.** You must provide a dump of a game you own.
@@ -45,8 +45,8 @@ Dual-screen (AYN Thor) and freelook angles from dogfood:
 
 ### In-game (START quick menu)
 - **Resume**
-- **Free look** — right stick pitch/yaw in houses and many interiors (OR/AS; outdoor towns not supported in this release)
-- **Camera zoom assist** — hold L to zoom out, R to zoom in
+- **Free look** — right stick pitch/yaw, indoors **and** outdoors. Interiors move the game's own camera; towns and routes rotate the view transform in the emulator's shader uniforms, because ORAS runs a different camera controller outdoors that ignores the fields the interior one reads. Walking direction follows the camera
+- **Camera zoom assist** — hold L to zoom out, R to zoom in. Outdoors this dollies the camera along its view axis rather than changing FOV
 - **Pokédex** — OCR the top screen, match a species, show an offline entry (prefers the bottom display on Thor)
 - **Save state / load state**
 

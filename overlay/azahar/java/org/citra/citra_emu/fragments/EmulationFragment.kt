@@ -558,7 +558,6 @@ class EmulationFragment :
         val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(requireContext())
         val chipGame = view.findViewById<TextView>(R.id.chipGameTag)
         val chipFreelook = view.findViewById<TextView>(R.id.chipFreelookStatus)
-        val chipGpuCam = view.findViewById<TextView>(R.id.chipGpuCamStatus)
         val chipZoom = view.findViewById<TextView>(R.id.chipZoomStatus)
         val textSaveDesc = view.findViewById<TextView>(R.id.textSaveDesc)
         val textLoadDesc = view.findViewById<TextView>(R.id.textLoadDesc)
@@ -592,25 +591,6 @@ class EmulationFragment :
         fun refreshToggleChips() {
             paintToggleChip(chipFreelook, prefs.freelookEnabled)
             paintToggleChip(chipZoom, prefs.cameraZoomAssistEnabled)
-            // The advanced row is not a toggle: the chip reports the row-selection state
-            // so the detector result is visible without pulling logcat.
-            val cam = org.citra.citra_emu.hoennforge.HoennGpuCam
-            val probeOn = prefs.gpuCamProbe
-            chipGpuCam.text = if (probeOn) {
-                "PROBE " + cam.rowModeLabel(prefs.gpuCamRowMode)
-            } else {
-                cam.rowModeLabel(prefs.gpuCamRowMode) +
-                    (cam.detectedRow.takeIf { it >= 0 }?.let { " $it" } ?: "")
-            }
-            chipGpuCam.setBackgroundResource(
-                if (probeOn) R.drawable.hoenn_chip_on else R.drawable.hoenn_chip_muted,
-            )
-            chipGpuCam.setTextColor(
-                resources.getColor(
-                    if (probeOn) R.color.hoenn_accent_100 else R.color.hoenn_muted,
-                    requireContext().theme,
-                ),
-            )
         }
         fun refreshSlotDescs() {
             val savestates = NativeLibrary.getSavestateInfo()
@@ -661,9 +641,6 @@ class EmulationFragment :
         view.findViewById<View>(R.id.rowFreelook).setOnClickListener {
             toggleHoennFreelook()
             refreshToggleChips()
-        }
-        view.findViewById<View>(R.id.rowFreelookGpu).setOnClickListener {
-            showHoennGpuCamOptions { refreshToggleChips() }
         }
         view.findViewById<View>(R.id.rowZoom).setOnClickListener {
             toggleHoennZoomAssist()
@@ -807,219 +784,10 @@ class EmulationFragment :
      * rebuild: arm the fixed-yaw probe, force a specific row, switch the matrix layout,
      * or retune the orbit radius.
      */
-    private fun showHoennGpuCamOptions(onChanged: () -> Unit) {
-        if (!isAdded) return
-        val ctx = requireContext()
-        val prefs = org.citra.citra_emu.hoennforge.HoennPrefs(ctx)
-        val cam = org.citra.citra_emu.hoennforge.HoennGpuCam
-
-        val rowMode = prefs.gpuCamRowMode
-        val detected = cam.detectedRow
-        val qualifying = cam.qualifyingTriples
-        val items = arrayOf<CharSequence>(
-            getString(
-                R.string.hoenn_gpucam_probe_fmt,
-                getString(
-                    if (prefs.gpuCamProbe) R.string.hoenn_status_on else R.string.hoenn_status_off,
-                ),
-            ),
-            when (rowMode) {
-                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO ->
-                    getString(R.string.hoenn_gpucam_row_auto_fmt, detected, qualifying)
-                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL ->
-                    getString(R.string.hoenn_gpucam_row_all_fmt, qualifying)
-                else -> getString(R.string.hoenn_gpucam_row_fixed_fmt, rowMode)
-            },
-            getString(R.string.hoenn_gpucam_row_pick),
-            getString(
-                R.string.hoenn_gpucam_layout_fmt,
-                getString(
-                    if (prefs.gpuCamTranspose) {
-                        R.string.hoenn_gpucam_layout_cols
-                    } else {
-                        R.string.hoenn_gpucam_layout_rows
-                    },
-                ),
-            ),
-            getString(
-                R.string.hoenn_gpucam_pivot_fmt,
-                cam.pivotModeLabel(prefs.gpuCamPivotMode),
-            ),
-            getString(R.string.hoenn_gpucam_range_fmt, cam.rangeLabel(prefs.gpuCamRange)),
-            getString(R.string.hoenn_gpucam_radius_fmt, prefs.gpuCamRadius),
-            getString(R.string.hoenn_gpucam_pivoty_fmt, prefs.gpuCamPivotY),
-            getString(R.string.hoenn_gpucam_invert_fmt, cam.invertLabel(prefs.gpuCamInvert)),
-            getString(R.string.hoenn_gpucam_reset),
-        )
-
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.hoenn_gpucam_title)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> {
-                        prefs.gpuCamProbe = !prefs.gpuCamProbe
-                        cam.probe = prefs.gpuCamProbe
-                    }
-                    // Cycle Auto -> All -> Auto. A fixed row is set through item 2.
-                    1 -> {
-                        val next =
-                            if (rowMode == org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
-                            ) {
-                                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
-                            } else {
-                                org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_AUTO
-                            }
-                        prefs.gpuCamRowMode = next
-                        cam.rowMode = next
-                    }
-                    2 -> {
-                        promptHoennGpuCamNumber(
-                            titleRes = R.string.hoenn_gpucam_row_pick,
-                            initial = if (rowMode >= 0) rowMode.toString() else "",
-                            decimal = false,
-                        ) { text ->
-                            val row = text.toIntOrNull()
-                            if (row != null) {
-                                val clamped = row.coerceIn(
-                                    0,
-                                    org.citra.citra_emu.hoennforge.HoennGpuCam.MAX_ROW,
-                                )
-                                prefs.gpuCamRowMode = clamped
-                                cam.rowMode = clamped
-                            }
-                            onChanged()
-                        }
-                    }
-                    3 -> {
-                        prefs.gpuCamTranspose = !prefs.gpuCamTranspose
-                        cam.transpose = prefs.gpuCamTranspose
-                    }
-                    // Measured point -> Forward +Z -> Forward -Z -> None -> Measured point.
-                    // Both axis modes put the pivot on the Z axis at the measured distance,
-                    // which is wrong for ORAS's tilted overhead view but is kept so the
-                    // convention can be falsified by eye rather than argued about.
-                    4 -> {
-                        val next = (prefs.gpuCamPivotMode + 1) %
-                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_MODE_COUNT
-                        prefs.gpuCamPivotMode = next
-                        cam.pivotMode = next
-                    }
-                    // Look range: 1x -> 2x -> 3x -> 4.5x -> 1x. The original clamps were a
-                    // guess made before the camera worked; how far is too far is a matter
-                    // of taste and of how much unrendered space a given map reveals.
-                    5 -> {
-                        val steps = floatArrayOf(1f, 2f, 3f, 4.5f)
-                        val idx = steps.indexOfFirst { it >= prefs.gpuCamRange - 0.01f }
-                        val next = steps[if (idx < 0) 0 else (idx + 1) % steps.size]
-                        prefs.gpuCamRange = next
-                        cam.range = next
-                    }
-                    // Orbit distance, as a tap-through rather than a typed number.
-                    //
-                    // 225 comes from the interior calibration and is right indoors, but the
-                    // outdoor camera sits much further from the player, so the pivot lands
-                    // between the two and the character swings instead of holding still.
-                    // The distance cannot be calibrated outdoors -- that needs the game's
-                    // own camera to move, which is the whole reason this path exists -- so
-                    // it has to be found by eye, and finding it should take seconds.
-                    // 0 means "use the calibrated default".
-                    6 -> {
-                        val steps = floatArrayOf(0f, 150f, 225f, 350f, 500f, 750f, 1100f, 1600f)
-                        val idx = steps.indexOfFirst { it >= prefs.gpuCamRadius - 0.01f }
-                        val next = steps[if (idx < 0) 0 else (idx + 1) % steps.size]
-                        prefs.gpuCamRadius = next
-                        cam.radius = next
-                    }
-                    // Orbit height. The player sits low in the frame outdoors, so the
-                    // centre-ray pivot lands above her and the camera appears to turn
-                    // about a point a body-length behind. Down is negative.
-                    7 -> {
-                        val steps = floatArrayOf(0f, -40f, -80f, -120f, -170f, -230f, -300f, 60f)
-                        val idx = steps.indexOfFirst { kotlin.math.abs(it - prefs.gpuCamPivotY) < 0.01f }
-                        val next = steps[(if (idx < 0) 0 else idx + 1) % steps.size]
-                        prefs.gpuCamPivotY = next
-                        cam.pivotY = next
-                    }
-                    // none -> yaw -> pitch -> both -> none
-                    8 -> {
-                        val next = (prefs.gpuCamInvert + 1) and 3
-                        prefs.gpuCamInvert = next
-                        cam.invert = next
-                    }
-                    9 -> {
-                        prefs.gpuCamProbe = false
-                        prefs.gpuCamRowMode =
-                            org.citra.citra_emu.hoennforge.HoennGpuCam.ROW_MODE_ALL
-                        prefs.gpuCamTranspose = false
-                        prefs.gpuCamRadius = 0f
-                        prefs.gpuCamInvert = 0
-                        prefs.gpuCamPivotMode =
-                            org.citra.citra_emu.hoennforge.HoennGpuCam.PIVOT_CALIBRATED
-                        prefs.gpuCamRange = 2f
-                        prefs.gpuCamPivotY = 0f
-                        cam.restore(prefs)
-                    }
-                }
-                onChanged()
-            }
-            .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
-            .create()
-            .also { attachHoennPadKeys(it) }
-            .show()
-    }
-
     /**
      * Let the Thor's face buttons drive a plain AlertDialog: A selects, B backs out.
      * Without this the list is touch-only, because BUTTON_A is not DPAD_CENTER.
      */
-    private fun attachHoennPadKeys(dialog: androidx.appcompat.app.AlertDialog) {
-        dialog.setOnKeyListener { d, keyCode, event ->
-            when (keyCode) {
-                KeyEvent.KEYCODE_BUTTON_B -> {
-                    if (event.action == KeyEvent.ACTION_UP) d.dismiss()
-                    true
-                }
-                KeyEvent.KEYCODE_BUTTON_A -> {
-                    dialog.window?.decorView?.dispatchKeyEvent(
-                        KeyEvent(event.action, KeyEvent.KEYCODE_DPAD_CENTER),
-                    )
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-
-    private fun promptHoennGpuCamNumber(
-        titleRes: Int,
-        initial: String,
-        decimal: Boolean,
-        onValue: (String) -> Unit,
-    ) {
-        if (!isAdded) return
-        val ctx = requireContext()
-        val input = android.widget.EditText(ctx).apply {
-            inputType = if (decimal) {
-                android.text.InputType.TYPE_CLASS_NUMBER or
-                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            } else {
-                android.text.InputType.TYPE_CLASS_NUMBER
-            }
-            setText(initial)
-            setSelection(text.length)
-        }
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(titleRes)
-            .setView(input)
-            .setPositiveButton(R.string.hoenn_gpucam_apply) { _, _ ->
-                onValue(input.text.toString().trim())
-            }
-            .setNegativeButton(R.string.hoenn_gpucam_cancel, null)
-            .create()
-            .also { attachHoennPadKeys(it) }
-            .show()
-    }
-
     /** Re-apply camera tools after boot if the user left them on. */
     private fun applyHoennFreecamIfNeeded() {
         if (!::game.isInitialized || !NativeLibrary.isRunning()) return

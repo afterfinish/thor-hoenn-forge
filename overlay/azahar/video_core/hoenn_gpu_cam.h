@@ -50,8 +50,11 @@ enum Param : int {
 /// roughly a body-length behind her. Sliding d only moves the pivot along the wrong axis,
 /// which is why every distance preset was worse than the default.
 ///
-/// Negative is down. Zero keeps the old centre-ray behaviour.
-constexpr float kDefaultPivotY = 0.0f;
+/// Positive is up. Settled on device at +60, which is where the character stops sliding
+/// and the world turns around her. Note the sign: the correction is *upward*, not downward
+/// as the "she sits low in the frame" reasoning predicted -- one more convention that had
+/// to be found by looking rather than deduced.
+constexpr float kDefaultPivotY = 60.0f;
 
 /// Default look range. Wider than the original clamps, which device testing found too
 /// restrictive once the camera was actually working.
