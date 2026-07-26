@@ -572,7 +572,8 @@ void LogCensus() {
 void SetDolly(float units) {
     // Bound to the orbit distance so the knob stays in the same world as the camera; with
     // no calibration there is no scale to reason about, so nothing moves.
-    const float d = s.cal_valid ? s.cal_scale : 0.0f;
+    const float pref = g.radius.load(std::memory_order_relaxed);
+    const float d = pref > 0.0f ? pref : kDefaultOrbitDistance;
     const float lim = d * kDollyRangeMul;
     g.dolly.store(std::clamp(units, -lim, lim), std::memory_order_relaxed);
 }
@@ -1204,7 +1205,7 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
             // near the middle of the frame, so the orbit centre is (0, 0, -d) whatever the
             // pitch happens to be. d is the one number the interior camera can tell us and
             // nothing else can: 225 here, against the ~5000 the per-object matrices claim.
-            const float d = radius_pref > 0.0f ? radius_pref : s.cal_scale;
+            const float d = radius_pref > 0.0f ? radius_pref : kDefaultOrbitDistance;
             p[0] = 0.0f;
             p[1] = 0.0f;
             p[2] = -d;

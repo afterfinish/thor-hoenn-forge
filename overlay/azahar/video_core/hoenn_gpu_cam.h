@@ -94,16 +94,25 @@ float PitchClampDeg();
 /// memory camera owns the map — doing that made the camera flicker indoors.
 constexpr float kProbeYawDeg = 12.0f;
 
-/// Orbit radius, in *eye-space* units. The ORAS camera object's own distance field
-/// (+0xA8, ~2000 in a house and ~2300 in a town) turned out to be on a completely
-/// different scale from the vertex data — using it shoved Route 104 about three screens
-/// off centre. The honest source is the eye-space depth of the per-object matrices.
+/// Orbit radius override, in *eye-space* units. Zero means use [kDefaultOrbitDistance].
 ///
-/// Zero or less means "use the measured mean", which is the default and what you want:
-/// the census samples that depth every window (Petalburg Woods reads ~4943), so the orbit
-/// tracks each map instead of baking one map's number in as the next wrong constant. Set a
-/// positive value from the menu only to override it by hand.
+/// Two other sources for this were tried and both were wrong. The game camera object's own
+/// distance field (+0xA8, ~2000 in a house, ~2300 in a town) is in some unrelated unit and
+/// shoved Route 104 about three screens off centre. The eye-space depth of the per-object
+/// matrices reads ~4950, roughly thirty times too large, and did the same. Only the
+/// interior camera's own motion gave a figure on the right scale.
 constexpr float kDefaultRadius = 0.0f;
+
+/// Default orbit distance in eye-space units, used when the radius knob is left at zero.
+///
+/// The interior calibration can measure this, but it should not: the distance is a
+/// property of the *map*, not of the engine, and interiors are the only place it can be
+/// measured. A house taught 225, which read as almost right outdoors; a Pokemon Center
+/// then taught 514 and the orbit centre moved somewhere above and behind the player.
+/// Learning the row and the axis from interiors is sound because those are engine
+/// properties that carry over. Learning the distance is not, so it is a tuned default
+/// with a knob, and the calibration's own figure is kept only for the log.
+constexpr float kDefaultOrbitDistance = 225.0f;
 
 // --- Driver side (core, emulation thread) ------------------------------------------
 
@@ -123,7 +132,7 @@ void Disable();
 void SetDolly(float units);
 float GetDolly();
 
-/// Clamp on the dolly, as a multiple of the calibrated orbit distance.
+/// Clamp on the dolly, as a multiple of the orbit distance.
 constexpr float kDollyRangeMul = 3.0f;
 
 /// Watch the interior camera instead of driving anything.
