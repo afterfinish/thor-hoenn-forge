@@ -842,6 +842,15 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
 
     // --- Calibration: learn from the interior camera rather than guess ------------------
     if (watching) {
+        const auto now_w = std::chrono::steady_clock::now();
+        if (now_w - s.last_log >= std::chrono::seconds(1)) {
+            s.last_log = now_w;
+            LOG_INFO(Render,
+                     "Hoenn GPU cam WATCHING interior camera: row={} live={} yaw={:.1f} "
+                     "ref={} refyaw={:.1f} calibrated={} (swing the stick indoors to teach it)",
+                     ref_row, live, g.yaw.load(std::memory_order_relaxed), s.cal_ref_valid,
+                     s.cal_ref_yaw, s.cal_valid);
+        }
         if (ref_row >= 0 && live_now[ref_row]) {
             float cur[12];
             ReadTriple(f, ref_row, cur);

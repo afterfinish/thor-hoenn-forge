@@ -143,7 +143,7 @@ class HoennPrefs(context: Context) {
         private const val KEY_GPUCAM_INVERT = "gpucam_invert"
         private const val KEY_GPUCAM_PIVOT = "gpucam_pivot_mode"
         private const val KEY_GPUCAM_GEN = "gpucam_settings_gen"
-        private const val GPUCAM_GEN = 4
+        private const val GPUCAM_GEN = 5
         // legacy key migrated on first read via cameraZoomAssist if needed
         private const val KEY_FREECAM_LEGACY = "freecam_enabled"
     }
