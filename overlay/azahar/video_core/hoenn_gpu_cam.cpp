@@ -83,6 +83,11 @@ constexpr float kCalMinYawDeg = 4.0f;
 constexpr float kCalMaxAngleDeg = 30.0f;
 constexpr float kCalMaxPivot = 2000.0f;
 
+/// A yaw turns about the world vertical. Once canonicalised into the upper hemisphere, a
+/// genuine yaw sample sits close to +Y; anything flatter is a pitch or a diagonal flick
+/// and would drag the learned axis towards a roll.
+constexpr float kCalMinAxisUp = 0.80f;
+
 // Orthonormality tolerances. Generous enough for f24 -> f32 rounding.
 constexpr float kLenSqTol = 0.04f;
 constexpr float kDotTol = 0.02f;
@@ -588,6 +593,17 @@ void LoadCalibration() {
     if (!std::isfinite(len) || len < 1.0f || len > kCalMaxPivot) {
         return;
     }
+    // Hold a restored axis to the same standard as a fresh one. Files written before the
+    // sign of the axis was canonicalised contain averages of +Y and -Y samples that
+    // cancelled into something close to a roll; loading one would silently reinstate the
+    // diagonal drift that the canonicalisation exists to prevent.
+    if (!(v[5] >= kCalMinAxisUp)) {
+        LOG_INFO(Render,
+                 "Hoenn GPU cam: discarding stored calibration, axis=({:.2f}, {:.2f}, {:.2f}) "
+                 "is not a yaw — recalibrate indoors",
+                 v[4], v[5], v[6]);
+        return;
+    }
     s.cal_pivot[0] = v[1];
     s.cal_pivot[1] = v[2];
     s.cal_pivot[2] = v[3];
@@ -694,6 +710,31 @@ bool SolveCalibration(const float ref[12], const float cur[12]) {
                  "Hoenn GPU cam calibration rejected: angle={:.1f} deg |p|={:.0f} "
                  "pivot=({:.0f}, {:.0f}, {:.0f}) [limits: angle<={:.0f}, 1<=|p|<={:.0f}]",
                  angle_deg, p_len, p[0], p[1], p[2], kCalMaxAngleDeg, kCalMaxPivot);
+        return false;
+    }
+
+    // Canonicalise the axis before it is averaged with anything.
+    //
+    // The axis recovered from a rotation flips sign with the direction of travel: turning
+    // the camera left yields -Y and turning it right yields +Y, both describing the same
+    // physical vertical. Averaging those cancels them out. Observed samples ran +0.997,
+    // +0.945, -0.663, -0.910 in Y and smoothed to (0.23, -0.07, -0.97) — very nearly pure
+    // -Z, which is a *roll* axis. Rolling where a yaw was asked for is what read on device
+    // as the camera moving diagonally.
+    //
+    // A yaw is a turn about the world vertical, so pin every sample to the same
+    // hemisphere. Samples that are not predominantly vertical are not yaws at all — a
+    // pitch, or a diagonal flick that mixed the two — and teach the yaw axis nothing.
+    if (axis[1] < 0.0f) {
+        axis[0] = -axis[0];
+        axis[1] = -axis[1];
+        axis[2] = -axis[2];
+    }
+    if (axis[1] < kCalMinAxisUp) {
+        LOG_INFO(Render,
+                 "Hoenn GPU cam calibration rejected: axis=({:.2f}, {:.2f}, {:.2f}) is not a "
+                 "yaw — move the stick left and right, not diagonally",
+                 axis[0], axis[1], axis[2]);
         return false;
     }
 
