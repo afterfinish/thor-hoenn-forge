@@ -59,9 +59,12 @@ constexpr float kProbeYawDeg = 12.0f;
 /// Orbit radius, in *eye-space* units. The ORAS camera object's own distance field
 /// (+0xA8, ~2000 in a house and ~2300 in a town) turned out to be on a completely
 /// different scale from the vertex data — using it shoved Route 104 about three screens
-/// off centre. The honest source is the eye-space depth of the per-object matrices,
-/// which the census now reports; until that is dialled in, the default is zero, which
-/// swivels about the eye instead of orbiting the player and so cannot displace anything.
+/// off centre. The honest source is the eye-space depth of the per-object matrices.
+///
+/// Zero or less means "use the measured mean", which is the default and what you want:
+/// the census samples that depth every window (Petalburg Woods reads ~4943), so the orbit
+/// tracks each map instead of baking one map's number in as the next wrong constant. Set a
+/// positive value from the menu only to override it by hand.
 constexpr float kDefaultRadius = 0.0f;
 
 // --- Driver side (core, emulation thread) ------------------------------------------

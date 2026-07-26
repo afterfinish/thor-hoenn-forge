@@ -125,6 +125,18 @@ struct Scan {
     int locked_row = -1;
     int cold_windows = 0;
 
+    /// Rows that "all qualifying triples" mode transforms, decided once per window from
+    /// last_hits rather than per upload.
+    ///
+    /// Deciding per upload tore the player model apart. Rows 37..70 on a 3-stride are the
+    /// character's bone palette, and each only passes the orthonormality test on roughly
+    /// 200-230 of 512 uploads — a bone in a scaled or degenerate pose fails it. So every
+    /// frame a different subset of bones was rotated and the rest stayed put, and the mesh
+    /// stretched between them. Rotating *all* the bones rigidly rotates the character,
+    /// which is correct; rotating a varying subset is what breaks it. Membership therefore
+    /// has to be a property of the row over time, not of the row this instant.
+    bool apply_set[kNumTriples]{};
+
     // World-up in eye space, taken from the locked row. Held across uploads where that
     // row does not qualify, so O stays identical for every draw in the frame.
     float up[3]{0.0f, 1.0f, 0.0f};
@@ -144,6 +156,7 @@ void ResetScan() {
     std::memset(s.last_hits, 0, sizeof(s.last_hits));
     std::memset(s.last_changes, 0, sizeof(s.last_changes));
     std::memset(s.last_translated, 0, sizeof(s.last_translated));
+    std::memset(s.apply_set, 0, sizeof(s.apply_set));
     s.depth_sum = 0.0;
     s.depth_n = 0;
     s.depth_min = 0.0f;
@@ -344,6 +357,16 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
     }
 
     const u32 acquire_floor = (s.last_uploads * kAcquireHitFrac) / 256;
+
+    // Membership for "all qualifying triples", fixed for the coming window. The bar is
+    // deliberately low: a bone that qualified on 40% of uploads is a real transform that
+    // happens to fail the rigidity test in some poses, and it must be rotated together
+    // with its siblings or the mesh tears. A genuine one-off — a prop drawn for a single
+    // frame — sits far below this and stays out.
+    const u32 member_floor = std::max<u32>(1, s.last_uploads / 8);
+    for (int r = 0; r < kNumTriples; ++r) {
+        s.apply_set[r] = s.last_hits[r] >= member_floor;
+    }
 
     // Rank: constant across the window first, then "carries a real translation", then
     // raw hit count. The second key matters because a view matrix and the normal matrix
@@ -566,7 +589,15 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     const float pitch_deg = probe ? 0.0f : pitch_sign * g.pitch.load(std::memory_order_relaxed);
     const int mode = g.row_mode.load(std::memory_order_relaxed);
     const bool transpose = g.transpose.load(std::memory_order_relaxed);
-    const float radius = g.radius.load(std::memory_order_relaxed);
+
+    // Radius <= 0 means "measure it". The camera object's own distance field (+0xA8) is on
+    // a different scale entirely from the vertex data — using its ~2300 threw Route 104
+    // about three screens off centre. The eye-space depth of the per-object matrices is the
+    // honest source, and it is already being sampled every window: Petalburg Woods reports
+    // mean 4943 (min 4926, max 5165). Reading it live also tracks maps with a different
+    // camera distance instead of baking in one map's number as the next wrong constant.
+    const float radius_pref = g.radius.load(std::memory_order_relaxed);
+    const float radius = radius_pref > 0.0f ? radius_pref : s.last_depth_mean;
 
     // --- Sweep every triple, every upload. No candidate list, no cap. ------------------
     bool live_now[kNumTriples];
@@ -682,8 +713,20 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     } else if (mode == kRowModeAll) {
         int next_free = 0;
         for (int r = 0; r < kNumTriples; ++r) {
-            if (!live_now[r] || r < next_free) {
+            // Membership comes from the closed window, not from live_now. Gating on
+            // whether the row happens to qualify *this* upload is what tore the player
+            // model into a spike: the bone palette only passes orthonormality on ~40% of
+            // uploads, so a different subset of bones moved each frame. Until the first
+            // window closes apply_set is empty, so fall back to live_now to stay useful.
+            const bool member = s.last_uploads ? s.apply_set[r] : live_now[r];
+            if (!member || r < next_free) {
                 continue; // overlapping triples would be transformed twice
+            }
+            // Still refuse to write over anything non-finite — cheap, and membership says
+            // nothing about what this particular upload put in the row.
+            if (!Finite3(f[static_cast<size_t>(r)]) || !Finite3(f[static_cast<size_t>(r) + 1]) ||
+                !Finite3(f[static_cast<size_t>(r) + 2])) {
+                continue;
             }
             next_free = r + 3;
             if (transpose) {
