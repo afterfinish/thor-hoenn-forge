@@ -699,10 +699,17 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     const Mat3 r_pitch = AxisAngle(1.0f, 0.0f, 0.0f, pitch_deg * kDegToRad);
     const Mat3 rot = Mul(r_pitch, r_yaw);
 
-    // Orbit about p = (0, 0, -d): trans = p - R*p. With d == 0 this degenerates to a
-    // pure swivel about the eye, which cannot displace geometry however wrong the row is.
-    const float tr[3] = {radius * rot.m[0][2], radius * rot.m[1][2],
-                         radius * rot.m[2][2] - radius};
+    // Orbit about the pivot p, as trans = p - R*p. With d == 0 this degenerates to a pure
+    // swivel about the eye, which cannot displace geometry however wrong the row is.
+    //
+    // p = (0, 0, +d), i.e. forward is +Z in this eye space. The original -Z (OpenGL
+    // convention) put the pivot *behind* the camera, so the rotation and the translation
+    // added instead of cancelling: at the measured d=4936 a 5.6 deg yaw threw the view
+    // ~480 units sideways and left the submitted geometry as an island in a black screen.
+    // A wrong sign here does not shear anything, it just doubles the swing rather than
+    // removing it, which is exactly the symptom that was observed.
+    const float tr[3] = {-radius * rot.m[0][2], -radius * rot.m[1][2],
+                         radius - radius * rot.m[2][2]};
 
     if (mode >= 0 && mode <= kLastTriple) {
         if (transpose) {
