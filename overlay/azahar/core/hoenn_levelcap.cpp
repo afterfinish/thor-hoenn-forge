@@ -467,25 +467,11 @@ bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& pr
             // offset from its own species field. Without this the search happily reports
             // our own randomised encounter table, which is full of (species, level) pairs
             // that never agree on a common offset.
-            std::string shared_levels;
-            for (s32 d = -0x40; d <= 0x140; ++d) {
-                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
-                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
-                if (!mem.IsValidVirtualAddress(process, pa) ||
-                    !mem.IsValidVirtualAddress(process, pb)) {
-                    continue;
-                }
-                if (mem.Read8(process, pa) == kDiscoverAnchorLevel &&
-                    mem.Read8(process, pb) == kDiscoverOtherLevel) {
-                    shared_levels += fmt::format("{:+#x} ", d);
-                }
-            }
-            if (shared_levels.empty()) {
-                continue;
-            }
-
-            // Independent confirmation: experience for each known level, also at a shared
-            // offset. Three fields agreeing on one layout is not coincidence.
+            // Experience is the mandatory filter, because it is by far the narrowest: two
+            // u32s each confined to a range a few hundred wide, at the same offset from
+            // their own species field. Level alone is a single byte with common values and
+            // was weak enough to let our own encounter table through. Level is still
+            // reported, but it no longer decides.
             const u8 rate_a = growth_loaded ? growth[kDiscoverAnchorSpecies] : 0;
             const u8 rate_b = growth_loaded ? growth[kDiscoverOtherSpecies] : 0;
             std::string shared_exp;
@@ -505,13 +491,30 @@ bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& pr
                     shared_exp += fmt::format("{:+#x} ", d);
                 }
             }
+            if (shared_exp.empty()) {
+                continue;
+            }
+
+            std::string shared_levels;
+            for (s32 d = -0x40; d <= 0x140; ++d) {
+                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
+                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
+                if (!mem.IsValidVirtualAddress(process, pa) ||
+                    !mem.IsValidVirtualAddress(process, pb)) {
+                    continue;
+                }
+                if (mem.Read8(process, pa) == kDiscoverAnchorLevel &&
+                    mem.Read8(process, pb) == kDiscoverOtherLevel) {
+                    shared_levels += fmt::format("{:+#x} ", d);
+                }
+            }
 
             ++reported;
             LOG_INFO(Core_Cheats,
-                     "Hoenn discovery: PAIR anchor {:#010x} other {:#010x} delta {} | levels at {}| "
-                     "exp at {}",
-                     a, b, delta, shared_levels,
-                     shared_exp.empty() ? "(none) " : shared_exp);
+                     "Hoenn discovery: *** CANDIDATE anchor {:#010x} other {:#010x} delta {} | "
+                     "exp at {}| levels at {}",
+                     a, b, delta, shared_exp,
+                     shared_levels.empty() ? "(none) " : shared_levels);
             // Raw bytes so the structure can be read by eye.
             for (const auto& [addr, who] : {std::pair{a, "anchor"}, std::pair{b, "other"}}) {
                 std::string dump;
