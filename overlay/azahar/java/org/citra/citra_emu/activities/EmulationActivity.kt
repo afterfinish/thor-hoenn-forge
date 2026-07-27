@@ -97,6 +97,12 @@ class EmulationActivity : AppCompatActivity() {
 
         screenAdjustmentUtil = ScreenAdjustmentUtil(this, windowManager, settingsViewModel.settings)
 
+        // Before the core loads anything. The 60 FPS patch is an IPS applied during ExeFS
+        // decompression, so it has to be on disk by the time setGraph below starts the
+        // emulation fragment. Re-asserted every launch because a prepare deletes the whole
+        // load/mods/<title> tree.
+        org.citra.citra_emu.hoennforge.HoennSixtyFps.apply(this)
+
         // Block orientation until emulation is ready to prevent unneccesary
         // surface recreation until the renderer is ready.
         isRotationBlocked = true
