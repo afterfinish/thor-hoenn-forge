@@ -105,6 +105,24 @@ public:
 private:
     LevelCap() = default;
 
+    /// Why a candidate was not believed. Ordered so that the cheapest and most selective
+    /// gates come first, which keeps the reject histogram meaningful: anything counted at
+    /// Sanity or later already looked like a Pokemon on species and level.
+    enum class Reject {
+        None = 0,
+        Range,
+        Unmapped,
+        Species,
+        Level,
+        Hp,
+        Stats,
+        Sanity,
+        Growth,
+        ExpBelow,
+        ExpAbove,
+        Count,
+    };
+
     bool enabled = false;
     bool enforce = false;
     StageSource stage_source = StageSource::Manual;
@@ -124,6 +142,15 @@ private:
     /// Suppresses the per-slot observe log once it has said the same thing enough times.
     u32 observe_logs = 0;
 
+    /// Diagnostics for one full pass over the heap. Without these a sweep that finds
+    /// nothing is indistinguishable from a module that never ran, which is exactly the
+    /// ambiguity that cost a play session.
+    u32 scan_passes = 0;
+    u32 scan_plausible = 0;
+    u32 scan_near_logs = 0;
+    std::array<u32, static_cast<std::size_t>(Reject::Count)> scan_reject{};
+    void LogScanPass();
+
     void ResetLocation();
     /// Dumps species and level for every slot the moment the party is first located, so
     /// the addresses can be checked against the party screen without playing far enough
@@ -132,8 +159,9 @@ private:
     /// One bounded slice of the heap sweep. Returns true once party_base is set.
     bool ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process);
     /// Every structural check a candidate slot must pass before we believe it, let alone
-    /// write to it.
-    bool ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot) const;
+    /// write to it. @param why optional, receives the first failing check.
+    bool ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot,
+                      Reject* why = nullptr) const;
     bool SlotIsEmpty(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot) const;
     int CountParty(Memory::MemorySystem& mem, Kernel::Process& process, u32 base) const;
     /// Growth curve for a slot: the table if loaded, else inferred from the level/exp pair

@@ -45,8 +45,9 @@ object ThorProfile {
         }
 
         // --- Graphics / performance (Azahar Android setup + handheld advice) ---
-        // 4x ≈ 1600×960 top; same class as common Citra 4x setups on Thor
-        IntSetting.RESOLUTION_FACTOR.int = 4
+        // 3x ≈ 1200×720 top. Was 4x, which looks marginally sharper but holds frame rate
+        // noticeably less well on Thor; dogfooding preferred the steadier 3x.
+        IntSetting.RESOLUTION_FACTOR.int = 3
         IntSetting.GRAPHICS_API.int = 2 // Vulkan
         BooleanSetting.NEW_3DS.boolean = true
         BooleanSetting.CPU_JIT.boolean = true
@@ -96,11 +97,13 @@ object ThorProfile {
         // Turbo when L3 held/toggled
         IntSetting.TURBO_LIMIT.int = 300
 
-        // FPS overlay so the user can verify gains
-        BooleanSetting.PERF_OVERLAY_ENABLE.boolean = true
-        BooleanSetting.PERF_OVERLAY_SHOW_FPS.boolean = true
-        BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = true
-        BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = true
+        // Perf overlay off by default — it was a development aid, and FPS/speed numbers
+        // sitting on top of the game are not what a player wants to see. Still available
+        // from Azahar's own settings for anyone diagnosing performance.
+        BooleanSetting.PERF_OVERLAY_ENABLE.boolean = false
+        BooleanSetting.PERF_OVERLAY_SHOW_FPS.boolean = false
+        BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = false
+        BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = false
 
         // --- Dual display ---
         BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean = true
@@ -185,8 +188,8 @@ object ThorProfile {
 
         Log.i(
             TAG,
-            "Thor profile: Vulkan 4x, stereo OFF, disable_right_eye=true, " +
-                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, FPS overlay on",
+            "Thor profile: Vulkan 3x, stereo OFF, disable_right_eye=true, " +
+                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, perf overlay off",
         )
     }
 

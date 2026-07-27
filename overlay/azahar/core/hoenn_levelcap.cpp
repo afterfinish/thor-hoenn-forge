@@ -50,14 +50,21 @@ constexpr std::array<u32, 5> kStatOffsets = {0xF4, 0xF6, 0xF8, 0xFA, 0xFC};
 // what makes five consecutive stat reads a ~1-in-a-billion filter against random heap.
 constexpr u16 kMaxStat = 1000;
 
-// The game's own allocations. The camera slot the free-look path uses lives at 0x085F67DC,
-// so the save block is in the same neighbourhood; sweeping past 0x0A000000 only adds time.
+// The whole guest heap. An earlier version stopped at 0x0A000000 on the reasoning that the
+// save block would sit near the camera object at 0x085F67DC; that was a guess dressed up as
+// an optimisation, and unmapped pages are skipped so cheaply that the full range costs
+// almost nothing. Do not narrow this again without evidence.
 constexpr u32 kHeapLo = 0x08000000;
-constexpr u32 kHeapHi = 0x0A000000;
+constexpr u32 kHeapHi = 0x0C000000;
 constexpr u32 kPageSize = 0x1000;
 // Bytes swept per tick. The sweep reads whole pages into a local buffer, so this is cheap
 // enough to finish the range in a couple of seconds without a visible hitch.
-constexpr u32 kScanBytesPerTick = 0x200000;
+constexpr u32 kScanBytesPerTick = 0x400000;
+
+// Plausible-looking slots to describe in full before falling back to counting them. A
+// structure that passes species and level but fails later is the single most useful thing
+// to see when the layout assumption is in doubt.
+constexpr u32 kNearMissLogLimit = 8;
 
 // Stop repeating the same observe-mode line forever; the first handful prove the point.
 constexpr u32 kObserveLogLimit = 12;
@@ -215,6 +222,9 @@ void LevelCap::ResetLocation() {
     party_count = 0;
     scan_cursor = kHeapLo;
     observe_logs = 0;
+    scan_plausible = 0;
+    scan_near_logs = 0;
+    scan_reject.fill(0);
     // A savestate load rewinds the timing counter, so a deadline from the old timeline
     // would park the module until the emulator caught back up.
     next_tick = 0;
@@ -255,50 +265,60 @@ bool LevelCap::ResolveGrowth(Memory::MemorySystem& mem, Kernel::Process& process
     return hits == 1;
 }
 
-bool LevelCap::ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process,
-                            u32 slot) const {
-    if (slot < kHeapLo || slot + kSlotSize > kHeapHi) {
+bool LevelCap::ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process, u32 slot,
+                            Reject* why) const {
+    const auto fail = [why](Reject r) {
+        if (why != nullptr) {
+            *why = r;
+        }
         return false;
+    };
+    if (why != nullptr) {
+        *why = Reject::None;
+    }
+
+    if (slot < kHeapLo || slot + kSlotSize > kHeapHi) {
+        return fail(Reject::Range);
     }
     if (!mem.IsValidVirtualAddress(process, slot) ||
         !mem.IsValidVirtualAddress(process, slot + kSlotSize - 1)) {
-        return false;
-    }
-    // Sanity is zero on every normal Pokemon; the game sets it on a corrupted entry.
-    if (mem.Read16(process, slot + OFF_SANITY) != 0) {
-        return false;
+        return fail(Reject::Unmapped);
     }
     const u16 species = mem.Read16(process, slot + OFF_SPECIES);
     if (species == 0 || species > kMaxSpecies) {
-        return false;
+        return fail(Reject::Species);
     }
     const u8 level = mem.Read8(process, slot + OFF_LEVEL);
     if (level < 1 || level > 100) {
-        return false;
+        return fail(Reject::Level);
     }
     const u16 hp_max = mem.Read16(process, slot + OFF_HP_MAX);
     const u16 hp_cur = mem.Read16(process, slot + OFF_HP_CUR);
     if (hp_max < 1 || hp_max > kMaxStat || hp_cur > hp_max) {
-        return false;
+        return fail(Reject::Hp);
     }
     for (const u32 off : kStatOffsets) {
         const u16 stat = mem.Read16(process, slot + off);
         if (stat < 1 || stat > kMaxStat) {
-            return false;
+            return fail(Reject::Stats);
         }
+    }
+    // Zero on every normal Pokemon; the game sets it on a corrupted entry.
+    if (mem.Read16(process, slot + OFF_SANITY) != 0) {
+        return fail(Reject::Sanity);
     }
     // The real discriminator. Experience, level and the species' growth curve are three
     // independent facts that only agree on an actual Pokemon.
     u8 rate = 0;
     if (!ResolveGrowth(mem, process, slot, rate)) {
-        return false;
+        return fail(Reject::Growth);
     }
     const u32 exp = mem.Read32(process, slot + OFF_EXP);
     if (exp < ExpForLevel(rate, level)) {
-        return false;
+        return fail(Reject::ExpBelow);
     }
     if (level < 100 && exp >= ExpForLevel(rate, level + 1)) {
-        return false;
+        return fail(Reject::ExpAbove);
     }
     return true;
 }
@@ -322,6 +342,39 @@ int LevelCap::CountParty(Memory::MemorySystem& mem, Kernel::Process& process,
     return count;
 }
 
+void LevelCap::LogScanPass() {
+    ++scan_passes;
+    // A pass takes about three seconds. Say it loudly a few times, then back off, because
+    // the GPU camera already logs twice a second and will flush this out of the ring buffer.
+    if (scan_passes > 3 && scan_passes % 10 != 0) {
+        scan_plausible = 0;
+        scan_reject.fill(0);
+        return;
+    }
+    LOG_INFO(Core_Cheats, "Hoenn level cap: enabled={} enforce={} growth_table={} stage={} cap={}",
+             enabled, enforce, growth_loaded, stage, GetActiveCap());
+    LOG_INFO(Core_Cheats,
+             "Hoenn level cap: swept {:#x}-{:#x}, pass {}, NO PARTY FOUND. {} plausible slots "
+             "rejected at range/unmapped/species/level/hp/stats/sanity/growth/exp-lo/exp-hi = "
+             "{}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
+             kHeapLo, kHeapHi, scan_passes, scan_plausible,
+             scan_reject[static_cast<std::size_t>(Reject::Range)],
+             scan_reject[static_cast<std::size_t>(Reject::Unmapped)],
+             scan_reject[static_cast<std::size_t>(Reject::Species)],
+             scan_reject[static_cast<std::size_t>(Reject::Level)],
+             scan_reject[static_cast<std::size_t>(Reject::Hp)],
+             scan_reject[static_cast<std::size_t>(Reject::Stats)],
+             scan_reject[static_cast<std::size_t>(Reject::Sanity)],
+             scan_reject[static_cast<std::size_t>(Reject::Growth)],
+             scan_reject[static_cast<std::size_t>(Reject::ExpBelow)],
+             scan_reject[static_cast<std::size_t>(Reject::ExpAbove)]);
+    scan_plausible = 0;
+    scan_reject.fill(0);
+    // Let the next pass describe fresh near misses; the party may not have existed yet on
+    // the first one.
+    scan_near_logs = 0;
+}
+
 bool LevelCap::ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process) {
     std::vector<u8> page(kPageSize);
     u32 swept = 0;
@@ -329,6 +382,7 @@ bool LevelCap::ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process)
     while (swept < kScanBytesPerTick) {
         if (scan_cursor + kPageSize > kHeapHi) {
             scan_cursor = kHeapLo;
+            LogScanPass();
             return false;
         }
         const u32 base = scan_cursor;
@@ -354,7 +408,35 @@ bool LevelCap::ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process)
                 continue;
             }
             const u32 candidate = base + off;
-            if (!ValidateSlot(mem, process, candidate)) {
+            // Past the species and level gates this is worth describing, whatever happens
+            // next: it is either the party or the closest thing in the heap to it.
+            Reject why = Reject::None;
+            if (!ValidateSlot(mem, process, candidate, &why)) {
+                ++scan_plausible;
+                scan_reject[static_cast<std::size_t>(why)]++;
+                if (scan_near_logs < kNearMissLogLimit) {
+                    ++scan_near_logs;
+                    u8 rate = 0;
+                    const bool have_rate = ResolveGrowth(mem, process, candidate, rate);
+                    LOG_INFO(Core_Cheats,
+                             "Hoenn level cap: near miss @ {:#010x} rejected at {} — species {} "
+                             "lv {} exp {} hp {}/{} stats {}/{}/{}/{}/{} sanity {:#06x} "
+                             "chk {:#06x} curve {}",
+                             candidate, static_cast<int>(why),
+                             mem.Read16(process, candidate + OFF_SPECIES),
+                             mem.Read8(process, candidate + OFF_LEVEL),
+                             mem.Read32(process, candidate + OFF_EXP),
+                             mem.Read16(process, candidate + OFF_HP_CUR),
+                             mem.Read16(process, candidate + OFF_HP_MAX),
+                             mem.Read16(process, candidate + kStatOffsets[0]),
+                             mem.Read16(process, candidate + kStatOffsets[1]),
+                             mem.Read16(process, candidate + kStatOffsets[2]),
+                             mem.Read16(process, candidate + kStatOffsets[3]),
+                             mem.Read16(process, candidate + kStatOffsets[4]),
+                             mem.Read16(process, candidate + OFF_SANITY),
+                             mem.Read16(process, candidate + OFF_CHECKSUM),
+                             have_rate ? static_cast<int>(rate) : -1);
+                }
                 continue;
             }
             // Walk back to slot 0 — we may have landed on any member of the party.
