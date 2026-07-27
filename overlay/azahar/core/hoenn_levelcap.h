@@ -125,6 +125,10 @@ private:
     u32 observe_logs = 0;
 
     void ResetLocation();
+    /// Dumps species and level for every slot the moment the party is first located, so
+    /// the addresses can be checked against the party screen without playing far enough
+    /// for a clamp to ever trigger.
+    void LogParty(Memory::MemorySystem& mem, Kernel::Process& process) const;
     /// One bounded slice of the heap sweep. Returns true once party_base is set.
     bool ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process);
     /// Every structural check a candidate slot must pass before we believe it, let alone

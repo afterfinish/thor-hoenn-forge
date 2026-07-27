@@ -371,10 +371,26 @@ bool LevelCap::ScanForParty(Memory::MemorySystem& mem, Kernel::Process& process)
             party_count = count;
             LOG_INFO(Core_Cheats, "Hoenn level cap: party found at {:#010x}, {} member(s)",
                      party_base, party_count);
+            LogParty(mem, process);
             return true;
         }
     }
     return false;
+}
+
+void LevelCap::LogParty(Memory::MemorySystem& mem, Kernel::Process& process) const {
+    for (int i = 0; i < party_count; ++i) {
+        const u32 slot = party_base + static_cast<u32>(i) * kSlotSize;
+        u8 rate = 0;
+        const bool have_rate = ResolveGrowth(mem, process, slot, rate);
+        LOG_INFO(Core_Cheats,
+                 "Hoenn level cap: slot {} @ {:#010x} species {} lv {} exp {} hp {}/{} "
+                 "curve {}",
+                 i, slot, mem.Read16(process, slot + OFF_SPECIES),
+                 mem.Read8(process, slot + OFF_LEVEL), mem.Read32(process, slot + OFF_EXP),
+                 mem.Read16(process, slot + OFF_HP_CUR), mem.Read16(process, slot + OFF_HP_MAX),
+                 have_rate ? static_cast<int>(rate) : -1);
+    }
 }
 
 void LevelCap::RewriteChecksum(Memory::MemorySystem& mem, Kernel::Process& process,
