@@ -30,6 +30,17 @@ object ThorProfile {
     private const val TAG = "HoennForge"
     private const val INPUT_MAPPING_PREFIX = "InputMapping"
 
+    /**
+     * FPS and speed readout over the game.
+     *
+     * Off is the shipping value — it is a development aid, not something a player wants to
+     * look at. Temporarily true while the 60 FPS patch is being evaluated, because judging
+     * whether presentation rate actually changed is very hard without a number, and
+     * [applyCore] re-stomps these settings on every launch so toggling it in Azahar's own
+     * settings will not stick. Set back to false when that testing is finished.
+     */
+    private const val PERF_OVERLAY_DEFAULT = true
+
     fun applyIfNeeded(prefs: HoennPrefs) {
         applyCore()
         if (!prefs.thorApplied) {
@@ -97,13 +108,11 @@ object ThorProfile {
         // Turbo when L3 held/toggled
         IntSetting.TURBO_LIMIT.int = 300
 
-        // Perf overlay off by default — it was a development aid, and FPS/speed numbers
-        // sitting on top of the game are not what a player wants to see. Still available
-        // from Azahar's own settings for anyone diagnosing performance.
-        BooleanSetting.PERF_OVERLAY_ENABLE.boolean = false
-        BooleanSetting.PERF_OVERLAY_SHOW_FPS.boolean = false
-        BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = false
-        BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = false
+        // See PERF_OVERLAY_DEFAULT — off for players, on while 60 FPS is being measured.
+        BooleanSetting.PERF_OVERLAY_ENABLE.boolean = PERF_OVERLAY_DEFAULT
+        BooleanSetting.PERF_OVERLAY_SHOW_FPS.boolean = PERF_OVERLAY_DEFAULT
+        BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = PERF_OVERLAY_DEFAULT
+        BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = PERF_OVERLAY_DEFAULT
 
         // --- Dual display ---
         BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean = true
@@ -189,7 +198,8 @@ object ThorProfile {
         Log.i(
             TAG,
             "Thor profile: Vulkan 3x, stereo OFF, disable_right_eye=true, " +
-                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, perf overlay off",
+                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, " +
+                "perf overlay ${if (PERF_OVERLAY_DEFAULT) "on" else "off"}",
         )
     }
 

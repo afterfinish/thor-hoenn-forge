@@ -52,6 +52,13 @@
 namespace Hoenn::GpuCam {
 namespace {
 
+// Per-second status heartbeats and the row census. Invaluable while the outdoor camera was
+// being reverse engineered, junk now that it works: between them they emit about two lines
+// a second, which is enough to flush a 256 KiB logcat ring in a couple of minutes and hide
+// whatever you were actually trying to read. Event-driven lines — row lock, calibration
+// accepted or rejected, path handover, parameter changes — are not gated and still fire.
+constexpr bool kVerboseLog = false;
+
 constexpr int kRows = 96;
 constexpr int kLastTriple = kRows - 3; // valid triple starts are 0..93
 constexpr int kNumTriples = kLastTriple + 1;
@@ -539,6 +546,9 @@ void CloseWindow(std::chrono::steady_clock::time_point now) {
 /// world-view matrix has many hits and almost as many changes. This is meant to be read straight off logcat instead of sweeping rows
 /// by hand. Destroys last_hits, which is rebuilt every window anyway.
 void LogCensus() {
+    if (!kVerboseLog) {
+        return;
+    }
     char buf[512];
     int n = 0;
     int listed = 0;
@@ -1077,7 +1087,7 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
         if (s.window_uploads >= kWindowUploads || now - s.window_start >= kWindowMaxTime) {
             CloseWindow(now);
         }
-        if (now - s.last_log >= std::chrono::seconds(1)) {
+        if (kVerboseLog && now - s.last_log >= std::chrono::seconds(1)) {
             s.last_log = now;
             LOG_INFO(Render,
                      "Hoenn GPU cam: locked={} cold={} steady={} live={} mode={} probe={} "
@@ -1118,7 +1128,7 @@ void ApplyToUniforms(std::array<Common::Vec4f, kRows>& f) {
     // --- Calibration: learn from the interior camera rather than guess ------------------
     if (watching) {
         const auto now_w = std::chrono::steady_clock::now();
-        if (now_w - s.last_log >= std::chrono::seconds(1)) {
+        if (kVerboseLog && now_w - s.last_log >= std::chrono::seconds(1)) {
             s.last_log = now_w;
             LOG_INFO(Render,
                      "Hoenn GPU cam WATCHING interior camera: row={} live={} yaw={:.1f} "

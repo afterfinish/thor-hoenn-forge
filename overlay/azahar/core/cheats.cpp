@@ -147,6 +147,14 @@ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cyc
         cam.Tick(system, process_id);
     }
 
+    // The level cap rides the same event. It throttles itself internally, so it does not
+    // get a say in the schedule below — free look pulling this to ~60 Hz must not drag a
+    // heap sweep along with it.
+    auto& level_cap = Hoenn::LevelCap::GetInstance();
+    if (level_cap.IsEnabled()) {
+        level_cap.Tick(system, process_id);
+    }
+
     const u64 base = (cam.IsFreelookEnabled() || cam.IsZoomAssistEnabled())
                          ? cam.GetScheduleInterval()
                          : run_interval_ticks;

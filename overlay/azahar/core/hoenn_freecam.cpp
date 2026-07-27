@@ -31,6 +31,11 @@
 namespace Hoenn {
 
 namespace {
+// Periodic status heartbeats for the camera, which works and is no longer being debugged.
+// Off so the log belongs to whatever is being worked on now. Events — free look on/off,
+// path handover, zoom on/off — are not gated.
+constexpr bool kVerboseLog = false;
+
 constexpr VAddr CAMERA_SLOT = 0x085F67DC;
 constexpr u32 OFF_FLAG = 0x80;
 constexpr u32 OFF_MODE = 0x8C;
@@ -669,7 +674,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     if (use_gpu || live_count == 0) {
-        if ((diag++ % 120) == 0) {
+        if (kVerboseLog && (diag++ % 120) == 0) {
             LOG_INFO(Core, "Hoenn freelook GPU path={} y={:.1f} p={:.1f} row={} live={}", use_gpu,
                      gpu_yaw, gpu_pitch,
                      static_cast<int>(GpuCam::GetParam(GpuCam::ParamDetectedRow)), live_count);
@@ -697,7 +702,7 @@ void FreeCam::Tick(Core::System& system, u32 process_id) {
     }
 
     // Rare status only — avoid log spam on hot path
-    if ((diag++ % 300) == 0 && primary_cam) {
+    if (kVerboseLog && (diag++ % 300) == 0 && primary_cam) {
         LOG_INFO(Core, "Hoenn freelook n={} pri={:08X} p={:.1f} y={:.1f}", live_count, primary_cam,
                  pitch, yaw);
     }
