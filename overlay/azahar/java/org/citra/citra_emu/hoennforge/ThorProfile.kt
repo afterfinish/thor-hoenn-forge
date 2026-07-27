@@ -31,15 +31,13 @@ object ThorProfile {
     private const val INPUT_MAPPING_PREFIX = "InputMapping"
 
     /**
-     * FPS and speed readout over the game.
+     * FPS and speed readout over the game. A development aid, not something a player wants
+     * over the top of Hoenn.
      *
-     * Off is the shipping value — it is a development aid, not something a player wants to
-     * look at. Temporarily true while the 60 FPS patch is being evaluated, because judging
-     * whether presentation rate actually changed is very hard without a number, and
-     * [applyCore] re-stomps these settings on every launch so toggling it in Azahar's own
-     * settings will not stick. Set back to false when that testing is finished.
+     * Note that [applyCore] re-stomps these on every launch, so flipping this is the only
+     * way to change it — Azahar's own setting will not stick.
      */
-    private const val PERF_OVERLAY_DEFAULT = true
+    private const val PERF_OVERLAY_DEFAULT = false
 
     fun applyIfNeeded(prefs: HoennPrefs) {
         applyCore()

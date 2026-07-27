@@ -46,15 +46,25 @@ constexpr u32 OFF_HP_CUR = 0xF0;
 constexpr u32 OFF_HP_MAX = 0xF2;
 constexpr std::array<u32, 5> kStatOffsets = {0xF4, 0xF6, 0xF8, 0xFA, 0xFC};
 
-// Blissey tops out at 714 HP. Nothing legitimate reaches four digits, and the bound is
-// what makes five consecutive stat reads a ~1-in-a-billion filter against random heap.
-constexpr u16 kMaxStat = 1000;
-
-// HP is floor((2*base + IV + EV/4) * level / 100) + level + 10, so even a base-1 Pokemon
-// with no investment clears level + 10. That ties HP to level and kills the whole class of
-// false positive where both fields are individually plausible but cannot coexist.
+// Every stat is a function of level, so bounding them against the level - rather than
+// against a flat 1000 - ties six independent fields together and kills the whole class of
+// false positive where each field is individually plausible but they cannot coexist.
+//
+//   HP    = floor((2*base + IV + EV/4) * level / 100) + level + 10
+//   other = (floor((2*base + IV + EV/4) * level / 100) + 5) * nature
+//
+// Worst cases in gen 6: base HP 255 (Blissey), base other 230 (Shuckle), IV 31, EV 252 so
+// EV/4 = 63, nature multiplier 1.1. Minimum HP comes from base 1 with nothing invested.
 u16 MinHpForLevel(u8 level) {
     return static_cast<u16>(level) + 10;
+}
+
+u16 MaxHpForLevel(u8 level) {
+    return static_cast<u16>(604u * level / 100u + level + 10u);
+}
+
+u16 MaxStatForLevel(u8 level) {
+    return static_cast<u16>((554u * level / 100u + 5u) * 11u / 10u);
 }
 
 // The one exception: Shedinja's HP is hardcoded to 1 at every level.
@@ -304,15 +314,20 @@ bool LevelCap::ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process,
     }
     const u16 hp_max = mem.Read16(process, slot + OFF_HP_MAX);
     const u16 hp_cur = mem.Read16(process, slot + OFF_HP_CUR);
-    if (hp_max < 1 || hp_max > kMaxStat || hp_cur > hp_max) {
+    if (hp_max < 1 || hp_cur > hp_max) {
         return fail(Reject::Hp);
     }
-    if (species != kShedinja && hp_max < MinHpForLevel(level)) {
+    if (species == kShedinja) {
+        if (hp_max != 1) {
+            return fail(Reject::Hp);
+        }
+    } else if (hp_max < MinHpForLevel(level) || hp_max > MaxHpForLevel(level)) {
         return fail(Reject::Hp);
     }
+    const u16 stat_ceiling = MaxStatForLevel(level);
     for (const u32 off : kStatOffsets) {
         const u16 stat = mem.Read16(process, slot + off);
-        if (stat < 1 || stat > kMaxStat) {
+        if (stat < 1 || stat > stat_ceiling) {
             return fail(Reject::Stats);
         }
     }

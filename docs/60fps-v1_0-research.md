@@ -1,5 +1,47 @@
 # 60 FPS on the v1.0 cart build — research
 
+> ## OUTCOME (2026-07-27): tried on hardware, does not work, feature removed
+>
+> Everything mechanical in this document checked out. The patch was delivered, applied and
+> **verified live in guest memory** — and the frame rate did not move. The feature has been
+> deleted from the app; this document is kept as the record of why.
+>
+> What was proven on an AYN Thor, Omega Ruby USA (`000400000011C400`):
+>
+> | Step | Result |
+> |---|---|
+> | Patch site located in **both** OR and AS | byte-identical, four-instruction signature unique in each 5.4 MB binary |
+> | IPS written to the per-user data folder | `HoennSixtyFps: 60 FPS patch written to …/321/load/mods/…/exefs/code.ips` |
+> | Emulator applied it | `ncch_container.cpp:560: File …/code.ips patching code.bin` |
+> | Applied post-decompression, pre-`CreateProcess` | confirmed in `ncch.cpp:191` |
+> | IPS encoding vs Azahar's parser | traced byte-by-byte, correct |
+> | **Instruction actually changed in RAM** | **`0x0010E530 = 0xE3A00000`** — read back live from the running code segment |
+> | Frame rate | **unchanged, 30 FPS / 100% speed** |
+>
+> The last two rows are the finding. Forcing the tail's mode read to zero — so that
+> `tst r0,r1` can never set the flag that skips drawing — provably happened, and produced no
+> additional top-screen buffer swaps (which is what Azahar's FPS counter measures, via
+> `gpu.cpp:284` → `PerfStats::EndGameFrame`).
+>
+> **So §2's model of this function is wrong.** Either `draw()` is not reached more often
+> despite the branch being defeated, or reaching it does not cause a present. Presentation
+> rate is governed by something this branch does not control — plausibly the per-render-target
+> mode field that `0x00110F14` writes across five target arrays (§2), which would mean the
+> LCD cadence is configured out-of-band and no amount of calling `draw()` changes it.
+>
+> Two things worth keeping from the attempt:
+>
+> - **ORAS runs menus at 60 Hz natively.** Opening the bag reads 60 FPS / 100% speed on stock,
+>   which confirms §8 step 2's unverified assumption and kills the original NOP-plus-mode-flip
+>   design outright: that patch would have halved menu logic and made the cursor drag.
+> - **The mode byte is set per screen by the game**, not once at boot. Any approach that pokes
+>   it from a ~5 Hz cheat loop is racing the game and will lose in the overworld. That answers
+>   the open question in §9.
+>
+> Anyone picking this up again should start by finding what actually drives the buffer swap —
+> not by patching this function. §7 option (c), "not worth doing", was the correct call.
+
+
 Question: can we render ORAS at 60 FPS **at normal game speed** on the v1.0 build we already
 support, without asking anyone to update to v1.4?
 

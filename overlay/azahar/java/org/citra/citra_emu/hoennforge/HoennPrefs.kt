@@ -103,16 +103,6 @@ class HoennPrefs(context: Context) {
         get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_CALIBRATED)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_PIVOT, value) }
 
-    /**
-     * 60 FPS presentation patch. Defaults on only while it is being evaluated — whether the
-     * extra frames contain new images is still unproven, and if they do not this must ship
-     * off with a user-facing toggle rather than silently halving battery life. See
-     * [HoennSixtyFps].
-     */
-    var sixtyFpsEnabled: Boolean
-        get() = prefs.getBoolean(KEY_SIXTY_FPS, true)
-        set(value) = prefs.edit { putBoolean(KEY_SIXTY_FPS, value) }
-
     /** Hardcore-nuzlocke level cap, chosen during onboarding. */
     var levelCapEnabled: Boolean
         get() = prefs.getBoolean(KEY_LEVEL_CAP, false)
@@ -171,7 +161,6 @@ class HoennPrefs(context: Context) {
         private const val KEY_PREPARED = "prepared_ready"
         private const val KEY_RANDOMIZER = "randomizer_json"
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
-        private const val KEY_SIXTY_FPS = "sixty_fps_enabled"
         private const val KEY_LEVEL_CAP = "level_cap_enabled"
         private const val KEY_LEVEL_CAP_STAGE = "level_cap_stage"
         private const val KEY_FREELOOK = "freelook_enabled"

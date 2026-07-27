@@ -551,7 +551,9 @@ if (Test-Path $JavaSrc) {
 foreach ($dead in @(
     "org\citra\citra_emu\hoennforge\HoennFollower.kt",
     "org\citra\citra_emu\hoennforge\FollowerGhostOverlay.kt",
-    "org\citra\citra_emu\hoennforge\OrasPartyReader.kt"
+    "org\citra\citra_emu\hoennforge\OrasPartyReader.kt",
+    # 60 FPS: patch proved live in guest memory and changed nothing. See docs/60fps-v1_0-research.md.
+    "org\citra\citra_emu\hoennforge\HoennSixtyFps.kt"
 )) {
     $p = Join-Path $JavaDst $dead
     if (Test-Path $p) {
