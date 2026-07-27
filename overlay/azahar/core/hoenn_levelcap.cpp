@@ -401,19 +401,44 @@ bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& pr
     std::vector<u32> others;
     std::vector<u8> page(kPageSize);
 
-    for (u32 base = kHeapLo; base + kPageSize <= kHeapHi; base += kPageSize) {
-        if (!mem.IsValidVirtualAddress(process, base)) {
-            continue;
-        }
-        ++mapped_pages;
-        mem.ReadBlock(process, base, page.data(), kPageSize);
-        for (u32 off = 0; off + 1 < kPageSize; off += 2) {
-            const u16 v = static_cast<u16>(page[off] | (page[off + 1] << 8));
-            if (v == kDiscoverAnchorSpecies && anchors.size() < 4096) {
-                anchors.push_back(base + off);
-            } else if (v == kDiscoverOtherSpecies && others.size() < 2'000'000) {
-                others.push_back(base + off);
+    // Every region a 3DS title can have memory in, not just the application heap. The
+    // application heap only had 14 MB mapped while ORAS has well over a hundred available,
+    // which is the tell that the party was never in the range being swept.
+    struct Region {
+        u32 lo;
+        u32 hi;
+        const char* name;
+    };
+    static constexpr std::array<Region, 6> kRegions{{
+        {0x08000000, 0x0C000000, "APPLICATION"},
+        {0x0C000000, 0x10000000, "app-extended"},
+        {0x14000000, 0x1C000000, "LINEAR"},
+        {0x1E800000, 0x1F000000, "n3ds-extra"},
+        {0x1F000000, 0x1F600000, "VRAM"},
+        {0x30000000, 0x38000000, "linear-mirror"},
+    }};
+
+    for (const auto& r : kRegions) {
+        u32 region_pages = 0;
+        for (u32 base = r.lo; base + kPageSize <= r.hi; base += kPageSize) {
+            if (!mem.IsValidVirtualAddress(process, base)) {
+                continue;
             }
+            ++region_pages;
+            ++mapped_pages;
+            mem.ReadBlock(process, base, page.data(), kPageSize);
+            for (u32 off = 0; off + 1 < kPageSize; off += 2) {
+                const u16 v = static_cast<u16>(page[off] | (page[off + 1] << 8));
+                if (v == kDiscoverAnchorSpecies && anchors.size() < 65536) {
+                    anchors.push_back(base + off);
+                } else if (v == kDiscoverOtherSpecies && others.size() < 4'000'000) {
+                    others.push_back(base + off);
+                }
+            }
+        }
+        if (region_pages > 0) {
+            LOG_INFO(Core_Cheats, "Hoenn discovery: region {:<14} {:#010x}-{:#010x}  {} pages, {} KiB",
+                     r.name, r.lo, r.hi, region_pages, region_pages * 4);
         }
     }
     // Mapped page count matters: a low number means the game had not finished loading, and a
@@ -438,32 +463,61 @@ bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& pr
             if (delta == 0) {
                 continue;
             }
-            ++reported;
-            LOG_INFO(Core_Cheats, "Hoenn discovery: PAIR anchor {:#010x} other {:#010x} delta {}",
-                     a, b, delta);
-            // Where do the two known levels actually sit relative to each species field?
-            for (const auto& [addr, want, who] :
-                 {std::tuple{a, kDiscoverAnchorLevel, "anchor"},
-                  std::tuple{b, kDiscoverOtherLevel, "other"}}) {
-                std::string hits;
-                for (s32 d = -0x20; d <= 0x140; ++d) {
-                    const u32 p = static_cast<u32>(static_cast<s32>(addr) + d);
-                    if (p < kHeapLo || p >= kHeapHi || !mem.IsValidVirtualAddress(process, p)) {
-                        continue;
-                    }
-                    if (mem.Read8(process, p) == want) {
-                        hits += fmt::format("{:+#x} ", d);
-                    }
+            // Two party slots share one layout, so each known level must sit at the SAME
+            // offset from its own species field. Without this the search happily reports
+            // our own randomised encounter table, which is full of (species, level) pairs
+            // that never agree on a common offset.
+            std::string shared_levels;
+            for (s32 d = -0x40; d <= 0x140; ++d) {
+                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
+                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
+                if (!mem.IsValidVirtualAddress(process, pa) ||
+                    !mem.IsValidVirtualAddress(process, pb)) {
+                    continue;
                 }
-                LOG_INFO(Core_Cheats, "Hoenn discovery:   {} {:#010x} level {} found at {}", who,
-                         addr, want, hits.empty() ? "(nowhere)" : hits);
+                if (mem.Read8(process, pa) == kDiscoverAnchorLevel &&
+                    mem.Read8(process, pb) == kDiscoverOtherLevel) {
+                    shared_levels += fmt::format("{:+#x} ", d);
+                }
             }
+            if (shared_levels.empty()) {
+                continue;
+            }
+
+            // Independent confirmation: experience for each known level, also at a shared
+            // offset. Three fields agreeing on one layout is not coincidence.
+            const u8 rate_a = growth_loaded ? growth[kDiscoverAnchorSpecies] : 0;
+            const u8 rate_b = growth_loaded ? growth[kDiscoverOtherSpecies] : 0;
+            std::string shared_exp;
+            for (s32 d = -0x40; d <= 0x140; d += 2) {
+                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
+                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
+                if (!mem.IsValidVirtualAddress(process, pa) ||
+                    !mem.IsValidVirtualAddress(process, pb)) {
+                    continue;
+                }
+                const u32 ea = mem.Read32(process, pa);
+                const u32 eb = mem.Read32(process, pb);
+                if (ea >= ExpForLevel(rate_a, kDiscoverAnchorLevel) &&
+                    ea < ExpForLevel(rate_a, kDiscoverAnchorLevel + 1) &&
+                    eb >= ExpForLevel(rate_b, kDiscoverOtherLevel) &&
+                    eb < ExpForLevel(rate_b, kDiscoverOtherLevel + 1)) {
+                    shared_exp += fmt::format("{:+#x} ", d);
+                }
+            }
+
+            ++reported;
+            LOG_INFO(Core_Cheats,
+                     "Hoenn discovery: PAIR anchor {:#010x} other {:#010x} delta {} | levels at {}| "
+                     "exp at {}",
+                     a, b, delta, shared_levels,
+                     shared_exp.empty() ? "(none) " : shared_exp);
             // Raw bytes so the structure can be read by eye.
             for (const auto& [addr, who] : {std::pair{a, "anchor"}, std::pair{b, "other"}}) {
                 std::string dump;
                 for (s32 d = -0x10; d < 0x20; ++d) {
                     const u32 p = static_cast<u32>(static_cast<s32>(addr) + d);
-                    if (p < kHeapLo || p >= kHeapHi || !mem.IsValidVirtualAddress(process, p)) {
+                    if (!mem.IsValidVirtualAddress(process, p)) {
                         dump += "?? ";
                         continue;
                     }
