@@ -13,6 +13,7 @@
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hoenn_freecam.h"
+#include "core/hoenn_levelcap.h"
 #include "core/hle/kernel/process.h"
 
 namespace Cheats {
@@ -42,6 +43,7 @@ void CheatEngine::Connect(u32 process_id_) {
         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
     system.CoreTiming().ScheduleEvent(run_interval_ticks, event);
     Hoenn::FreeCam::GetInstance().OnCoreReconnect();
+    Hoenn::LevelCap::GetInstance().OnCoreReconnect();
 }
 
 std::span<const std::shared_ptr<CheatBase>> CheatEngine::GetCheats() const {

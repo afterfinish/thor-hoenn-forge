@@ -150,6 +150,20 @@
     <string name="hoenn_mode_randomized">Randomized run</string>
     <string name="hoenn_mode_randomized_help">A one-of-a-kind Hoenn forged from your dump - you choose how wild.</string>
     <string name="hoenn_dump_untouched">You can start a different run anytime from Home. Original dump is never modified.</string>
+    <!-- Level cap -->
+    <string name="hoenn_cap_title">Level cap?</string>
+    <string name="hoenn_cap_body">The hardcore-nuzlocke rule: your team can never out-level the next boss.</string>
+    <string name="hoenn_cap_off">No cap</string>
+    <string name="hoenn_cap_off_help">Grind as much as you like. The normal game.</string>
+    <string name="hoenn_cap_on">Level cap</string>
+    <string name="hoenn_cap_chip">Experimental</string>
+    <string name="hoenn_cap_on_help">At the cap a Pokémon keeps battling but banks no experience. Rare Candies and trades get pulled back down too.</string>
+    <string name="hoenn_cap_footer">Raise the cap from the START menu as you beat each gym, then each Elite Four member. You can turn it off mid-run.</string>
+    <string name="hoenn_cap_quick">Level cap</string>
+    <string name="hoenn_cap_quick_off">Off</string>
+    <string name="hoenn_cap_chip_lv">Lv %1$d</string>
+    <string name="hoenn_cap_advance">Beat %1$s — raise cap</string>
+    <string name="hoenn_cap_inert">Cap on, party not found yet</string>
     <!-- Randomizer -->
     <string name="hoenn_randomizer_title">Forge a randomized run</string>
     <string name="hoenn_randomizer_subtitle">Same seed + same options = the same run, shareable.</string>

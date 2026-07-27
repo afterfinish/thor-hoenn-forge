@@ -561,6 +561,8 @@ class EmulationFragment :
         val chipZoom = view.findViewById<TextView>(R.id.chipZoomStatus)
         val textSaveDesc = view.findViewById<TextView>(R.id.textSaveDesc)
         val textLoadDesc = view.findViewById<TextView>(R.id.textLoadDesc)
+        val chipLevelCap = view.findViewById<TextView>(R.id.chipLevelCapStatus)
+        val textLevelCapDesc = view.findViewById<TextView>(R.id.textLevelCapDesc)
 
         // Game tag (short OR/AS label when known).
         if (::game.isInitialized) {
@@ -588,9 +590,42 @@ class EmulationFragment :
                 ),
             )
         }
+        fun refreshLevelCap() {
+            val on = prefs.levelCapEnabled
+            val ladder = org.citra.citra_emu.hoennforge.LevelCapLadder
+            val stage = prefs.levelCapStage
+            // The cap number is the useful thing at a glance, not "On".
+            chipLevelCap.text = if (on) {
+                getString(R.string.hoenn_cap_chip_lv, ladder.capFor(stage))
+            } else {
+                getString(R.string.hoenn_status_off)
+            }
+            chipLevelCap.setBackgroundResource(
+                if (on) R.drawable.hoenn_chip_on else R.drawable.hoenn_chip_muted,
+            )
+            chipLevelCap.setTextColor(
+                resources.getColor(
+                    if (on) R.color.hoenn_accent_100 else R.color.hoenn_muted,
+                    requireContext().theme,
+                ),
+            )
+            textLevelCapDesc.text = if (!on) {
+                getString(R.string.hoenn_cap_quick_off)
+            } else {
+                // Once the party has been located the cap is really in force; until then
+                // say so rather than showing a number that is not doing anything.
+                val status = org.citra.citra_emu.hoennforge.HoennLevelCap.status()
+                if (status != null && status.partyCount == 0) {
+                    getString(R.string.hoenn_cap_inert)
+                } else {
+                    getString(R.string.hoenn_cap_advance, ladder.bossFor(stage))
+                }
+            }
+        }
         fun refreshToggleChips() {
             paintToggleChip(chipFreelook, prefs.freelookEnabled)
             paintToggleChip(chipZoom, prefs.cameraZoomAssistEnabled)
+            refreshLevelCap()
         }
         fun refreshSlotDescs() {
             val savestates = NativeLibrary.getSavestateInfo()
@@ -645,6 +680,23 @@ class EmulationFragment :
         view.findViewById<View>(R.id.rowZoom).setOnClickListener {
             toggleHoennZoomAssist()
             refreshToggleChips()
+        }
+        view.findViewById<View>(R.id.rowLevelCap).setOnClickListener {
+            val cap = org.citra.citra_emu.hoennforge.HoennLevelCap
+            val ladder = org.citra.citra_emu.hoennforge.LevelCapLadder
+            when {
+                // Off -> start the ladder.
+                !prefs.levelCapEnabled -> {
+                    cap.setStage(prefs, 0)
+                    cap.setEnabled(prefs, true)
+                }
+                // Past the champion there is nothing left to cap, so wrap to off. That
+                // makes the row a closed cycle: no state is unreachable and nothing the
+                // player does here is a one-way door.
+                prefs.levelCapStage >= ladder.LAST -> cap.setEnabled(prefs, false)
+                else -> cap.advance(prefs)
+            }
+            refreshLevelCap()
         }
         view.findViewById<View>(R.id.rowPokedex).setOnClickListener {
             closeMenu()
@@ -811,6 +863,11 @@ class EmulationFragment :
         if (prefs.freelookEnabled) {
             org.citra.citra_emu.hoennforge.HoennFreecam.applyFreelook(game.titleId, true)
         }
+        org.citra.citra_emu.hoennforge.HoennLevelCap.restore(
+            requireContext(),
+            prefs,
+            game.titleId,
+        )
     }
 
     /**

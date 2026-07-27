@@ -79,6 +79,12 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
+            android:name="org.citra.citra_emu.hoennforge.LevelCapActivity"
+            android:theme="@style/Theme.Citra.Main"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name="org.citra.citra_emu.hoennforge.RandomizerActivity"
             android:theme="@style/Theme.Citra.Main"
             android:exported="false"

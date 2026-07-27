@@ -27,20 +27,27 @@ class PlayModeActivity : HoennActivity() {
 
         val vanilla = findViewById<Button>(R.id.buttonVanilla)
         val randomized = findViewById<Button>(R.id.buttonRandomized)
+        // Both branches pass through the level cap step; it carries the destination so
+        // that screen does not have to guess which run it is part of.
+        fun continueTo(next: String) {
+            startActivity(
+                Onboarding.intentTo(this, LevelCapActivity::class.java)
+                    .putExtra(LevelCapActivity.EXTRA_NEXT, next),
+            )
+            finish()
+        }
         vanilla.setOnClickListener {
             if (!vanilla.isEnabled) return@setOnClickListener
             vanilla.isEnabled = false
             randomized.isEnabled = false
             prefs.randomizerConfig = RandomizerConfig.vanilla()
-            startActivity(Onboarding.intentTo(this, PrepareActivity::class.java))
-            finish()
+            continueTo(LevelCapActivity.NEXT_PREPARE)
         }
         randomized.setOnClickListener {
             if (!randomized.isEnabled) return@setOnClickListener
             vanilla.isEnabled = false
             randomized.isEnabled = false
-            startActivity(Onboarding.intentTo(this, RandomizerActivity::class.java))
-            finish()
+            continueTo(LevelCapActivity.NEXT_RANDOMIZER)
         }
         val root = findViewById<android.view.View>(android.R.id.content)
         HoennFocus.enable(root)

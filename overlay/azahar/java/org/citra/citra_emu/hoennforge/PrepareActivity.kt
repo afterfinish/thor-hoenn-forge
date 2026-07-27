@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.citra.citra_emu.R
+import org.citra.citra_emu.hoennforge.randomizer.GrowthTable
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerConfig
 import org.citra.citra_emu.hoennforge.randomizer.RandomizerEngine
 import java.io.File
@@ -160,6 +161,12 @@ class PrepareActivity : HoennActivity() {
                         }
                         """.trimIndent(),
                     )
+                    // Experience curves for the level cap. Independent of the randomizer,
+                    // so it runs on a vanilla prepare too, and a failure here must not
+                    // fail the run — the cap just stays inert.
+                    if (GrowthTable.extract(this@PrepareActivity, uri) == null) {
+                        Log.w(TAG, "growth table unavailable; level cap will stay inert")
+                    }
                     prefs.preparedReady = true
                 }
                 progress.progress = 100

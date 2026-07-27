@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/hoenn_bg_screen"
+    android:padding="@dimen/hoenn_margin_outer">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <include
+            layout="@layout/hoenn_brand_header"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/hoenn_step_4"
+            style="@style/Hoenn.Text.Caption" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/hoenn_cap_title"
+            style="@style/Hoenn.Text.Display" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="@string/hoenn_cap_body"
+            style="@style/Hoenn.Text.Muted" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <LinearLayout
+                android:id="@+id/cardCapOff"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/hoenn_bg_card_selected"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="180dp">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/hoenn_cap_off"
+                    style="@style/Hoenn.Text.Title" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/hoenn_cap_off_help"
+                    style="@style/Hoenn.Text.Muted" />
+                <Button
+                    android:id="@+id/buttonCapOff"
+                    style="@style/Hoenn.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/hoenn_cap_off" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardCapOn"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/hoenn_bg_card"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="180dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/hoenn_cap_on"
+                        style="@style/Hoenn.Text.Title" />
+                    <TextView
+                        android:id="@+id/chipCapExperimental"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/hoenn_chip"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:text="@string/hoenn_cap_chip"
+                        android:textColor="@color/hoenn_text"
+                        android:textSize="11sp" />
+                </LinearLayout>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/hoenn_cap_on_help"
+                    style="@style/Hoenn.Text.Muted" />
+                <TextView
+                    android:id="@+id/textCapLadder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    style="@style/Hoenn.Text.Caption" />
+                <Button
+                    android:id="@+id/buttonCapOn"
+                    style="@style/Hoenn.Button.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/hoenn_cap_on" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="@string/hoenn_cap_footer"
+            style="@style/Hoenn.Text.Caption" />
+    </LinearLayout>
+</FrameLayout>

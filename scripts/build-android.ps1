@@ -32,6 +32,8 @@ if ((Test-Path $ssSrc) -and (Test-Path $ssDst)) {
 foreach ($pair in @(
     @("core\hoenn_freecam.cpp", "src\core\hoenn_freecam.cpp"),
     @("core\hoenn_freecam.h", "src\core\hoenn_freecam.h"),
+    @("core\hoenn_levelcap.cpp", "src\core\hoenn_levelcap.cpp"),
+    @("core\hoenn_levelcap.h", "src\core\hoenn_levelcap.h"),
     @("core\cheats.cpp", "src\core\cheats\cheats.cpp"),
     @("core\perf_stats.h", "src\core\perf_stats.h"),
     @("core\perf_stats.cpp", "src\core\perf_stats.cpp"),
@@ -154,6 +156,12 @@ if (Test-Path $coreCmake) {
         $cm = $cm -replace "(cheats/gateway_cheat\.h\r?\n)", "`$1    hoenn_freecam.cpp`n    hoenn_freecam.h`n"
         [System.IO.File]::WriteAllText($coreCmake, $cm)
         Write-Host "Patched core CMakeLists for hoenn_freecam"
+        $cm = Get-Content $coreCmake -Raw -Encoding UTF8
+    }
+    if ($cm -notmatch "hoenn_levelcap\.cpp") {
+        $cm = $cm -replace "(hoenn_freecam\.h\r?\n)", "`$1    hoenn_levelcap.cpp`n    hoenn_levelcap.h`n"
+        [System.IO.File]::WriteAllText($coreCmake, $cm)
+        Write-Host "Patched core CMakeLists for hoenn_levelcap"
     }
 }
 # video_core CMakeLists: register the GPU-path camera. Appended rather than spliced into
@@ -226,6 +234,23 @@ if (Test-Path $nlPath) {
     external fun hoennGpuCamGet(param: Int): Float
 "@
         Write-Host "NativeLibrary.kt GPU cam JNI ensured"
+    }
+    if ($nl -notmatch "setHoennLevelCap\b") {
+        $nl = $nl -replace "(external fun hoennGpuCamGet\(param: Int\): Float)", @"
+`$1
+
+    /** Hoenn Forge: hardcore-nuzlocke level cap. */
+    external fun setHoennLevelCap(enabled: Boolean)
+    external fun isHoennLevelCapEnabled(): Boolean
+    external fun setHoennLevelCapEnforce(enforce: Boolean)
+    external fun setHoennLevelCapStage(stage: Int)
+    external fun hoennLevelCapStage(): Int
+    external fun hoennLevelCapActive(): Int
+    external fun hoennLevelCapPartyCount(): Int
+    external fun hoennLevelCapClamps(): Int
+    external fun setHoennLevelCapGrowth(rates: ByteArray)
+"@
+        Write-Host "NativeLibrary.kt level cap JNI ensured"
     }
     [System.IO.File]::WriteAllText($nlPath, $nl)
     Write-Host "NativeLibrary.kt Hoenn camera JNI ensured (ship only)"
@@ -436,6 +461,79 @@ jfloat Java_org_citra_citra_1emu_NativeLibrary_hoennGpuCamGet([[maybe_unused]] J
         Write-Host "Patched native.cpp GPU cam JNI"
     } else {
         Write-Host "native.cpp GPU cam JNI already present"
+    }
+    # Hardcore-nuzlocke level cap
+    $nc = Get-Content $nativeCpp -Raw -Encoding UTF8
+    if ($nc -notmatch "setHoennLevelCap\b") {
+        if ($nc -notmatch "hoenn_levelcap\.h") {
+            $nc = $nc -replace '(#include "core/hoenn_freecam\.h")', "`$1`n#include `"core/hoenn_levelcap.h`""
+        }
+        $jni = @'
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennLevelCap([[maybe_unused]] JNIEnv* env,
+                                                              [[maybe_unused]] jobject obj,
+                                                              jboolean enabled) {
+    Hoenn::LevelCap::GetInstance().SetEnabled(static_cast<bool>(enabled));
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_isHoennLevelCapEnabled(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jboolean>(Hoenn::LevelCap::GetInstance().IsEnabled());
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennLevelCapEnforce(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj, jboolean enforce) {
+    Hoenn::LevelCap::GetInstance().SetEnforce(static_cast<bool>(enforce));
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennLevelCapStage([[maybe_unused]] JNIEnv* env,
+                                                                   [[maybe_unused]] jobject obj,
+                                                                   jint stage) {
+    Hoenn::LevelCap::GetInstance().SetStage(static_cast<int>(stage));
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennLevelCapStage([[maybe_unused]] JNIEnv* env,
+                                                                [[maybe_unused]] jobject obj) {
+    return static_cast<jint>(Hoenn::LevelCap::GetInstance().GetStage());
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennLevelCapActive([[maybe_unused]] JNIEnv* env,
+                                                                 [[maybe_unused]] jobject obj) {
+    return static_cast<jint>(Hoenn::LevelCap::GetInstance().GetActiveCap());
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennLevelCapPartyCount(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj) {
+    return static_cast<jint>(Hoenn::LevelCap::GetInstance().GetPartyCount());
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_hoennLevelCapClamps([[maybe_unused]] JNIEnv* env,
+                                                                 [[maybe_unused]] jobject obj) {
+    return static_cast<jint>(Hoenn::LevelCap::GetInstance().GetClampCount());
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setHoennLevelCapGrowth([[maybe_unused]] JNIEnv* env,
+                                                                    [[maybe_unused]] jobject obj,
+                                                                    jbyteArray rates) {
+    auto& cap = Hoenn::LevelCap::GetInstance();
+    if (rates == nullptr) {
+        cap.SetGrowthTable(nullptr, 0);
+        return;
+    }
+    const jsize len = env->GetArrayLength(rates);
+    std::vector<u8> buf(static_cast<std::size_t>(len));
+    if (len > 0) {
+        env->GetByteArrayRegion(rates, 0, len, reinterpret_cast<jbyte*>(buf.data()));
+    }
+    cap.SetGrowthTable(buf.data(), buf.size());
+}
+
+'@
+        $nc = $nc -replace "\} // extern `"C`"", ($jni + "`n} // extern `"C`"")
+        [System.IO.File]::WriteAllText($nativeCpp, $nc)
+        Write-Host "Patched native.cpp level cap JNI"
+    } else {
+        Write-Host "native.cpp level cap JNI already present"
     }
 }
 $Main = Join-Path $Android "app\src\main"

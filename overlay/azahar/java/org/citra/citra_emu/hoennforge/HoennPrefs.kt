@@ -103,6 +103,16 @@ class HoennPrefs(context: Context) {
         get() = prefs.getInt(KEY_GPUCAM_PIVOT, HoennGpuCam.PIVOT_CALIBRATED)
         set(value) = prefs.edit { putInt(KEY_GPUCAM_PIVOT, value) }
 
+    /** Hardcore-nuzlocke level cap, chosen during onboarding. */
+    var levelCapEnabled: Boolean
+        get() = prefs.getBoolean(KEY_LEVEL_CAP, false)
+        set(value) = prefs.edit { putBoolean(KEY_LEVEL_CAP, value) }
+
+    /** Which boss you are working towards: 0 is the run up to Roxanne. */
+    var levelCapStage: Int
+        get() = LevelCapLadder.clamp(prefs.getInt(KEY_LEVEL_CAP_STAGE, 0))
+        set(value) = prefs.edit { putInt(KEY_LEVEL_CAP_STAGE, LevelCapLadder.clamp(value)) }
+
     @Deprecated("Renamed to cameraZoomAssistEnabled", ReplaceWith("cameraZoomAssistEnabled"))
     var freecamEnabled: Boolean
         get() = cameraZoomAssistEnabled
@@ -122,6 +132,8 @@ class HoennPrefs(context: Context) {
             remove(KEY_REGION)
             remove(KEY_PREPARED)
             remove(KEY_RANDOMIZER)
+            remove(KEY_LEVEL_CAP)
+            remove(KEY_LEVEL_CAP_STAGE)
         }
     }
 
@@ -130,6 +142,10 @@ class HoennPrefs(context: Context) {
         prefs.edit {
             remove(KEY_PREPARED)
             remove(KEY_RANDOMIZER)
+            // A new run is a new ladder; leaving a stage 9 cap on a fresh save would look
+            // like the feature was simply not working.
+            remove(KEY_LEVEL_CAP)
+            remove(KEY_LEVEL_CAP_STAGE)
         }
     }
 
@@ -145,6 +161,8 @@ class HoennPrefs(context: Context) {
         private const val KEY_PREPARED = "prepared_ready"
         private const val KEY_RANDOMIZER = "randomizer_json"
         private const val KEY_CAM_ZOOM = "camera_zoom_assist"
+        private const val KEY_LEVEL_CAP = "level_cap_enabled"
+        private const val KEY_LEVEL_CAP_STAGE = "level_cap_stage"
         private const val KEY_FREELOOK = "freelook_enabled"
         private const val KEY_GPUCAM_PROBE = "gpucam_probe"
         private const val KEY_GPUCAM_ROW = "gpucam_row_mode"
