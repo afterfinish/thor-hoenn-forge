@@ -448,92 +448,108 @@ bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& pr
              discovery_runs, mapped_pages, mapped_pages * 4, kDiscoverAnchorSpecies, anchors.size(),
              kDiscoverOtherSpecies, others.size());
 
+    // Phase 2 — the real search, driven by the one genuinely rare value we have.
+    //
+    // Malamar at level 2 has experience somewhere in 8..26, which in real memory is just
+    // "a small integer" and occurs everywhere; using it as a filter produced noise. The
+    // level 15 Charmander's 2035..2534 is rare, so it leads. For each Charmander id we look
+    // for its experience at some offset j and its level at some offset k, then require the
+    // Malamar to corroborate the *same* j and k. A layout that explains species, experience
+    // and level for two different Pokemon at identical offsets is the party.
+    const u8 rate_char = growth_loaded ? growth[kDiscoverOtherSpecies] : 3;
+    const u8 rate_mala = growth_loaded ? growth[kDiscoverAnchorSpecies] : 0;
+    const u32 char_lo = ExpForLevel(rate_char, kDiscoverOtherLevel);
+    const u32 char_hi = ExpForLevel(rate_char, kDiscoverOtherLevel + 1);
+    const u32 mala_lo = ExpForLevel(rate_mala, kDiscoverAnchorLevel);
+    const u32 mala_hi = ExpForLevel(rate_mala, kDiscoverAnchorLevel + 1);
+    LOG_INFO(Core_Cheats,
+             "Hoenn discovery: phase 2 — species {} exp {}..{} lv {}, corroborated by species {} "
+             "exp {}..{} lv {} at the same offsets",
+             kDiscoverOtherSpecies, char_lo, char_hi - 1, kDiscoverOtherLevel,
+             kDiscoverAnchorSpecies, mala_lo, mala_hi - 1, kDiscoverAnchorLevel);
+
+    constexpr s32 kBack = 0x40;
+    constexpr s32 kFwd = 0x180;
+    constexpr u32 kWinSize = static_cast<u32>(kBack + kFwd);
+    std::vector<u8> win(kWinSize);
+    std::size_t triples = 0;
     std::size_t reported = 0;
-    for (const u32 a : anchors) {
+
+    for (const u32 c : others) {
         if (reported >= kDiscoverMaxPairs) {
             break;
         }
-        // Any occurrence of the other species close enough to be a sibling party slot.
-        const auto lo = std::lower_bound(others.begin(), others.end(),
-                                         a > kDiscoverWindow ? a - kDiscoverWindow : 0);
-        const auto hi = std::upper_bound(others.begin(), others.end(), a + kDiscoverWindow);
-        for (auto it = lo; it != hi && reported < kDiscoverMaxPairs; ++it) {
-            const u32 b = *it;
-            const s32 delta = static_cast<s32>(b) - static_cast<s32>(a);
-            if (delta == 0) {
+        const u32 wlo = c - kBack;
+        if (!mem.IsValidVirtualAddress(process, wlo) ||
+            !mem.IsValidVirtualAddress(process, wlo + kWinSize - 1)) {
+            continue;
+        }
+        mem.ReadBlock(process, wlo, win.data(), kWinSize);
+        for (u32 jo = 0; jo + 4 <= kWinSize; jo += 2) {
+            const u32 e = static_cast<u32>(win[jo]) | (static_cast<u32>(win[jo + 1]) << 8) |
+                          (static_cast<u32>(win[jo + 2]) << 16) |
+                          (static_cast<u32>(win[jo + 3]) << 24);
+            if (e < char_lo || e >= char_hi) {
                 continue;
             }
-            // Two party slots share one layout, so each known level must sit at the SAME
-            // offset from its own species field. Without this the search happily reports
-            // our own randomised encounter table, which is full of (species, level) pairs
-            // that never agree on a common offset.
-            // Experience is the mandatory filter, because it is by far the narrowest: two
-            // u32s each confined to a range a few hundred wide, at the same offset from
-            // their own species field. Level alone is a single byte with common values and
-            // was weak enough to let our own encounter table through. Level is still
-            // reported, but it no longer decides.
-            const u8 rate_a = growth_loaded ? growth[kDiscoverAnchorSpecies] : 0;
-            const u8 rate_b = growth_loaded ? growth[kDiscoverOtherSpecies] : 0;
-            std::string shared_exp;
-            for (s32 d = -0x40; d <= 0x140; d += 2) {
-                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
-                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
-                if (!mem.IsValidVirtualAddress(process, pa) ||
-                    !mem.IsValidVirtualAddress(process, pb)) {
+            const s32 j = static_cast<s32>(jo) - kBack;
+            for (u32 ko = 0; ko < kWinSize; ++ko) {
+                if (win[ko] != kDiscoverOtherLevel) {
                     continue;
                 }
-                const u32 ea = mem.Read32(process, pa);
-                const u32 eb = mem.Read32(process, pb);
-                if (ea >= ExpForLevel(rate_a, kDiscoverAnchorLevel) &&
-                    ea < ExpForLevel(rate_a, kDiscoverAnchorLevel + 1) &&
-                    eb >= ExpForLevel(rate_b, kDiscoverOtherLevel) &&
-                    eb < ExpForLevel(rate_b, kDiscoverOtherLevel + 1)) {
-                    shared_exp += fmt::format("{:+#x} ", d);
-                }
-            }
-            if (shared_exp.empty()) {
-                continue;
-            }
-
-            std::string shared_levels;
-            for (s32 d = -0x40; d <= 0x140; ++d) {
-                const u32 pa = static_cast<u32>(static_cast<s32>(a) + d);
-                const u32 pb = static_cast<u32>(static_cast<s32>(b) + d);
-                if (!mem.IsValidVirtualAddress(process, pa) ||
-                    !mem.IsValidVirtualAddress(process, pb)) {
-                    continue;
-                }
-                if (mem.Read8(process, pa) == kDiscoverAnchorLevel &&
-                    mem.Read8(process, pb) == kDiscoverOtherLevel) {
-                    shared_levels += fmt::format("{:+#x} ", d);
-                }
-            }
-
-            ++reported;
-            LOG_INFO(Core_Cheats,
-                     "Hoenn discovery: *** CANDIDATE anchor {:#010x} other {:#010x} delta {} | "
-                     "exp at {}| levels at {}",
-                     a, b, delta, shared_exp,
-                     shared_levels.empty() ? "(none) " : shared_levels);
-            // Raw bytes so the structure can be read by eye.
-            for (const auto& [addr, who] : {std::pair{a, "anchor"}, std::pair{b, "other"}}) {
-                std::string dump;
-                for (s32 d = -0x10; d < 0x20; ++d) {
-                    const u32 p = static_cast<u32>(static_cast<s32>(addr) + d);
-                    if (!mem.IsValidVirtualAddress(process, p)) {
-                        dump += "?? ";
+                const s32 k = static_cast<s32>(ko) - kBack;
+                ++triples;
+                // Does the other party member agree on this exact layout?
+                for (const u32 m : anchors) {
+                    const s64 gap = static_cast<s64>(m) - static_cast<s64>(c);
+                    if (gap < -0x4000 || gap > 0x4000) {
                         continue;
                     }
-                    dump += fmt::format("{:02x} ", mem.Read8(process, p));
+                    const u32 pe = static_cast<u32>(static_cast<s32>(m) + j);
+                    const u32 pl = static_cast<u32>(static_cast<s32>(m) + k);
+                    if (!mem.IsValidVirtualAddress(process, pe) ||
+                        !mem.IsValidVirtualAddress(process, pl)) {
+                        continue;
+                    }
+                    const u32 me = mem.Read32(process, pe);
+                    if (me < mala_lo || me >= mala_hi ||
+                        mem.Read8(process, pl) != kDiscoverAnchorLevel) {
+                        continue;
+                    }
+                    ++reported;
+                    LOG_INFO(Core_Cheats,
+                             "Hoenn discovery: *** LAYOUT species@+0 exp@{:+#x} level@{:+#x} | "
+                             "charmander {:#010x} exp {} | malamar {:#010x} exp {} | stride {}",
+                             j, k, c, e, m, me, gap);
+                    std::string dump;
+                    for (s32 d = -0x10; d < 0x30; ++d) {
+                        const u32 p = static_cast<u32>(static_cast<s32>(c) + d);
+                        dump += mem.IsValidVirtualAddress(process, p)
+                                    ? fmt::format("{:02x} ", mem.Read8(process, p))
+                                    : std::string("?? ");
+                    }
+                    LOG_INFO(Core_Cheats, "Hoenn discovery:     charmander {:#010x} -0x10..+0x30: {}",
+                             c, dump);
+                    if (reported >= kDiscoverMaxPairs) {
+                        break;
+                    }
                 }
-                LOG_INFO(Core_Cheats, "Hoenn discovery:   {} {:#010x} -0x10..+0x20: {}", who, addr,
-                         dump);
+                if (reported >= kDiscoverMaxPairs) {
+                    break;
+                }
+            }
+            if (reported >= kDiscoverMaxPairs) {
+                break;
             }
         }
     }
+    LOG_INFO(Core_Cheats,
+             "Hoenn discovery: phase 2 examined {} species-{} sites, {} had exp+level nearby, {} "
+             "corroborated by the second member",
+             others.size(), kDiscoverOtherSpecies, triples, reported);
     if (reported == 0) {
-        LOG_INFO(Core_Cheats, "Hoenn discovery: attempt {} found no pair within {:#x}",
-                 discovery_runs, kDiscoverWindow);
+        LOG_INFO(Core_Cheats, "Hoenn discovery: attempt {} — no layout explains both members",
+                 discovery_runs);
     }
     return reported > 0;
 }
