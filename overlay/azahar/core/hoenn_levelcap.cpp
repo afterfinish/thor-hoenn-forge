@@ -50,6 +50,16 @@ constexpr std::array<u32, 5> kStatOffsets = {0xF4, 0xF6, 0xF8, 0xFA, 0xFC};
 // what makes five consecutive stat reads a ~1-in-a-billion filter against random heap.
 constexpr u16 kMaxStat = 1000;
 
+// HP is floor((2*base + IV + EV/4) * level / 100) + level + 10, so even a base-1 Pokemon
+// with no investment clears level + 10. That ties HP to level and kills the whole class of
+// false positive where both fields are individually plausible but cannot coexist.
+u16 MinHpForLevel(u8 level) {
+    return static_cast<u16>(level) + 10;
+}
+
+// The one exception: Shedinja's HP is hardcoded to 1 at every level.
+constexpr u16 kShedinja = 292;
+
 // The whole guest heap. An earlier version stopped at 0x0A000000 on the reasoning that the
 // save block would sit near the camera object at 0x085F67DC; that was a guess dressed up as
 // an optimisation, and unmapped pages are skipped so cheaply that the full range costs
@@ -297,6 +307,9 @@ bool LevelCap::ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process,
     if (hp_max < 1 || hp_max > kMaxStat || hp_cur > hp_max) {
         return fail(Reject::Hp);
     }
+    if (species != kShedinja && hp_max < MinHpForLevel(level)) {
+        return fail(Reject::Hp);
+    }
     for (const u32 off : kStatOffsets) {
         const u16 stat = mem.Read16(process, slot + off);
         if (stat < 1 || stat > kMaxStat) {
@@ -317,7 +330,14 @@ bool LevelCap::ValidateSlot(Memory::MemorySystem& mem, Kernel::Process& process,
     if (exp < ExpForLevel(rate, level)) {
         return fail(Reject::ExpBelow);
     }
-    if (level < 100 && exp >= ExpForLevel(rate, level + 1)) {
+    if (level < 100) {
+        if (exp >= ExpForLevel(rate, level + 1)) {
+            return fail(Reject::ExpAbove);
+        }
+    } else if (exp != ExpForLevel(rate, 100)) {
+        // At level 100 there is no next threshold to bound against, which left experience
+        // effectively unchecked and let 0xFFFFFFFF through as a "level 100 Pokemon". The
+        // games cap experience at exactly the level-100 value, so require it.
         return fail(Reject::ExpAbove);
     }
     return true;
