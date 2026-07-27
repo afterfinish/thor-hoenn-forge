@@ -18,7 +18,11 @@
 
 #include <algorithm>
 #include <array>
+#include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
+#include <fmt/format.h>
 
 #include "common/logging/log.h"
 #include "core/core.h"
@@ -377,6 +381,106 @@ int LevelCap::CountParty(Memory::MemorySystem& mem, Kernel::Process& process,
     return count;
 }
 
+namespace {
+// TEMPORARY. The dogfood party: a level 15 Charmander and a level 2 Malamar. Malamar's id
+// is 0x02AF, which is rare in memory, so it anchors the search; Charmander's 0x0004 is
+// everywhere and is only ever checked near an anchor.
+constexpr u16 kDiscoverAnchorSpecies = 687; // Malamar
+constexpr u8 kDiscoverAnchorLevel = 2;
+constexpr u16 kDiscoverOtherSpecies = 4; // Charmander
+constexpr u8 kDiscoverOtherLevel = 15;
+// How far apart two party members could plausibly sit.
+constexpr u32 kDiscoverWindow = 0x1000;
+constexpr std::size_t kDiscoverMaxPairs = 12;
+} // namespace
+
+bool LevelCap::RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& process) {
+    u32 mapped_pages = 0;
+
+    std::vector<u32> anchors;
+    std::vector<u32> others;
+    std::vector<u8> page(kPageSize);
+
+    for (u32 base = kHeapLo; base + kPageSize <= kHeapHi; base += kPageSize) {
+        if (!mem.IsValidVirtualAddress(process, base)) {
+            continue;
+        }
+        ++mapped_pages;
+        mem.ReadBlock(process, base, page.data(), kPageSize);
+        for (u32 off = 0; off + 1 < kPageSize; off += 2) {
+            const u16 v = static_cast<u16>(page[off] | (page[off + 1] << 8));
+            if (v == kDiscoverAnchorSpecies && anchors.size() < 4096) {
+                anchors.push_back(base + off);
+            } else if (v == kDiscoverOtherSpecies && others.size() < 2'000'000) {
+                others.push_back(base + off);
+            }
+        }
+    }
+    // Mapped page count matters: a low number means the game had not finished loading, and a
+    // zero result then says nothing at all.
+    LOG_INFO(Core_Cheats,
+             "Hoenn discovery: attempt {}, {} mapped pages ({} KiB), species {} x{}, species {} x{}",
+             discovery_runs, mapped_pages, mapped_pages * 4, kDiscoverAnchorSpecies, anchors.size(),
+             kDiscoverOtherSpecies, others.size());
+
+    std::size_t reported = 0;
+    for (const u32 a : anchors) {
+        if (reported >= kDiscoverMaxPairs) {
+            break;
+        }
+        // Any occurrence of the other species close enough to be a sibling party slot.
+        const auto lo = std::lower_bound(others.begin(), others.end(),
+                                         a > kDiscoverWindow ? a - kDiscoverWindow : 0);
+        const auto hi = std::upper_bound(others.begin(), others.end(), a + kDiscoverWindow);
+        for (auto it = lo; it != hi && reported < kDiscoverMaxPairs; ++it) {
+            const u32 b = *it;
+            const s32 delta = static_cast<s32>(b) - static_cast<s32>(a);
+            if (delta == 0) {
+                continue;
+            }
+            ++reported;
+            LOG_INFO(Core_Cheats, "Hoenn discovery: PAIR anchor {:#010x} other {:#010x} delta {}",
+                     a, b, delta);
+            // Where do the two known levels actually sit relative to each species field?
+            for (const auto& [addr, want, who] :
+                 {std::tuple{a, kDiscoverAnchorLevel, "anchor"},
+                  std::tuple{b, kDiscoverOtherLevel, "other"}}) {
+                std::string hits;
+                for (s32 d = -0x20; d <= 0x140; ++d) {
+                    const u32 p = static_cast<u32>(static_cast<s32>(addr) + d);
+                    if (p < kHeapLo || p >= kHeapHi || !mem.IsValidVirtualAddress(process, p)) {
+                        continue;
+                    }
+                    if (mem.Read8(process, p) == want) {
+                        hits += fmt::format("{:+#x} ", d);
+                    }
+                }
+                LOG_INFO(Core_Cheats, "Hoenn discovery:   {} {:#010x} level {} found at {}", who,
+                         addr, want, hits.empty() ? "(nowhere)" : hits);
+            }
+            // Raw bytes so the structure can be read by eye.
+            for (const auto& [addr, who] : {std::pair{a, "anchor"}, std::pair{b, "other"}}) {
+                std::string dump;
+                for (s32 d = -0x10; d < 0x20; ++d) {
+                    const u32 p = static_cast<u32>(static_cast<s32>(addr) + d);
+                    if (p < kHeapLo || p >= kHeapHi || !mem.IsValidVirtualAddress(process, p)) {
+                        dump += "?? ";
+                        continue;
+                    }
+                    dump += fmt::format("{:02x} ", mem.Read8(process, p));
+                }
+                LOG_INFO(Core_Cheats, "Hoenn discovery:   {} {:#010x} -0x10..+0x20: {}", who, addr,
+                         dump);
+            }
+        }
+    }
+    if (reported == 0) {
+        LOG_INFO(Core_Cheats, "Hoenn discovery: attempt {} found no pair within {:#x}",
+                 discovery_runs, kDiscoverWindow);
+    }
+    return reported > 0;
+}
+
 void LevelCap::LogScanPass() {
     ++scan_passes;
     // A pass takes about three seconds. Say it loudly a few times, then back off, because
@@ -593,6 +697,22 @@ void LevelCap::Tick(Core::System& system, u32 process_id) {
     next_tick = now + kTickInterval;
 
     auto& mem = system.Memory();
+
+    // TEMPORARY. Retry rather than check once: the first version ran at ten seconds of
+    // uptime, before the save was loaded and while barely any of the heap was even mapped,
+    // and reported a confident zero. Keep looking until it finds the pair or gives up.
+    if (discovery_runs < kDiscoveryMaxRuns && now >= discovery_next) {
+        ++discovery_runs;
+        discovery_next = now + kDiscoveryInterval;
+        if (RunLayoutDiscovery(mem, *process)) {
+            discovery_runs = kDiscoveryMaxRuns; // found it, stop
+        } else if (discovery_runs == kDiscoveryMaxRuns) {
+            LOG_INFO(Core_Cheats,
+                     "Hoenn discovery: gave up after {} attempts spanning ~{} s of play — the "
+                     "party is not stored as plain species ids in this heap",
+                     kDiscoveryMaxRuns, kDiscoveryMaxRuns * 10);
+        }
+    }
 
     if (party_base == 0) {
         if (!ScanForParty(mem, *process)) {

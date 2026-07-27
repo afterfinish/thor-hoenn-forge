@@ -145,6 +145,20 @@ private:
     /// Diagnostics for one full pass over the heap. Without these a sweep that finds
     /// nothing is indistinguishable from a module that never ran, which is exactly the
     /// ambiguity that cost a play session.
+    /**
+     * TEMPORARY layout discovery. Two independent scans have now failed to find a
+     * decrypted PK6 party slot anywhere in the heap, which means the assumption is wrong
+     * rather than the bounds. This finds the party by known species id instead and reports
+     * where things actually sit, so the layout can be measured. Delete once it has served.
+     */
+    static constexpr u32 kDiscoveryMaxRuns = 30;
+    /// ~10 s at the 3DS core clock, so thirty attempts cover about five minutes of play.
+    static constexpr u64 kDiscoveryInterval = 2'680'000'000;
+    u32 discovery_runs = 0;
+    u64 discovery_next = 0;
+    /// @return true once the pair has been found, so the retry loop can stop.
+    bool RunLayoutDiscovery(Memory::MemorySystem& mem, Kernel::Process& process);
+
     u32 scan_passes = 0;
     u32 scan_plausible = 0;
     u32 scan_near_logs = 0;
