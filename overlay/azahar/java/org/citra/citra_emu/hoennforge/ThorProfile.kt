@@ -44,26 +44,10 @@ object ThorProfile {
             Log.w(TAG, "loadSettings before Thor profile", e)
         }
 
-        // Normal phones use a conservative OpenGL profile. Thor's Vulkan 4x +
-        // async pipeline setup aborts on Adreno with
-        // vk::Device::createGraphicsPipelineUnique: ErrorUnknown.
-        if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp < 600) {
-            IntSetting.GRAPHICS_API.int = 1 // OpenGL ES
-            IntSetting.RESOLUTION_FACTOR.int = 2
-            BooleanSetting.ASYNC_SHADERS.boolean = false
-            BooleanSetting.DISK_SHADER_CACHE.boolean = false
-        }
-
         // --- Graphics / performance (Azahar Android setup + handheld advice) ---
         // 4x ≈ 1600×960 top; same class as common Citra 4x setups on Thor
         IntSetting.RESOLUTION_FACTOR.int = 4
         IntSetting.GRAPHICS_API.int = 2 // Vulkan
-        if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp < 600) {
-            IntSetting.GRAPHICS_API.int = 1
-            IntSetting.RESOLUTION_FACTOR.int = 2
-            BooleanSetting.ASYNC_SHADERS.boolean = false
-            BooleanSetting.DISK_SHADER_CACHE.boolean = false
-        }
         BooleanSetting.NEW_3DS.boolean = true
         BooleanSetting.CPU_JIT.boolean = true
         IntSetting.CPU_CLOCK_SPEED.int = 100
@@ -149,6 +133,17 @@ object ThorProfile {
             Log.e(TAG, "Failed to apply controller mappings", e)
         }
 
+        // Apply phone overrides AFTER the common profile but BEFORE the save
+        // loop below — otherwise these values change in memory and are never
+        // written to config.ini, so reloadSettings() brings back Vulkan 4x.
+        if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp < 600) {
+            IntSetting.GRAPHICS_API.int = 1
+            IntSetting.RESOLUTION_FACTOR.int = 2
+            BooleanSetting.ASYNC_SHADERS.boolean = false
+            BooleanSetting.DISK_SHADER_CACHE.boolean = true
+            BooleanSetting.VSYNC.boolean = false
+        }
+
         val toSave = listOf(
             IntSetting.RESOLUTION_FACTOR,
             IntSetting.GRAPHICS_API,
@@ -208,8 +203,10 @@ object ThorProfile {
 
         Log.i(
             TAG,
-            "Thor profile: Vulkan 4x, stereo OFF, disable_right_eye=true, " +
-                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, FPS overlay on",
+            "Hoenn profile applied: " +
+                (if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp >= 600)
+                    "Thor (Vulkan 4x, dual display)" else "phone (OpenGL 2x, vsync, side-by-side)") +
+                ", stereo OFF, disable_right_eye=true, accurate_mul, skip_dup_frames, FPS overlay on",
         )
     }
 

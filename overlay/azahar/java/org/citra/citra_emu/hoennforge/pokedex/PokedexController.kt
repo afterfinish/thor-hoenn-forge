@@ -197,7 +197,7 @@ object PokedexController {
     private fun restoreResolutionIfNeeded(wanted: Int) {
         try {
             val current = IntSetting.RESOLUTION_FACTOR.int
-            if (current == wanted && current > 1) return
+            if (current == wanted) return
             Log.warning("[Pokedex] restoring resolution $current -> $wanted")
             IntSetting.RESOLUTION_FACTOR.int = wanted
             NativeLibrary.reloadSettings()
