@@ -1,100 +1,134 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Step 1 — legal gate.
+
+  Sizing model (see hoenn_dimens.xml): the root is a vertical band stack, the body
+  is the only weighted child, so the header and footer keep their intrinsic height
+  and the body absorbs whatever is left. Inside the body the prose column scrolls
+  while the action column (checkbox + Continue + link) never leaves the screen:
+  at 288 dp of usable height on a 1920x1080-class phone the action column needs
+  ~153 dp and the body has ~238 dp.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/hoenn_bg_screen"
+    android:orientation="vertical"
     android:padding="@dimen/hoenn_margin_outer">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
+
         <include
             layout="@layout/hoenn_brand_header"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1" />
+
         <TextView
+            style="@style/Hoenn.Text.Caption"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/hoenn_step_1"
-            style="@style/Hoenn.Text.Caption" />
+            android:text="@string/hoenn_step_1" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:orientation="horizontal"
-        android:baselineAligned="false">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="@dimen/hoenn_gap_block"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
 
+        <!-- Prose column: title is fixed, the body text scrolls if a translation
+             or a large font setting makes it taller than the screen. -->
         <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/hoenn_gap_col"
             android:layout_weight="1.1"
-            android:orientation="vertical"
-            android:paddingEnd="24dp">
+            android:orientation="vertical">
+
             <TextView
+                style="@style/Hoenn.Text.Display"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/hoenn_welcome_title"
-                style="@style/Hoenn.Text.Display" />
-            <TextView
+                android:text="@string/hoenn_welcome_title" />
+
+            <ScrollView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/hoenn_welcome_body"
-                style="@style/Hoenn.Text.Body"
-                android:textColor="@color/hoenn_muted" />
+                android:layout_height="0dp"
+                android:layout_marginTop="@dimen/hoenn_gap_row"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:overScrollMode="ifContentScrolls"
+                android:scrollbars="none">
+
+                <TextView
+                    style="@style/Hoenn.Text.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/hoenn_welcome_body"
+                    android:textColor="@color/hoenn_muted" />
+            </ScrollView>
         </LinearLayout>
 
+        <!-- Action column: every control is wrap_content or a fixed touch height,
+             so nothing here can be pushed off the bottom edge. -->
         <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="0.9"
-            android:orientation="vertical"
-            android:paddingStart="8dp">
+            android:orientation="vertical">
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/hoenn_bg_card"
+                android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:padding="16dp"
-                android:gravity="center_vertical">
+                android:padding="@dimen/hoenn_card_pad">
+
                 <CheckBox
                     android:id="@+id/checkboxLegal"
+                    style="@style/Hoenn.CheckBox"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    style="@style/Hoenn.CheckBox"
-                    android:text="@string/hoenn_welcome_checkbox"
-                    android:textSize="14sp" />
+                    android:text="@string/hoenn_welcome_checkbox" />
             </LinearLayout>
+
             <Button
                 android:id="@+id/buttonContinue"
                 style="@style/Hoenn.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_height="@dimen/hoenn_btn_height"
+                android:layout_marginTop="@dimen/hoenn_gap_row"
                 android:enabled="false"
                 android:text="@string/hoenn_continue" />
+
             <TextView
                 android:id="@+id/linkWhatsDump"
+                style="@style/Hoenn.Text.Accent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:gravity="center"
-                android:text="@string/hoenn_whats_dump"
-                style="@style/Hoenn.Text.Accent"
+                android:layout_marginTop="@dimen/hoenn_gap_row"
+                android:clickable="true"
                 android:focusable="true"
-                android:clickable="true" />
+                android:gravity="center"
+                android:paddingVertical="4dp"
+                android:text="@string/hoenn_whats_dump" />
         </LinearLayout>
     </LinearLayout>
 
     <TextView
-        android:layout_width="wrap_content"
+        style="@style/Hoenn.Text.Caption"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:text="@string/hoenn_legal_footer"
-        style="@style/Hoenn.Text.Caption" />
-</FrameLayout>
+        android:layout_marginTop="@dimen/hoenn_gap_row"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/hoenn_legal_footer" />
+</LinearLayout>

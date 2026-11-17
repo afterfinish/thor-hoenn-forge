@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hoenn Forge tokens — ROOMY handheld / tablet (qualifier: window height >= 400 dp).
+
+  This is the original Hoenn Forge scale, restored verbatim for the AYN Thor
+  (1920x1080 @400 dpi -> 768x432 dp) and for large screens. Phones in landscape
+  top out at 384 dp of window height, so they never pick this file up and keep
+  the compact defaults in values/.
+
+  values-sw600dp carries an identical copy for tablets/foldables in portrait.
+-->
+<resources>
+    <dimen name="hoenn_margin_outer">32dp</dimen>
+
+    <dimen name="hoenn_gap_block">16dp</dimen>
+    <dimen name="hoenn_gap_row">10dp</dimen>
+    <dimen name="hoenn_gap_col">24dp</dimen>
+
+    <dimen name="hoenn_space_4">4dp</dimen>
+    <dimen name="hoenn_space_8">8dp</dimen>
+    <dimen name="hoenn_space_12">12dp</dimen>
+    <dimen name="hoenn_space_16">16dp</dimen>
+    <dimen name="hoenn_space_24">24dp</dimen>
+    <dimen name="hoenn_space_32">32dp</dimen>
+    <dimen name="hoenn_space_56">56dp</dimen>
+
+    <dimen name="hoenn_radius_chip">6dp</dimen>
+    <dimen name="hoenn_radius_input">8dp</dimen>
+    <dimen name="hoenn_radius_btn">10dp</dimen>
+    <dimen name="hoenn_radius_dialog">14dp</dimen>
+    <dimen name="hoenn_radius_card">12dp</dimen>
+
+    <dimen name="hoenn_touch_min">44dp</dimen>
+    <dimen name="hoenn_row_min">48dp</dimen>
+    <dimen name="hoenn_btn_height">56dp</dimen>
+
+    <dimen name="hoenn_hairline">1dp</dimen>
+    <dimen name="hoenn_stroke">2dp</dimen>
+
+    <dimen name="hoenn_focus_ring">2dp</dimen>
+    <dimen name="hoenn_focus_offset">3dp</dimen>
+
+    <dimen name="hoenn_rule_fade">48dp</dimen>
+
+    <dimen name="hoenn_card_pad">20dp</dimen>
+    <dimen name="hoenn_btn_pad_h">20dp</dimen>
+</resources>
