@@ -43,6 +43,8 @@
         vertical edge; the layout is padded out of the cutout by HoennInsets.
     -->
     <style name="Theme.Hoenn.Forge" parent="@style/Theme.Citra.Main">
+        <item name="alertDialogTheme">@style/Theme.Hoenn.Forge.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Hoenn.Forge.Dialog</item>
         <item name="isLightTheme">false</item>
         <item name="android:forceDarkAllowed">false</item>
 
@@ -72,5 +74,20 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
         <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <!-- AppCompat AlertDialogs (legal notice, all-files-access prompt, confirm
+         dialogs) inherit alertDialogTheme from the activity theme. Without an
+         explicit dark dialog theme they render as a light Material3 DayNight
+         dialog with pale grey text on a white background. -->
+    <style name="Theme.Hoenn.Forge.Dialog" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="android:colorBackground">@color/hoenn_surface</item>
+        <item name="android:background">@color/hoenn_surface</item>
+        <item name="android:textColorPrimary">@color/hoenn_text</item>
+        <item name="android:textColorSecondary">@color/hoenn_neutral_300</item>
+        <item name="colorSurface">@color/hoenn_surface</item>
+        <item name="colorOnSurface">@color/hoenn_text</item>
+        <item name="colorOnSurfaceVariant">@color/hoenn_neutral_300</item>
+        <item name="colorPrimary">@color/hoenn_accent</item>
     </style>
 </resources>
