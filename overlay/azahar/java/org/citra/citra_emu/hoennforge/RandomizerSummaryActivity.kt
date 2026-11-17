@@ -74,7 +74,9 @@ class RandomizerSummaryActivity : HoennActivity() {
     private fun addRow(parent: LinearLayout, left: String, right: String) {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
-        row.setPadding(0, 14, 0, 14)
+        // 14 px was 3.5 dp at 4x density; use the row rhythm token.
+        val rowPad = resources.getDimensionPixelSize(R.dimen.hoenn_gap_row)
+        row.setPadding(0, rowPad, 0, rowPad)
         val l = TextView(this)
         l.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         l.text = left

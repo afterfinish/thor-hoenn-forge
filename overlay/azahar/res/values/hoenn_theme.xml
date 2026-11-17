@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Window transition animation for Hoenn Forge screens (soft fade + slight slide).
-  Apply by adding to the app theme:
-      <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
-  or per-activity via android:theme, or in code with overrideActivityTransition().
+  Window transition animation for Hoenn Forge screens (soft fade + slight slide),
+  plus the theme every Hoenn screen wears.
+
+  WHY A DEDICATED THEME
+  The Hoenn shell used to run on @style/Theme.Citra.Main, which is
+  Theme.Material3.DayNight: in light mode it sets colorBackground #FEFBFF and
+  android:statusBarColor / navigationBarColor to @android:color/transparent.
+  With decor-fitting on, the system-bar strips therefore showed the near-white
+  window background next to our #161826 screens — the "weird white bar" at the
+  screen edges (contrast 17:1, impossible to miss).
+
+  Theme.Hoenn.Forge fixes that at the source: the window ground is hoenn_bg,
+  the bars are painted hoenn_bg with light icons, and the framework is told the
+  theme is dark so no Material default falls back to its light palette.
 -->
 <resources>
     <!-- parent="" required: dotted style names without parent imply style/Hoenn (missing). -->
@@ -14,10 +24,70 @@
         <item name="android:activityCloseExitAnimation">@anim/hoenn_pop_exit</item>
     </style>
 
-    <!-- Optional theme overlay: font default + window transitions in one place.
-         Merge these items into the activity theme used by the Hoenn screens. -->
+    <!-- Optional theme overlay: font default + window transitions in one place. -->
     <style name="ThemeOverlay.Hoenn" parent="">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
+    </style>
+
+    <!--
+      The Hoenn shell theme. Applied per activity in AndroidManifest.xml.
+
+      - isLightTheme=false + dark surface roles: Material3 widgets (dialogs,
+        ripple, checkboxes) build their palette from these, so they stay dark
+        even when the phone is in light mode.
+      - Bar colours are opaque hoenn_bg instead of transparent: on API 35 the
+        window is edge-to-edge, the root view paints hoenn_bg_screen under the
+        bars, and the bar strips inherit that ground rather than a white band.
+      - displayCutoutMode shortEdges: in landscape the punch-hole sits on a
+        vertical edge; the layout is padded out of the cutout by HoennInsets.
+    -->
+    <style name="Theme.Hoenn.Forge" parent="@style/Theme.Citra.Main">
+        <item name="alertDialogTheme">@style/Theme.Hoenn.Forge.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Hoenn.Forge.Dialog</item>
+        <item name="isLightTheme">false</item>
+        <item name="android:forceDarkAllowed">false</item>
+
+        <item name="android:windowBackground">@color/hoenn_bg</item>
+        <item name="android:colorBackground">@color/hoenn_bg</item>
+        <item name="android:textColorPrimary">@color/hoenn_text</item>
+        <item name="android:textColorSecondary">@color/hoenn_muted</item>
+
+        <item name="colorPrimary">@color/hoenn_accent</item>
+        <item name="colorOnPrimary">@color/hoenn_bg</item>
+        <item name="colorSecondary">@color/hoenn_accent</item>
+        <item name="colorSurface">@color/hoenn_surface</item>
+        <item name="colorOnSurface">@color/hoenn_text</item>
+        <item name="colorSurfaceVariant">@color/hoenn_surface_elevated</item>
+        <item name="colorOnSurfaceVariant">@color/hoenn_neutral_400</item>
+        <item name="colorOutline">@color/hoenn_stroke</item>
+        <item name="colorError">@color/hoenn_danger</item>
+
+        <item name="android:statusBarColor">@color/hoenn_bg</item>
+        <item name="android:navigationBarColor">@color/hoenn_bg</item>
+        <item name="android:navigationBarDividerColor">@color/hoenn_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowAnimationStyle">@style/Hoenn.WindowAnimation</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <!-- AppCompat AlertDialogs (legal notice, all-files-access prompt, confirm
+         dialogs) inherit alertDialogTheme from the activity theme. Without an
+         explicit dark dialog theme they render as a light Material3 DayNight
+         dialog with pale grey text on a white background. -->
+    <style name="Theme.Hoenn.Forge.Dialog" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="android:colorBackground">@color/hoenn_surface</item>
+        <item name="android:background">@color/hoenn_surface</item>
+        <item name="android:textColorPrimary">@color/hoenn_text</item>
+        <item name="android:textColorSecondary">@color/hoenn_neutral_300</item>
+        <item name="colorSurface">@color/hoenn_surface</item>
+        <item name="colorOnSurface">@color/hoenn_text</item>
+        <item name="colorOnSurfaceVariant">@color/hoenn_neutral_300</item>
+        <item name="colorPrimary">@color/hoenn_accent</item>
     </style>
 </resources>

@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Randomizer category tile. Used eight times in a 4x2 grid that lives in the only
+  weighted band of activity_hoenn_randomizer, so its height is whatever is left
+  (~40 dp per row on the smallest phone, ~90 dp on the Thor). The blurb is the
+  weighted child: it takes the slack when there is any and collapses to nothing
+  when there is not, while the title and status chip always render. On the Thor
+  the extra height simply shows more blurb text — the tile is not duplicated.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/cardRoot"
     android:layout_width="match_parent"
@@ -7,38 +15,44 @@
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical"
-    android:padding="12dp"
-    android:minHeight="88dp">
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal">
+
         <TextView
             android:id="@+id/textCatTitle"
+            style="@style/Hoenn.Text.CardTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            style="@style/Hoenn.Text.CardTitle"
-            android:textSize="14sp" />
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="13sp" />
+
         <TextView
             android:id="@+id/chipStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/hoenn_chip_muted"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="2dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="1dp"
             android:text="@string/hoenn_status_vanilla"
             android:textColor="@color/hoenn_text"
-            android:textSize="11sp" />
+            android:textSize="10sp" />
     </LinearLayout>
+
     <TextView
         android:id="@+id/textCatBlurb"
+        style="@style/Hoenn.Text.Muted"
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:layout_marginTop="2dp"
         android:layout_weight="1"
-        android:layout_marginTop="6dp"
-        style="@style/Hoenn.Text.Muted"
-        android:textSize="12sp" />
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textSize="11sp" />
 </LinearLayout>

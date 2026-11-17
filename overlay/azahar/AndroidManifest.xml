@@ -50,7 +50,7 @@
         <!-- Hoenn Forge onboarding is the launcher; full Azahar UI is optional Advanced. -->
         <activity
             android:name="org.citra.citra_emu.hoennforge.WelcomeActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="true"
             android:screenOrientation="sensorLandscape">
             <intent-filter>
@@ -62,61 +62,61 @@
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.DataDirActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.DumpPickerActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.PlayModeActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.RandomizerActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.RandomizerCategoryActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.RandomizerSummaryActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.PrepareActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.HomeActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.ReadyTipsActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name="org.citra.citra_emu.hoennforge.SettingsActivity"
-            android:theme="@style/Theme.Citra.Main"
+            android:theme="@style/Theme.Hoenn.Forge"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 

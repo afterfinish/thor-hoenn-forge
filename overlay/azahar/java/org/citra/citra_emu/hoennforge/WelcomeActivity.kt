@@ -9,11 +9,18 @@ import androidx.appcompat.app.AlertDialog
 import org.citra.citra_emu.R
 
 class WelcomeActivity : HoennActivity() {
+    private var awaitingStoragePermission = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = HoennPrefs(this)
 
         if (prefs.legalAccepted) {
+            if (!HoennStorage.hasAllFilesAccess(this)) {
+                awaitingStoragePermission = true
+                showStorageDialog()
+                return
+            }
             startActivity(Onboarding.intentTo(this, Onboarding.nextAfterLegal(this, prefs)))
             finish()
             return
@@ -32,6 +39,11 @@ class WelcomeActivity : HoennActivity() {
             if (!button.isEnabled) return@setOnClickListener
             button.isEnabled = false
             prefs.legalAccepted = true
+            if (!HoennStorage.hasAllFilesAccess(this)) {
+                awaitingStoragePermission = true
+                showStorageDialog()
+                return@setOnClickListener
+            }
             startActivity(Onboarding.intentTo(this, Onboarding.nextAfterLegal(this, prefs)))
             finish()
         }
@@ -45,5 +57,26 @@ class WelcomeActivity : HoennActivity() {
         HoennFocus.enable(root)
         HoennFocus.installKeyRouting(this, root)
         checkbox.post { checkbox.requestFocus() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (awaitingStoragePermission && HoennStorage.hasAllFilesAccess(this)) {
+            awaitingStoragePermission = false
+            val prefs = HoennPrefs(this)
+            startActivity(Onboarding.intentTo(this, Onboarding.nextAfterLegal(this, prefs)))
+            finish()
+        }
+    }
+
+    private fun showStorageDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.hoenn_files_title)
+            .setMessage(R.string.hoenn_files_body)
+            .setPositiveButton(R.string.hoenn_files_grant) { _, _ ->
+                startActivity(HoennStorage.allFilesAccessIntent(this))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 }

@@ -179,7 +179,15 @@ class RandomizerCategoryActivity : HoennActivity() {
         val tv = TextView(this)
         tv.setText(res)
         tv.setTextAppearance(R.style.Hoenn_Text_Muted)
-        tv.setPadding(0, 16, 0, 8)
+        // Padding used to be raw pixels: 16 px is 4 dp on a 640 dpi phone and
+        // 6.4 dp on the Thor, so group labels stuck to the row above. Use the
+        // shared rhythm tokens instead.
+        tv.setPadding(
+            0,
+            resources.getDimensionPixelSize(R.dimen.hoenn_gap_row),
+            0,
+            resources.getDimensionPixelSize(R.dimen.hoenn_space_4),
+        )
         optionsPanel.addView(tv)
     }
 

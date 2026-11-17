@@ -102,14 +102,21 @@ object ThorProfile {
         BooleanSetting.PERF_OVERLAY_SHOW_SPEED.boolean = true
         BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean = true
 
-        // --- Dual display ---
-        BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean = true
+        // --- Display ---
+        // Thor: one panel per 3DS screen, no touch controls needed.
+        // Phone: a single window must show BOTH screens fitted, with the
+        // touch overlay enabled — SINGLE_SCREEN + secondary display rendered
+        // one huge cropped screen and no controls on a normal phone.
+        val isLargeScreen =
+            CitraApplication.appContext.resources.configuration.smallestScreenWidthDp >= 600
+        BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean = isLargeScreen
         BooleanSetting.SWAP_SCREEN.boolean = false
-        IntSetting.SCREEN_LAYOUT.int = ScreenLayout.SINGLE_SCREEN.int
+        IntSetting.SCREEN_LAYOUT.int =
+            if (isLargeScreen) ScreenLayout.SINGLE_SCREEN.int else ScreenLayout.SIDE_SCREEN.int
         IntSetting.SECONDARY_DISPLAY_LAYOUT.int = SecondaryDisplayLayout.BOTTOM_SCREEN.int
         IntSetting.ORIENTATION_OPTION.int = 2
 
-        EmulationMenuSettings.showOverlay = false
+        EmulationMenuSettings.showOverlay = !isLargeScreen
         EmulationMenuSettings.swapScreens = false
 
         // --- Controller ---
@@ -124,6 +131,26 @@ object ThorProfile {
             unmap3dsStartButton()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply controller mappings", e)
+        }
+
+        // Apply phone overrides AFTER the common profile but BEFORE the save
+        // loop below — otherwise these values change in memory and are never
+        // written to config.ini, so reloadSettings() brings back Vulkan 4x.
+        if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp < 600) {
+            // Vulkan aborts on Adreno here (createGraphicsPipelineUnique ErrorUnknown),
+            // and hardware-generated GLSL fails to link ("No log produced"), leaving
+            // the 3D world black while text still draws. Use the software vertex
+            // shader path with OpenGL 2x and a warm disk cache on phones.
+            IntSetting.GRAPHICS_API.int = 1
+            IntSetting.RESOLUTION_FACTOR.int = 2
+            BooleanSetting.HW_SHADER.boolean = false
+            BooleanSetting.SHADER_JIT.boolean = true
+            BooleanSetting.ASYNC_SHADERS.boolean = false
+            BooleanSetting.DISK_SHADER_CACHE.boolean = true
+            BooleanSetting.VSYNC.boolean = false
+            // ORAS updates at 30 Hz; presenting the repeated frames fills a
+            // 60/120 Hz panel without changing emulation speed.
+            BooleanSetting.USE_SKIP_DUPLICATE_FRAMES.boolean = false
         }
 
         val toSave = listOf(
@@ -185,8 +212,10 @@ object ThorProfile {
 
         Log.i(
             TAG,
-            "Thor profile: Vulkan 4x, stereo OFF, disable_right_eye=true, " +
-                "async_shaders+disk_cache, accurate_mul, skip_dup_frames, FPS overlay on",
+            "Hoenn profile applied: " +
+                (if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp >= 600)
+                    "Thor (Vulkan 4x, dual display)" else "phone (OpenGL 2x, vsync, side-by-side)") +
+                ", stereo OFF, disable_right_eye=true, accurate_mul, skip_dup_frames, FPS overlay on",
         )
     }
 

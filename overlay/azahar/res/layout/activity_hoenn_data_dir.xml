@@ -1,117 +1,158 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Step 2 — data folder. Same band stack as step 1/3: header, weighted body,
+  footer. The card keeps its single action (Pick folder) inside the weighted
+  body, so it cannot land below the fold on a 288 dp-tall phone.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/hoenn_bg_screen"
+    android:orientation="vertical"
     android:padding="@dimen/hoenn_margin_outer">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
+
         <include
             layout="@layout/hoenn_brand_header"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1" />
+
         <TextView
+            style="@style/Hoenn.Text.Caption"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/hoenn_step_2"
-            style="@style/Hoenn.Text.Caption" />
+            android:text="@string/hoenn_step_2" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="40dp"
-        android:orientation="horizontal"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/hoenn_gap_block"
+        android:layout_weight="1"
         android:baselineAligned="false"
-        android:gravity="center_vertical">
+        android:orientation="horizontal">
 
         <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/hoenn_gap_col"
             android:layout_weight="1.1"
-            android:orientation="vertical"
-            android:paddingEnd="24dp">
+            android:orientation="vertical">
+
             <TextView
+                style="@style/Hoenn.Text.Display"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/hoenn_data_dir_title"
-                style="@style/Hoenn.Text.Display" />
-            <TextView
+                android:text="@string/hoenn_data_dir_title" />
+
+            <ScrollView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/hoenn_data_dir_lead"
-                style="@style/Hoenn.Text.Muted" />
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:text="@string/hoenn_data_dir_bullet_saves"
-                style="@style/Hoenn.Text.Body"
-                android:drawablePadding="8dp" />
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/hoenn_data_dir_bullet_shaders"
-                style="@style/Hoenn.Text.Body" />
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/hoenn_data_dir_bullet_runs"
-                style="@style/Hoenn.Text.Body" />
+                android:layout_height="0dp"
+                android:layout_marginTop="@dimen/hoenn_gap_row"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:overScrollMode="ifContentScrolls"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Hoenn.Text.Muted"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/hoenn_data_dir_lead" />
+
+                    <TextView
+                        style="@style/Hoenn.Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/hoenn_gap_row"
+                        android:text="@string/hoenn_data_dir_bullet_saves" />
+
+                    <TextView
+                        style="@style/Hoenn.Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/hoenn_gap_row"
+                        android:text="@string/hoenn_data_dir_bullet_shaders" />
+
+                    <TextView
+                        style="@style/Hoenn.Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/hoenn_gap_row"
+                        android:text="@string/hoenn_data_dir_bullet_runs" />
+                </LinearLayout>
+            </ScrollView>
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="0.9"
             android:background="@drawable/hoenn_bg_card"
+            android:gravity="center_horizontal"
             android:orientation="vertical"
-            android:padding="24dp"
-            android:gravity="center_horizontal">
+            android:padding="@dimen/hoenn_card_pad">
+
             <TextView
                 android:id="@+id/textStatus"
+                style="@style/Hoenn.Text.Title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="@string/hoenn_data_dir_empty"
-                style="@style/Hoenn.Text.Title"
-                android:textSize="16sp" />
+                android:text="@string/hoenn_data_dir_empty" />
+
             <TextView
                 android:id="@+id/textPath"
+                style="@style/Hoenn.Text.Mono"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
+                android:ellipsize="middle"
                 android:gravity="center"
-                android:text="—"
-                style="@style/Hoenn.Text.Mono" />
+                android:maxLines="2"
+                android:text="—" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
             <Button
                 android:id="@+id/buttonPick"
                 style="@style/Hoenn.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_height="@dimen/hoenn_btn_height"
                 android:text="@string/hoenn_data_dir_pick" />
+
             <TextView
+                style="@style/Hoenn.Text.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/hoenn_gap_row"
+                android:ellipsize="end"
                 android:gravity="center"
-                android:text="@string/hoenn_data_dir_hint"
-                style="@style/Hoenn.Text.Caption" />
+                android:maxLines="2"
+                android:text="@string/hoenn_data_dir_hint" />
         </LinearLayout>
     </LinearLayout>
 
     <TextView
-        android:layout_width="wrap_content"
+        style="@style/Hoenn.Text.Caption"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:text="@string/hoenn_data_dir_footer"
-        style="@style/Hoenn.Text.Caption" />
-</FrameLayout>
+        android:layout_marginTop="@dimen/hoenn_gap_row"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/hoenn_data_dir_footer" />
+</LinearLayout>

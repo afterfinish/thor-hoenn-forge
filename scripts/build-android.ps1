@@ -1,4 +1,4 @@
-﻿# Build Hoenn Forge Android APK (Azahar core + Hoenn onboarding)
+# Build Hoenn Forge Android APK (Azahar core + Hoenn onboarding)
 # Prerequisites: Android SDK, NDK 30+, JDK 17+, git clone of azahar under emulator/azahar
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -503,13 +503,15 @@ Get-ChildItem (Join-Path $Overlay "res") -Directory -ErrorAction SilentlyContinu
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
         Copy-Item (Join-Path $_.FullName "*") $dest -Force
     }
-foreach ($vals in @("hoenn_colors.xml", "hoenn_dimens.xml", "hoenn_styles.xml", "hoenn_theme.xml", "hoenn_strings_design.xml")) {
-    $src = Join-Path $Overlay "res\values\$vals"
-    if (Test-Path $src) {
-        New-Item -ItemType Directory -Force -Path (Join-Path $Main "res\values") | Out-Null
-        Copy-Item $src (Join-Path $Main "res\values\$vals") -Force
+# Copy every values/ qualifier directory (values-h400dp, values-sw600dp, ...).
+# A hard-coded file list silently drops new resource qualifiers from the shipped APK.
+Get-ChildItem (Join-Path $Overlay "res") -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "values*" -and $_.Name -notlike "*snippet*" } |
+    ForEach-Object {
+        $dest = Join-Path $Main "res\$($_.Name)"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Copy-Item (Join-Path $_.FullName "*") $dest -Force
     }
-}
 if (Test-Path (Join-Path $Overlay "AndroidManifest.xml")) {
     Copy-Item (Join-Path $Overlay "AndroidManifest.xml") (Join-Path $Main "AndroidManifest.xml") -Force
 }

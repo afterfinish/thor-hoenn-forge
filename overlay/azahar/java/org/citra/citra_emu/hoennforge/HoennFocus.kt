@@ -56,11 +56,13 @@ object HoennFocus {
                     v.isClickable = true
                 }
                 else -> {
-                    // Containers with card backgrounds must not take focus (screen ring).
-                    if (v !is EditText) {
-                        v.isFocusable = false
-                        v.isFocusableInTouchMode = false
-                    }
+                    // Clickable surfaces are real controls on these screens: mode
+                    // cards, preset cards, category tiles, nav rows and the text
+                    // links. Keep them focusable or the D-pad / left stick can never
+                    // reach them. Only inert containers drop focus (a full-screen
+                    // focus ring is the bug that guard was written for).
+                    v.isFocusable = v.isClickable
+                    v.isFocusableInTouchMode = false
                 }
             }
         }
