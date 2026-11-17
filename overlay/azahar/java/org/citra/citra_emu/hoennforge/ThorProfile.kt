@@ -137,8 +137,14 @@ object ThorProfile {
         // loop below — otherwise these values change in memory and are never
         // written to config.ini, so reloadSettings() brings back Vulkan 4x.
         if (CitraApplication.appContext.resources.configuration.smallestScreenWidthDp < 600) {
+            // Vulkan aborts on Adreno here (createGraphicsPipelineUnique ErrorUnknown),
+            // and hardware-generated GLSL fails to link ("No log produced"), leaving
+            // the 3D world black while text still draws. Use the software vertex
+            // shader path with OpenGL 2x and a warm disk cache on phones.
             IntSetting.GRAPHICS_API.int = 1
             IntSetting.RESOLUTION_FACTOR.int = 2
+            BooleanSetting.HW_SHADER.boolean = false
+            BooleanSetting.SHADER_JIT.boolean = true
             BooleanSetting.ASYNC_SHADERS.boolean = false
             BooleanSetting.DISK_SHADER_CACHE.boolean = true
             BooleanSetting.VSYNC.boolean = false
