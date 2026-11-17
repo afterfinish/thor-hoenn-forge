@@ -148,6 +148,9 @@ object ThorProfile {
             BooleanSetting.ASYNC_SHADERS.boolean = false
             BooleanSetting.DISK_SHADER_CACHE.boolean = true
             BooleanSetting.VSYNC.boolean = false
+            // ORAS updates at 30 Hz; presenting the repeated frames fills a
+            // 60/120 Hz panel without changing emulation speed.
+            BooleanSetting.USE_SKIP_DUPLICATE_FRAMES.boolean = false
         }
 
         val toSave = listOf(
