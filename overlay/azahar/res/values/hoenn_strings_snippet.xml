@@ -247,3 +247,6 @@
     <string name="hoenn_prepare_failed">Prepare failed: %1$s\nYour original dump is fine.</string>
     <string name="hoenn_prepare_cancel">Cancel</string>
     <string name="hoenn_prepare_back">Back</string>
+    <string name="hoenn_files_title">All files access needed</string>
+    <string name="hoenn_files_body">Hoenn Forge reads your game dump directly, so Android requires permission to access all files. Open Settings, enable \"All files access\" for Hoenn Forge, then come back here.</string>
+    <string name="hoenn_files_grant">Open settings</string>

@@ -148,6 +148,17 @@ class HomeActivity : HoennActivity() {
             Toast.makeText(this, R.string.hoenn_game_invalid, Toast.LENGTH_LONG).show()
             return
         }
+        if (!HoennStorage.hasAllFilesAccess(this)) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.hoenn_files_title)
+                .setMessage(R.string.hoenn_files_body)
+                .setPositiveButton(R.string.hoenn_files_grant) { _, _ ->
+                    startActivity(HoennStorage.allFilesAccessIntent(this))
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
         playLaunchInFlight = true
         playButton?.isEnabled = false
         val uri = uriString.toUri()
